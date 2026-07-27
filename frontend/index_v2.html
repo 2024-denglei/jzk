@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能生育匹配系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+        /* === WILL BE REPLACED BELOW === */
+        :root {
+            --primary: #4f46e5;
+            --primary-light: #eef2ff;
+            --surface: #ffffff;
+            --bg: #f1f5f9;
+            --text: #0f172a;
+            --text2: #475569;
+            --text3: #94a3b8;
+            --border: #e2e8f0;
+            --success: #059669;
+            --warn: #d97706;
+        }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            font-family: 'Noto Sans SC', 'Inter', sans-serif;
+            color: var(--text);
+            background: var(--bg);
+            overflow: hidden;
+        }
+        .shell { display: grid; grid-template-columns: 320px 1fr 400px; grid-template-rows: 56px 1fr; height: 100vh; }
+        .top-bar { grid-column: 1 / -1; }
+
+        /* scrollbar */
+        .scroll-y::-webkit-scrollbar { width: 5px; }
+        .scroll-y::-webkit-scrollbar-track { background: transparent; }
+        .scroll-y::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        /* chip */
+        .chip { cursor: pointer; user-select: none; transition: all .15s; }
+        .chip input { display: none; }
+        .chip span {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 500;
+            border: 1.5px solid var(--border); background: #fff; color: var(--text2);
+            transition: all .18s;
+        }
+        .chip input:checked + span {
+            background: var(--primary-light); color: var(--primary);
+            border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,.10);
+        }
+        .chip span:hover { border-color: #a5b4fc; }
+
+        /* drag */
+        .drag-item { transition: transform .15s, opacity .15s; }
+        .drag-item.dragging { opacity: .4; transform: scale(.97); }
+
+        /* msg */
+        .msg-row { animation: fadeUp .25s ease; padding: 0 20px; }
+        .msg-row.user-msg { display: flex; justify-content: flex-end; }
+        .msg-row.user-msg .msg-content {
+            background: linear-gradient(135deg,#4f46e5,#4338ca); color: #fff;
+            border-radius: 18px 18px 4px 18px; padding: 12px 18px;
+            font-size: 14px; line-height: 1.6; max-width: 80%;
+            box-shadow: 0 2px 12px rgba(79,70,229,.18);
+        }
+        .msg-row.bot-msg .msg-content {
+            font-size: 14px; line-height: 1.75; color: #1e293b;
+        }
+        .msg-row.sys-msg .msg-content {
+            font-size: 13px; color: #92400e; background: #fefce8;
+            border: 1px solid #fde68a; border-radius: 12px; padding: 10px 16px;
+        }
+
+        /* right panel */
+        .right-panel { display: flex; flex-direction: column; border-left: 1px solid #e2e8f0; background: #fff; overflow: hidden; }
+        .right-panel-header { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
+        .right-panel-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+
+        @keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+
+        /* card expand */
+        .card-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s; }
+        .card-detail.open { grid-template-rows: 1fr; }
+        .card-detail > div { overflow: hidden; }
+
+        /* candidate card */
+        .cand-card {
+            background: #fff; border-radius: 14px; border: 1px solid #e2e8f0;
+            overflow: hidden; transition: box-shadow .2s;
+        }
+        .cand-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,.07); }
+        .cand-header {
+            display: flex; align-items: center; padding: 16px 16px 12px; gap: 12px;
+        }
+        .cand-rank {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: linear-gradient(135deg,#6366f1,#4f46e5);
+            color: #fff; font-size: 15px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .cand-score {
+            font-size: 28px; font-weight: 700; line-height: 1; flex-shrink: 0;
+        }
+        .cand-score .pct { font-size: 14px; font-weight: 500; }
+        .cand-attrs {
+            display: grid; grid-template-columns: repeat(3,1fr);
+            border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9;
+            background: #fafbfc;
+        }
+        .cand-attr {
+            padding: 14px 4px; text-align: center; position: relative;
+        }
+        .cand-attr + .cand-attr { border-left: 1px solid #f1f5f9; }
+        .cand-attr .al { font-size: 11px; color: #94a3b8; margin-bottom: 3px; }
+        .cand-attr .av { font-size: 13px; font-weight: 600; color: #1e293b; }
+        .cand-attr .fm-icon {
+            position: absolute; top: 6px; right: 6px; font-size: 10px;
+        }
+        .detail-grid {
+            display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #f1f5f9;
+        }
+        .detail-grid .d-item {
+            padding: 8px 16px; display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #f8fafc;
+        }
+        .detail-grid .d-item:nth-child(odd) { border-right: 1px solid #f8fafc; }
+        .detail-grid .d-label { font-size: 12px; color: #94a3b8; }
+        .detail-grid .d-val { font-size: 13px; font-weight: 500; color: #334155; }
+        .cand-reason {
+            margin: 0 16px 12px; padding: 10px 12px; font-size: 12px; color: #64748b; line-height: 1.6;
+            background: #f8fafc; border-radius: 8px; border-left: 3px solid;
+        }
+        .cand-actions { display: flex; gap: 8px; padding: 0 16px 16px; }
+        .fb-btn {
+            flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            height: 38px; border-radius: 10px; font-size: 13px; font-weight: 500;
+            border: 1.5px solid; cursor: pointer; transition: all .18s; background: transparent;
+        }
+        .fb-btn.like { color: #059669; border-color: #bbf7d0; }
+        .fb-btn.like:hover { background: #f0fdf4; }
+        .fb-btn.dislike { color: #e11d48; border-color: #fecdd3; }
+        .fb-btn.dislike:hover { background: #fff1f2; }
+
+        /* tab */
+        .tab-btn { position: relative; padding: 8px 0; font-size: 13px; font-weight: 600; color: var(--text3); cursor: pointer; border: none; background: none; }
+        .tab-btn.active { color: var(--primary); }
+        .tab-btn.active::after { content: ''; position: absolute; bottom: 0; left: 10%; width: 80%; height: 2.5px; border-radius: 2px; background: var(--primary); }
+
+        /* input */
+        .chat-input {
+            background: #f8fafc; border: 1.5px solid var(--border); border-radius: 16px;
+            resize: none; padding: 14px 16px; font-size: 14px; color: var(--text);
+            width: 100%; outline: none; transition: all .18s;
+        }
+        .chat-input:focus { background: #fff; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+        .chat-input::placeholder { color: var(--text3); }
+
+        .btn-primary {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            height: 42px; padding: 0 20px; border-radius: 14px;
+            background: linear-gradient(135deg, #4f46e5, #4338ca); color: #fff; border: none;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 14px rgba(79,70,229,.28);
+            transition: all .18s;
+        }
+        .btn-primary:hover { box-shadow: 0 6px 22px rgba(79,70,229,.36); transform: translateY(-1px); }
+
+        .typing-dot { animation: blink 1.4s infinite both; }
+        .typing-dot:nth-child(2) { animation-delay: .2s; }
+        .typing-dot:nth-child(3) { animation-delay: .4s; }
+        @keyframes blink { 0%,80%,100%{opacity:.25} 40%{opacity:1} }
+
+        .mic-btn.recording { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 70%{box-shadow:0 0 0 14px rgba(239,68,68,0)} 100%{box-shadow:0 0 0 0 rgba(239,68,68,0)} }
+
+        @media (max-width: 1200px) {
+            .shell { grid-template-columns: 1fr 400px; }
+            .left-panel { display: none; }
+            .left-panel.mobile-show { display: flex; position: fixed; inset: 56px 0 0 0; z-index: 80; background: #fff; }
+        }
+        @media (max-width: 800px) {
+            .shell { grid-template-columns: 1fr; }
+            .left-panel { display: none; }
+            .right-panel { display: none; }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <!-- ===== Top Bar ===== -->
+    <header class="top-bar flex items-center justify-between px-5 bg-white border-b border-slate-200/80 z-40">
+        <div class="flex items-center gap-3">
+            <button id="menu-toggle" class="lg:hidden w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600"><i class="ri-menu-3-line text-lg"></i></button>
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow shadow-indigo-200">
+                <i class="ri-heart-pulse-line text-white text-lg"></i>
+            </div>
+            <div class="leading-tight">
+                <div class="text-[15px] font-bold text-slate-900">智能生育匹配系统</div>
+                <div class="text-[11px] text-slate-400">Intelligent Fertility Matching</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-1.5">
+                <span id="status-dot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span class="text-xs text-slate-500">在线</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ===== Left Panel: Structured Filter ===== -->
+    <aside id="left-panel" class="left-panel flex flex-col bg-white border-r border-slate-200/80 overflow-hidden">
+        <!-- Panel Tabs -->
+        <div class="flex items-center gap-5 px-5 pt-3 pb-0 border-b border-slate-100">
+            <button class="tab-btn active" data-tab="filter" onclick="switchTab('filter',this)">条件筛选</button>
+            <button class="tab-btn" data-tab="priority" onclick="switchTab('priority',this)">优先级排序</button>
+        </div>
+
+        <!-- Filter Tab -->
+        <div id="tab-filter" class="flex-1 scroll-y overflow-y-auto px-5 py-4 space-y-5">
+            <!-- 基础信息 -->
+            <section>
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">基础信息</div>
+                <div class="space-y-3">
+                    <div>
+                        <div class="text-[13px] font-semibold text-slate-700 mb-2"><i class="ri-graduation-cap-line mr-1 text-indigo-400"></i>学历要求</div>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="chip"><input type="radio" name="f_education" value="大专"><span>大专</span></label>
+                            <label class="chip"><input type="radio" name="f_education" value="本科"><span>本科</span></label>
+                            <label class="chip"><input type="radio" name="f_education" value="硕士"><span>硕士</span></label>
+                            <label class="chip"><input type="radio" name="f_education" value="博士"><span>博士</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-[13px] font-semibold text-slate-700 mb-2"><i class="ri-drop-line mr-1 text-rose-400"></i>血型</div>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="chip"><input type="radio" name="f_blood" value="A"><span>A 型</span></label>
+                            <label class="chip"><input type="radio" name="f_blood" value="B"><span>B 型</span></label>
+                            <label class="chip"><input type="radio" name="f_blood" value="O"><span>O 型</span></label>
+                            <label class="chip"><input type="radio" name="f_blood" value="AB"><span>AB 型</span></label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 体貌特征 -->
+            <section>
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">体貌特征</div>
+                <div class="space-y-3">
+                    <div>
+                        <div class="text-[13px] font-semibold text-slate-700 mb-2"><i class="ri-ruler-line mr-1 text-blue-400"></i>身高范围</div>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="chip"><input type="radio" name="f_height" value="170cm以上"><span>170cm+</span></label>
+                            <label class="chip"><input type="radio" name="f_height" value="175cm以上"><span>175cm+</span></label>
+                            <label class="chip"><input type="radio" name="f_height" value="180cm以上"><span>180cm+</span></label>
+                            <label class="chip"><input type="radio" name="f_height" value="170-180cm"><span>170-180cm</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-[13px] font-semibold text-slate-700 mb-2"><i class="ri-body-scan-line mr-1 text-emerald-400"></i>体型</div>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="chip"><input type="radio" name="f_figure" value="匀称型"><span>匀称型</span></label>
+                            <label class="chip"><input type="radio" name="f_figure" value="精壮型"><span>精壮型</span></label>
+                            <label class="chip"><input type="radio" name="f_figure" value="偏瘦型"><span>偏瘦型</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-[13px] font-semibold text-slate-700 mb-2"><i class="ri-contrast-2-line mr-1 text-amber-400"></i>肤色</div>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="chip"><input type="radio" name="f_skin" value="偏白"><span>偏白</span></label>
+                            <label class="chip"><input type="radio" name="f_skin" value="一般"><span>一般</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-[13px] font-semibold text-slate-700 mb-2"><i class="ri-user-smile-line mr-1 text-pink-400"></i>脸型</div>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="chip"><input type="radio" name="f_face" value="圆"><span>圆</span></label>
+                            <label class="chip"><input type="radio" name="f_face" value="椭圆"><span>椭圆</span></label>
+                            <label class="chip"><input type="radio" name="f_face" value="方"><span>方</span></label>
+                            <label class="chip"><input type="radio" name="f_face" value="长方"><span>长方</span></label>
+                            <label class="chip"><input type="radio" name="f_face" value="瓜子"><span>瓜子</span></label>
+                            <label class="chip"><input type="radio" name="f_face" value="菱形"><span>菱形</span></label>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-[13px] font-semibold text-slate-700 mb-2"><i class="ri-eye-line mr-1 text-cyan-400"></i>眼皮</div>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="chip"><input type="radio" name="f_eyelid" value="单"><span>单眼皮</span></label>
+                            <label class="chip"><input type="radio" name="f_eyelid" value="双"><span>双眼皮</span></label>
+                            <label class="chip"><input type="radio" name="f_eyelid" value="内双"><span>内双</span></label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 气质偏好 -->
+            <section>
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">气质偏好</div>
+                <div>
+                    <div class="text-[13px] font-semibold text-slate-700 mb-2"><i class="ri-star-smile-line mr-1 text-violet-400"></i>形象气质</div>
+                    <div class="flex flex-wrap gap-2">
+                        <label class="chip"><input type="radio" name="f_appear" value="文艺型"><span>文艺型</span></label>
+                        <label class="chip"><input type="radio" name="f_appear" value="阳光型"><span>阳光型</span></label>
+                        <label class="chip"><input type="radio" name="f_appear" value="成熟型"><span>成熟型</span></label>
+                        <label class="chip"><input type="radio" name="f_appear" value="绅士型"><span>绅士型</span></label>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Priority Tab (hidden by default) -->
+        <div id="tab-priority" class="flex-1 scroll-y overflow-y-auto px-5 py-4 hidden">
+            <p class="text-xs text-slate-500 mb-3">拖拽调整特征优先级，越靠上越优先被满足：</p>
+            <div id="priority-list" class="space-y-2">
+                <div draggable="true" data-feature="学历" class="drag-item flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-move"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-indigo-100 text-indigo-600 flex items-center justify-center text-[11px] font-bold">1</span><span class="text-sm font-medium text-slate-700">学历</span></div><i class="ri-draggable text-slate-400"></i></div>
+                <div draggable="true" data-feature="身高" class="drag-item flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-move"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-blue-100 text-blue-600 flex items-center justify-center text-[11px] font-bold">2</span><span class="text-sm font-medium text-slate-700">身高</span></div><i class="ri-draggable text-slate-400"></i></div>
+                <div draggable="true" data-feature="血型" class="drag-item flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-move"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-rose-100 text-rose-600 flex items-center justify-center text-[11px] font-bold">3</span><span class="text-sm font-medium text-slate-700">血型</span></div><i class="ri-draggable text-slate-400"></i></div>
+                <div draggable="true" data-feature="体型" class="drag-item flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-move"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-emerald-100 text-emerald-600 flex items-center justify-center text-[11px] font-bold">4</span><span class="text-sm font-medium text-slate-700">体型</span></div><i class="ri-draggable text-slate-400"></i></div>
+                <div draggable="true" data-feature="肤色" class="drag-item flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-move"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-amber-100 text-amber-600 flex items-center justify-center text-[11px] font-bold">5</span><span class="text-sm font-medium text-slate-700">肤色</span></div><i class="ri-draggable text-slate-400"></i></div>
+                <div draggable="true" data-feature="脸型" class="drag-item flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-move"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-pink-100 text-pink-600 flex items-center justify-center text-[11px] font-bold">6</span><span class="text-sm font-medium text-slate-700">脸型</span></div><i class="ri-draggable text-slate-400"></i></div>
+                <div draggable="true" data-feature="眼皮" class="drag-item flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-move"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-cyan-100 text-cyan-600 flex items-center justify-center text-[11px] font-bold">7</span><span class="text-sm font-medium text-slate-700">眼皮</span></div><i class="ri-draggable text-slate-400"></i></div>
+                <div draggable="true" data-feature="形象气质" class="drag-item flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-move"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-violet-100 text-violet-600 flex items-center justify-center text-[11px] font-bold">8</span><span class="text-sm font-medium text-slate-700">形象气质</span></div><i class="ri-draggable text-slate-400"></i></div>
+            </div>
+        </div>
+
+        <!-- Bottom Actions -->
+        <div class="px-5 py-3 border-t border-slate-100 bg-white space-y-2">
+            <div id="filter-preview" class="text-xs text-slate-400 truncate">请选择条件或直接输入文本</div>
+            <div class="flex gap-2">
+                <button onclick="clearAllFilters()" class="flex-1 h-[38px] rounded-xl border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition">清空</button>
+                <button onclick="applyFilters()" class="flex-1 btn-primary text-xs !h-[38px] !px-0 !rounded-xl">发送筛选条件</button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ===== Center: Chat ===== -->
+    <div class="flex flex-col bg-slate-50/70 overflow-hidden">
+        <div id="chat-messages" class="scroll-y flex-1 overflow-y-auto pt-6 pb-6 space-y-5">
+        </div>
+        <div class="border-t border-slate-200/60 bg-white">
+            <div class="px-5 py-3">
+                <div class="flex items-end gap-3">
+                    <textarea id="msg-input" class="chat-input flex-1" rows="2" placeholder="输入您的需求，如：本科学历、身高175以上、匀称体型、阳光气质的捐精人" onkeydown="handleKeyDown(event)"></textarea>
+                    <div class="flex gap-2 pb-0.5">
+                        <button id="mic-btn" onclick="toggleVoice()" class="mic-btn w-[42px] h-[42px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition" title="语音输入"><i class="ri-mic-line text-lg"></i></button>
+                        <button onclick="sendMessage()" class="btn-primary !h-[42px] !px-4 !rounded-xl"><i class="ri-send-plane-2-fill"></i></button>
+                    </div>
+                </div>
+                <div id="voice-status" class="hidden mt-2 flex items-center gap-2 text-sm text-red-500">
+                    <span class="w-2 h-2 rounded-full bg-red-500 typing-dot"></span>
+                    <span>正在录音，请说出您的需求...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Right: Candidate Panel ===== -->
+    <aside class="right-panel">
+        <div class="right-panel-header">
+            <div>
+                <div class="text-sm font-bold text-slate-800"><i class="ri-user-heart-line mr-1 text-indigo-500"></i>候选人列表</div>
+                <div id="panel-subtitle" class="text-[11px] text-slate-400 mt-0.5">系统优质推荐</div>
+            </div>
+            <span id="panel-count" class="text-xs text-slate-400"></span>
+        </div>
+        <div id="right-cards" class="right-panel-body scroll-y">
+            <div style="text-align:center;padding:40px 0;color:#94a3b8;font-size:13px">
+                <i class="ri-loader-4-line" style="font-size:24px;display:block;margin-bottom:8px"></i>加载中...
+            </div>
+        </div>
+    </aside>
+</div>
+
+<script>
+// ======================== STATE ========================
+let sessionId = null;
+let isRecording = false;
+let recognition = null;
+let isSending = false;
+let finalReplyText = '';
+let candidateMap = {};  // code -> candidate data
+
+// ======================== INIT ========================
+window.addEventListener('DOMContentLoaded', () => {
+    initSpeechRecognition();
+    initDrag();
+    initChipListeners();
+    startChat();
+    loadFeatured();
+    document.getElementById('menu-toggle')?.addEventListener('click', () => {
+        document.getElementById('left-panel').classList.toggle('mobile-show');
+    });
+});
+
+// ======================== TAB ========================
+function switchTab(name, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-filter').classList.toggle('hidden', name !== 'filter');
+    document.getElementById('tab-priority').classList.toggle('hidden', name !== 'priority');
+}
+
+// ======================== CHIP LISTENERS ========================
+function initChipListeners() {
+    document.querySelectorAll('.chip input').forEach(input => {
+        input.addEventListener('change', updatePreview);
+    });
+}
+
+// ======================== FILTERS ========================
+function getFilterValues() {
+    const v = (n) => { const el = document.querySelector(`input[name="${n}"]:checked`); return el ? el.value : ''; };
+    return {
+        education: v('f_education'), blood: v('f_blood'), height: v('f_height'),
+        figure: v('f_figure'), skin: v('f_skin'), face: v('f_face'),
+        eyelid: v('f_eyelid'), appear: v('f_appear'),
+    };
+}
+
+function buildFilterText() {
+    const f = getFilterValues();
+    const parts = [];
+    if (f.education) parts.push(`${f.education}学历`);
+    if (f.blood) parts.push(`${f.blood}型血`);
+    if (f.height) parts.push(`身高${f.height}`);
+    if (f.figure) parts.push(`${f.figure}体型`);
+    if (f.skin) parts.push(`${f.skin}肤色`);
+    if (f.face) parts.push(`${f.face}脸`);
+    if (f.eyelid) parts.push(`${f.eyelid}眼皮`);
+    if (f.appear) parts.push(`${f.appear}气质`);
+    if (parts.length === 0) return '';
+    const prio = getPriorityOrder().join(' > ');
+    return `请帮我匹配${parts.join('、')}的捐精人。特征优先级：${prio}`;
+}
+
+function updatePreview() {
+    const t = buildFilterText();
+    document.getElementById('filter-preview').textContent = t || '请选择条件或直接输入文本';
+}
+
+function clearAllFilters() {
+    document.querySelectorAll('.chip input').forEach(i => i.checked = false);
+    updatePreview();
+}
+
+function applyFilters() {
+    const text = buildFilterText();
+    if (!text) return;
+    document.getElementById('msg-input').value = text;
+    sendMessage();
+    // close mobile panel
+    document.getElementById('left-panel').classList.remove('mobile-show');
+}
+
+// ======================== DRAG ========================
+function getPriorityOrder() {
+    return Array.from(document.querySelectorAll('#priority-list .drag-item')).map(el => el.dataset.feature);
+}
+
+function initDrag() {
+    const list = document.getElementById('priority-list');
+    let dragging = null;
+    list.querySelectorAll('.drag-item').forEach(item => {
+        item.addEventListener('dragstart', () => { dragging = item; item.classList.add('dragging'); });
+        item.addEventListener('dragend', () => { item.classList.remove('dragging'); dragging = null; reindexPriority(); updatePreview(); });
+    });
+    list.addEventListener('dragover', e => {
+        e.preventDefault();
+        if (!dragging) return;
+        const after = getDragAfter(list, e.clientY);
+        after == null ? list.appendChild(dragging) : list.insertBefore(dragging, after);
+    });
+}
+
+function getDragAfter(container, y) {
+    const els = [...container.querySelectorAll('.drag-item:not(.dragging)')];
+    return els.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        return offset < 0 && offset > closest.offset ? { offset, element: child } : closest;
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function reindexPriority() {
+    document.querySelectorAll('#priority-list .drag-item').forEach((el, i) => {
+        const badge = el.querySelector('span:first-child');
+        if (badge) badge.textContent = i + 1;
+    });
+}
+
+// ======================== CHAT ========================
+async function startChat() {
+    try {
+        const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: null, message: '' }) });
+        const data = await res.json();
+        sessionId = data.session_id;
+        appendMessage('assistant', data.reply);
+    } catch (e) {
+        appendMessage('system', '连接服务器失败，请检查服务是否启动。');
+    }
+}
+
+function buildFinalMessage(raw) {
+    const structured = buildFilterText();
+    if (raw && structured) return `${raw}\n补充结构化条件：${structured}`;
+    return raw || structured;
+}
+
+async function sendMessage() {
+    const input = document.getElementById('msg-input');
+    const text = buildFinalMessage(input.value.trim());
+    if (!text || isSending) return;
+    input.value = '';
+    appendMessage('user', text);
+    isSending = true;
+
+    const { wrapper, contentEl } = createStreamBubble();
+    const col = chatCol();
+    col.appendChild(wrapper);
+    scrollBottom();
+
+    let candidates = [];
+    finalReplyText = '';
+
+    try {
+        const res = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, message: text }) });
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            let evt = '';
+            for (const line of lines) {
+                if (line.startsWith('event: ')) { evt = line.slice(7).trim(); }
+                else if (line.startsWith('data: ') && evt) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        handleSSE(evt, data, contentEl, (items) => { candidates = items; });
+                    } catch (_) {}
+                    evt = '';
+                }
+            }
+            scrollBottom();
+        }
+        if (finalReplyText) contentEl.innerHTML = fmtMd(finalReplyText);
+        // Render cards to right panel
+        if (candidates.length > 0) {
+            candidates.forEach(c => { if (c.donor_info) candidateMap[c.donor_info.code] = c; });
+            updateRightPanel(candidates, '匹配结果');
+        }
+        scrollBottom();
+        if (finalReplyText) speakText(finalReplyText.replace(/\*\*/g, '').replace(/\n/g, ' ').substring(0, 200));
+    } catch (e) {
+        contentEl.innerHTML = '<span class="text-red-500">请求失败，请稍后重试。</span>';
+    } finally {
+        isSending = false;
+    }
+}
+
+function chatCol() { return document.getElementById('chat-messages'); }
+function scrollBottom() { const c = document.getElementById('chat-messages'); c.scrollTop = c.scrollHeight; }
+
+function handleSSE(event, data, contentEl, onCandidates) {
+    switch (event) {
+        case 'token': {
+            const cur = contentEl.getAttribute('data-raw') || '';
+            const next = cur + (data.text || '');
+            contentEl.setAttribute('data-raw', next);
+            contentEl.innerHTML = fmtMd(next);
+            break;
+        }
+        case 'reply': finalReplyText = data.text || ''; contentEl.innerHTML = fmtMd(finalReplyText); break;
+        case 'candidates': if (data.items) onCandidates(data.items); break;
+        case 'state': if (data.session_id) sessionId = data.session_id; break;
+        case 'error': contentEl.innerHTML = `<span class="text-red-500">${esc(data.message || '未知错误')}</span>`; break;
+    }
+}
+
+function createStreamBubble() {
+    const w = document.createElement('div');
+    w.className = 'msg-row bot-msg';
+    w.innerHTML = `<div class="msg-content stream-content">
+        <span class="typing-dot inline-block w-2 h-2 bg-slate-400 rounded-full"></span>
+        <span class="typing-dot inline-block w-2 h-2 bg-slate-400 rounded-full"></span>
+        <span class="typing-dot inline-block w-2 h-2 bg-slate-400 rounded-full"></span>
+    </div>`;
+    return { wrapper: w, contentEl: w.querySelector('.stream-content') };
+}
+
+function handleKeyDown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
+
+// ======================== MESSAGE RENDER ========================
+function appendMessage(role, content) {
+    const col = chatCol();
+    const w = document.createElement('div');
+    if (role === 'user') {
+        w.className = 'msg-row user-msg';
+        w.innerHTML = `<div class="msg-content">${esc(content)}</div>`;
+    } else if (role === 'system') {
+        w.className = 'msg-row sys-msg';
+        w.innerHTML = `<div class="msg-content"><i class="ri-alert-line mr-1"></i>${esc(content)}</div>`;
+    } else {
+        w.className = 'msg-row bot-msg';
+        w.innerHTML = `<div class="msg-content">${fmtMd(content)}</div>`;
+    }
+    col.appendChild(w); scrollBottom();
+}
+
+// ======================== CANDIDATE CARD ========================
+function renderCard(candidate, index) {
+    const d = candidate.donor_info;
+    const s = Math.round(candidate.score * 100);
+    const fm = candidate.field_match || {};
+    const ml = candidate.match_level || 'full';
+
+    const sClr = s >= 85 ? '#059669' : s >= 70 ? '#2563eb' : s >= 55 ? '#d97706' : '#94a3b8';
+
+    const mlCfg = {
+        full:    { text: '完全匹配', bg: '#ecfdf5', clr: '#059669', icon: 'ri-shield-check-line' },
+        relaxed: { text: '部分匹配', bg: '#fffbeb', clr: '#d97706', icon: 'ri-error-warning-line' },
+        similarity_only: { text: '智能推荐', bg: '#f1f5f9', clr: '#64748b', icon: 'ri-sparkling-line' },
+        featured: { text: '优质推荐', bg: '#eef2ff', clr: '#4f46e5', icon: 'ri-award-line' },
+    };
+    const lv = mlCfg[ml] || mlCfg.full;
+
+    const fmKeys = Object.keys(fm);
+    const matchedCount = fmKeys.filter(k => fm[k].match).length;
+    const totalCount = fmKeys.length;
+
+    const attrs = [
+        { l: '学历', v: d.education, f: fm.education },
+        { l: '身高', v: d.height + 'cm', f: fm.height },
+        { l: '体型', v: d.figure, f: fm.figure },
+        { l: '肤色', v: d.skin_color, f: fm.skin_color },
+        { l: '血型', v: d.blood_type + '型', f: fm.blood_type },
+        { l: '气质', v: d.appearance, f: fm.appearance },
+    ];
+    const attrHtml = attrs.map(a => {
+        const v = esc(String(a.v || '-'));
+        let icon = '';
+        if (a.f) {
+            icon = a.f.match
+                ? `<i class="ri-check-line fm-icon" style="color:#34d399" title="符合"></i>`
+                : `<i class="ri-close-line fm-icon" style="color:#fb7185" title="您要求${esc(a.f.user)}，实际${esc(a.f.actual)}"></i>`;
+        }
+        return `<div class="cand-attr">${icon}<div class="al">${a.l}</div><div class="av">${v}</div></div>`;
+    }).join('');
+
+    return `
+    <div class="cand-card">
+        <div class="cand-header">
+            <div class="cand-rank">${index + 1}</div>
+            <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+                    <span style="font-size:15px;font-weight:600;color:#0f172a">${esc(d.code)}</span>
+                    <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:${lv.bg};color:${lv.clr};font-weight:500;display:inline-flex;align-items:center;gap:3px"><i class="${lv.icon}" style="font-size:11px"></i>${lv.text}</span>
+                </div>
+                <div style="font-size:12px;color:#94a3b8">${esc(d.ethnicity)} · ${totalCount > 0 ? matchedCount + '/' + totalCount + ' 条件符合' : ''}</div>
+            </div>
+            ${ml !== 'featured' ? `<div class="cand-score" style="color:${sClr}">${s}<span class="pct">%</span></div>` : ''}
+        </div>
+
+        <div class="cand-attrs">${attrHtml}</div>
+
+        <div style="padding:12px 16px 0">
+            <button onclick="this.nextElementSibling.classList.toggle('open');this.querySelector('i').style.transform=this.nextElementSibling.classList.contains('open')?'rotate(180deg)':''"
+                style="display:flex;align-items:center;gap:5px;font-size:12px;color:#6366f1;font-weight:500;background:none;border:none;cursor:pointer;padding:0">
+                <i class="ri-arrow-down-s-line" style="transition:transform .2s;font-size:15px"></i>更多详情
+            </button>
+            <div class="card-detail">
+                <div>
+                    <div class="detail-grid" style="margin-top:12px;border-radius:10px;overflow:hidden">
+                        ${_dtItem('脸型', d.face_shape)}${_dtItem('眼皮', d.eyelid)}
+                        ${_dtItem('唇形', d.lip_shape)}${_dtItem('体重', d.weight ? d.weight+'kg' : '-')}
+                        ${_dtItem('BMI', d.bmi || '-')}${_dtItem('标本数', d.specimen_count || '-')}
+                    </div>
+                    ${d.personality ? `<div style="padding:10px 0 2px;font-size:12px;color:#64748b"><span style="color:#475569;font-weight:500">性格：</span>${esc(d.personality)}</div>` : ''}
+                    ${d.hobby ? `<div style="padding:2px 0 8px;font-size:12px;color:#64748b"><span style="color:#475569;font-weight:500">爱好：</span>${esc(d.hobby)}</div>` : ''}
+                </div>
+            </div>
+        </div>
+
+        <div class="cand-reason" style="border-left-color:${sClr}">${esc(candidate.reason)}</div>
+
+        <div class="cand-actions">
+            <button class="fb-btn like" onclick="handleLike(this,'${d.code}')"><i class="ri-thumb-up-line"></i>满意</button>
+            <button class="fb-btn dislike" onclick="handleDislike('${d.code}')"><i class="ri-thumb-down-line"></i>不满意</button>
+        </div>
+    </div>`;
+}
+
+function _dtItem(label, value) {
+    return `<div class="d-item"><span class="d-label">${label}</span><span class="d-val">${esc(String(value || '-'))}</span></div>`;
+}
+
+// ======================== RIGHT PANEL ========================
+function updateRightPanel(candidates, subtitle) {
+    const container = document.getElementById('right-cards');
+    const sub = document.getElementById('panel-subtitle');
+    const cnt = document.getElementById('panel-count');
+    sub.textContent = subtitle || '系统优质推荐';
+    cnt.textContent = candidates.length + ' 位';
+    container.innerHTML = candidates.map((c, i) => renderCard(c, i)).join('');
+}
+
+async function loadFeatured() {
+    try {
+        const res = await fetch('/api/featured?limit=5');
+        const data = await res.json();
+        if (data.items && data.items.length > 0) {
+            updateRightPanel(data.items, '系统优质推荐');
+        }
+    } catch (e) {
+        document.getElementById('right-cards').innerHTML = '<div style="text-align:center;padding:40px 0;color:#94a3b8;font-size:13px">加载失败</div>';
+    }
+}
+
+// ======================== FEEDBACK ========================
+async function submitFeedback(candidateId, feedback) {
+    try {
+        await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, candidate_id: candidateId, feedback }) });
+    } catch (e) { console.error('反馈提交失败', e); }
+}
+
+async function handleLike(btn, code) {
+    await submitFeedback(code, 'like');
+    const actions = btn.closest('.cand-actions');
+    actions.innerHTML = `<div style="flex:1;text-align:center;padding:8px 0;font-size:13px;color:#059669;font-weight:500"><i class="ri-check-line" style="margin-right:4px"></i>已选择此候选人，感谢反馈！</div>`;
+}
+
+async function handleDislike(code) {
+    // 1. record feedback
+    await submitFeedback(code, 'dislike');
+
+    // 2. build context message from unmatched fields
+    const c = candidateMap[code];
+    const fm = c?.field_match || {};
+    const fieldLabels = { education: '学历', blood_type: '血型', height: '身高', figure: '体型', skin_color: '肤色', face_shape: '脸型', eyelid: '眼皮', appearance: '气质' };
+    const unmatched = [];
+    for (const [field, info] of Object.entries(fm)) {
+        if (!info.match) {
+            const label = fieldLabels[field] || field;
+            unmatched.push(`${label}(要求${info.user}，实际${info.actual})`);
+        }
+    }
+
+    let msg = `我对候选人 ${code} 不太满意`;
+    if (unmatched.length > 0) {
+        msg += `，主要是以下方面不符合预期：${unmatched.join('、')}`;
+    }
+    msg += `。请帮我调整条件重新推荐。`;
+
+    // 3. send as a user message to trigger LLM follow-up
+    document.getElementById('msg-input').value = msg;
+    sendMessage();
+}
+
+// ======================== VOICE ========================
+function initSpeechRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    recognition = new SR();
+    recognition.lang = 'zh-CN'; recognition.continuous = false; recognition.interimResults = true;
+    recognition.onresult = (e) => {
+        let fin = '', tmp = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) { e.results[i].isFinal ? (fin += e.results[i][0].transcript) : (tmp += e.results[i][0].transcript); }
+        const input = document.getElementById('msg-input');
+        if (fin) { input.value = fin; stopRecording(); sendMessage(); } else { input.value = tmp; }
+    };
+    recognition.onerror = (e) => { stopRecording(); if (e.error === 'not-allowed') appendMessage('system', '请允许麦克风权限。'); };
+    recognition.onend = () => { if (isRecording) stopRecording(); };
+}
+function toggleVoice() { isRecording ? stopRecording() : startRecording(); }
+function startRecording() {
+    if (!recognition) { appendMessage('system', '浏览器不支持语音识别，请使用 Chrome。'); return; }
+    isRecording = true; recognition.start();
+    const btn = document.getElementById('mic-btn'); btn.classList.add('recording', 'bg-red-100'); btn.querySelector('i').className = 'ri-mic-fill text-red-500 text-lg';
+    document.getElementById('voice-status').classList.remove('hidden');
+}
+function stopRecording() {
+    isRecording = false; if (recognition) recognition.stop();
+    const btn = document.getElementById('mic-btn'); btn.classList.remove('recording', 'bg-red-100'); btn.querySelector('i').className = 'ri-mic-line text-slate-500 text-lg';
+    document.getElementById('voice-status').classList.add('hidden');
+}
+function speakText(text) {
+    if (!window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(text.substring(0, 200)); u.lang = 'zh-CN'; u.rate = 1; u.pitch = 1;
+    window.speechSynthesis.speak(u);
+}
+
+// ======================== UTIL ========================
+function esc(t) { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+function fmtMd(t) { if (!t) return ''; let h = esc(t); h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); h = h.replace(/\n/g, '<br>'); return h; }
+</script>
+</body>
+</html>

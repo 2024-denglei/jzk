@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>科研风格架构图 - 智能生育匹配系统</title>
+  <style>
+    :root {
+      --ink: #111827;
+      --muted: #4b5563;
+      --line: #d1d5db;
+      --bg: #f8fafc;
+      --paper: #ffffff;
+      --accent: #1f2937;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 24px 48px;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.35;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 34px;
+      padding: 0 14px;
+      border: 1px solid #9ca3af;
+      border-radius: 6px;
+      color: #111827;
+      background: #fff;
+      text-decoration: none;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .btn:hover { background: #f3f4f6; }
+    .figure-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: 0 8px 30px rgba(15, 23, 42, .06);
+      padding: 18px;
+      overflow: auto;
+    }
+    .figure-card img {
+      display: block;
+      width: 100%;
+      min-width: 1080px;
+      height: auto;
+      background: #fff;
+    }
+    .caption {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      text-align: justify;
+    }
+    .notes {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .note {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .note strong { display: block; margin-bottom: 4px; }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #f3f4f6;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    @media print {
+      body { background: #fff; }
+      .page { max-width: none; padding: 0; }
+      .toolbar, .notes { display: none; }
+      .figure-card { border: none; box-shadow: none; padding: 0; }
+      .figure-card img { width: 100%; min-width: 0; }
+      .caption { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="toolbar">
+      <div>
+        <h1>智能生育匹配系统科研风格架构图</h1>
+        <div class="sub">
+          Publication-style vector diagram. 建议用于论文、开题报告、项目答辩 PPT 或技术报告。<br />
+          文件：<code>docs/research_architecture.svg</code>，矢量格式，可无损缩放。
+        </div>
+      </div>
+      <div class="actions">
+        <a class="btn" href="/docs-static/research_architecture.svg" download>下载 SVG</a>
+        <button class="btn" onclick="window.print()">打印 / 导出 PDF</button>
+      </div>
+    </div>
+
+    <section class="figure-card">
+      <img src="/docs-static/research_architecture.svg" alt="智能生育匹配系统科研风格架构图" />
+      <p class="caption">
+        <strong>Figure 1.</strong>
+        Research-style architecture diagram of the LLM-assisted donor matching dialogue system.
+        The system separates semantic interpretation from deterministic matching: the LLM converts natural language into structured features and constraint levels,
+        while the matching core performs feature encoding, dynamic hard-constraint filtering, masked similarity computation, and explainable ranking.
+      </p>
+    </section>
+
+    <section class="notes">
+      <div class="note">
+        <strong>科研绘图规范</strong>
+        使用低饱和颜色、无表情符号、编号数据流、模块边界和英文副标题，适合论文插图。
+      </div>
+      <div class="note">
+        <strong>可解释性</strong>
+        图中明确区分 LLM 语义解析与规则化匹配引擎，便于说明模型不是直接“黑盒推荐”。
+      </div>
+      <div class="note">
+        <strong>可导出性</strong>
+        SVG 是矢量格式，可直接放入 Word、LaTeX、PPT，也可通过浏览器打印为 PDF。
+      </div>
+    </section>
+  </main>
+</body>
+</html>

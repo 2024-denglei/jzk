@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能生育匹配系统 — 架构图</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #f5f7fb; color: #333; }
+        .header { background: linear-gradient(135deg, #4f46e5, #6366f1); color: #fff; padding: 32px 0; text-align: center; }
+        .header h1 { font-size: 28px; font-weight: 700; }
+        .header p { margin-top: 8px; font-size: 14px; opacity: 0.85; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+        .section { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 28px 32px; margin-bottom: 32px; }
+        .section h2 { font-size: 20px; font-weight: 600; color: #4f46e5; margin-bottom: 20px; border-left: 4px solid #6366f1; padding-left: 12px; }
+        .mermaid { display: flex; justify-content: center; overflow-x: auto; }
+        .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px; font-size: 13px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-color { width: 14px; height: 14px; border-radius: 3px; }
+        .file-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+        .file-table th { background: #f1f5f9; text-align: left; padding: 10px 12px; font-weight: 600; }
+        .file-table td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; }
+        .file-table tr:hover td { background: #f8fafc; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+        .tag-api { background: #dbeafe; color: #1d4ed8; }
+        .tag-core { background: #dcfce7; color: #15803d; }
+        .tag-dialogue { background: #fef3c7; color: #b45309; }
+        .tag-frontend { background: #fce7f3; color: #be185d; }
+        .tag-voice { background: #e0e7ff; color: #4338ca; }
+        .tag-config { background: #f1f5f9; color: #475569; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>智能生育匹配系统 — 对话智能体架构图</h1>
+    <p>Intelligent Fertility Matching System — Dialogue Agent Architecture</p>
+</div>
+
+<div class="container">
+
+<!-- 1. 系统总览 -->
+<div class="section">
+    <h2>1. 系统总体架构</h2>
+    <div class="mermaid">
+graph TB
+    subgraph 用户层["👤 用户层 (User Layer)"]
+        Browser["🌐 浏览器<br/>index.html"]
+        Voice["🎤 语音输入<br/>Web Speech API"]
+        TTS["🔊 语音播报<br/>SpeechSynthesis"]
+    end
+
+    subgraph API层["🔌 API 网关层 (FastAPI)"]
+        Main["main.py<br/>应用入口 & 路由注册"]
+        ChatAPI["POST /api/chat<br/>chat.py"]
+        StreamAPI["POST /api/chat/stream<br/>chat_stream.py (SSE)"]
+        FeedbackAPI["POST /api/feedback<br/>feedback.py"]
+        Health["GET /health"]
+    end
+
+    subgraph 对话层["💬 对话管理层 (Dialogue)"]
+        NLU["nlu.py<br/>意图识别 & 特征提取"]
+        Flow["dialogue_flow.py<br/>状态机流转"]
+        RespGen["response_gen.py<br/>回复生成"]
+        Session["session.py<br/>会话管理"]
+    end
+
+    subgraph 核心层["⚙️ 核心匹配层 (Core)"]
+        Loader["data_loader.py<br/>数据加载"]
+        FeatEng["feature_engine.py<br/>特征工程"]
+        Matcher["matcher.py<br/>相似度计算 + 硬约束"]
+        Ranker["ranker.py<br/>排序 & 解释"]
+    end
+
+    subgraph 外部服务["☁️ 外部服务"]
+        LLM["LLM API<br/>(DeepSeek / OpenAI)"]
+        Excel["Excel 数据文件<br/>人造精子匹配数据.xlsx"]
+    end
+
+    subgraph 配置["📝 配置"]
+        Config["config.py + .env"]
+    end
+
+    Browser -- "文字/语音" --> ChatAPI
+    Browser -- "SSE 流式" --> StreamAPI
+    Browser -- "反馈" --> FeedbackAPI
+    Voice -.-> Browser
+    TTS -.-> Browser
+
+    ChatAPI --> NLU
+    StreamAPI --> NLU
+    ChatAPI --> Flow
+    StreamAPI --> Flow
+    ChatAPI --> RespGen
+    FeedbackAPI --> Session
+
+    NLU -- "调用 LLM" --> LLM
+    NLU --> Flow
+    Flow --> Session
+    RespGen --> Flow
+    RespGen --> Matcher
+
+    Loader -- "读取" --> Excel
+    FeatEng --> Loader
+    Matcher --> FeatEng
+    Ranker --> Matcher
+
+    Config -.-> Main
+    Config -.-> NLU
+    Config -.-> Matcher
+
+    style 用户层 fill:#eff6ff,stroke:#3b82f6,stroke-width:2px
+    style API层 fill:#f0fdf4,stroke:#22c55e,stroke-width:2px
+    style 对话层 fill:#fffbeb,stroke:#f59e0b,stroke-width:2px
+    style 核心层 fill:#fdf2f8,stroke:#ec4899,stroke-width:2px
+    style 外部服务 fill:#f5f3ff,stroke:#8b5cf6,stroke-width:2px
+    style 配置 fill:#f8fafc,stroke:#94a3b8,stroke-width:1px
+    </div>
+    <div class="legend">
+        <div class="legend-item"><div class="legend-color" style="background:#3b82f6"></div>用户层 — 浏览器前端 & 语音交互</div>
+        <div class="legend-item"><div class="legend-color" style="background:#22c55e"></div>API 层 — FastAPI 路由 & 中间件</div>
+        <div class="legend-item"><div class="legend-color" style="background:#f59e0b"></div>对话层 — NLU、状态机、回复生成</div>
+        <div class="legend-item"><div class="legend-color" style="background:#ec4899"></div>核心层 — 数据、特征、匹配、排序</div>
+        <div class="legend-item"><div class="legend-color" style="background:#8b5cf6"></div>外部服务 — LLM API & 数据源</div>
+    </div>
+</div>
+
+<!-- 2. 对话流程状态机 -->
+<div class="section">
+    <h2>2. 对话状态机 (Dialogue State Machine)</h2>
+    <div class="mermaid">
+stateDiagram-v2
+    [*] --> START : 用户打开页面
+    START --> COLLECTING : 发送欢迎语
+    COLLECTING --> MATCHING : 特征足够
+    COLLECTING --> COLLECTING : 追问补充
+    MATCHING --> PRESENTING : 匹配成功
+    MATCHING --> COLLECTING : 无结果,放宽条件
+    PRESENTING --> MATCHING : 用户修改/追加条件 (refine)
+    PRESENTING --> FEEDBACK : 用户点击满意/不满意
+    FEEDBACK --> MATCHING : 继续调整
+    FEEDBACK --> END : 用户满意结束
+    PRESENTING --> END : farewell
+    COLLECTING --> END : farewell
+
+    note right of MATCHING
+        执行流程:
+        1. encode_query → 特征向量+掩码
+        2. compute_similarity → 余弦+欧氏
+        3. hard_filter → 硬约束过滤
+        4. filter_candidates → 阈值筛选
+        5. rank_and_explain → 排序+解释
+    end note
+
+    note right of PRESENTING
+        关键规则:
+        用户在此状态提交任何新特征
+        → 强制走 refine→match 流程
+        → 累积之前条件,不重置
+    end note
+    </div>
+</div>
+
+<!-- 3. 请求处理流程 -->
+<div class="section">
+    <h2>3. 请求处理时序 (Request Processing Sequence)</h2>
+    <div class="mermaid">
+sequenceDiagram
+    actor User as 用户
+    participant FE as 前端 (index.html)
+    participant API as API (chat_stream.py)
+    participant NLU as NLU (nlu.py)
+    participant LLM as LLM API
+    participant DF as 对话流 (dialogue_flow)
+    participant Core as 匹配引擎 (core)
+    participant Data as 数据源 (Excel)
+
+    User->>FE: 输入查询 "硕士 175cm以上"
+    FE->>API: POST /api/chat/stream (SSE)
+
+    API->>NLU: parse_user_intent()
+    NLU->>LLM: 流式请求 (stream=True)
+    loop 流式返回
+        LLM-->>NLU: token chunk
+        NLU-->>API: token event
+        API-->>FE: SSE: event=token
+        FE-->>User: 实时显示文字
+    end
+    LLM-->>NLU: [完成] JSON 结构
+    NLU-->>API: {intent, features}
+
+    API->>DF: determine_next_action()
+    DF-->>API: action="match"
+
+    API->>Core: encode_query()
+    Core->>Core: compute_similarity()
+    Core->>Core: hard_filter()
+    Core->>Core: filter_candidates()
+    Core->>Core: rank_and_explain()
+    Core-->>API: candidates[]
+
+    API-->>FE: SSE: event=reply
+    API-->>FE: SSE: event=candidates
+    API-->>FE: SSE: event=done
+
+    FE-->>User: 渲染文本 + 候选人卡片
+    </div>
+</div>
+
+<!-- 4. 核心匹配引擎流程 -->
+<div class="section">
+    <h2>4. 核心匹配引擎流程 (Matching Pipeline)</h2>
+    <div class="mermaid">
+graph LR
+    A["用户需求<br/>(parsed_features)"] --> B["encode_query()<br/>特征编码 + 掩码"]
+    B --> C["compute_similarity()<br/>余弦 × 0.6 + 欧氏 × 0.4<br/>仅计算掩码维度"]
+    C --> D["hard_filter()<br/>硬约束过滤"]
+    D --> E["filter_candidates()<br/>阈值 ≥ 0.7"]
+    E --> F["rank_and_explain()<br/>Top-K=5 排序"]
+    F --> G["匹配结果<br/>(candidates)"]
+
+    B2["donor_df<br/>捐精人数据"] --> B
+    B2 --> D
+
+    style A fill:#dbeafe,stroke:#2563eb
+    style G fill:#dcfce7,stroke:#16a34a
+    style B fill:#fef3c7,stroke:#d97706
+    style C fill:#fef3c7,stroke:#d97706
+    style D fill:#fee2e2,stroke:#dc2626
+    style E fill:#fef3c7,stroke:#d97706
+    style F fill:#fef3c7,stroke:#d97706
+    style B2 fill:#f3e8ff,stroke:#9333ea
+    </div>
+    <br/>
+    <table class="file-table">
+        <tr><th>步骤</th><th>模块</th><th>说明</th></tr>
+        <tr><td>特征编码</td><td>feature_engine.py</td><td>序数编码(学历)、Min-Max 归一化(身高)、One-Hot 编码(体型/肤色/血型/脸型/眼皮/气质)；返回向量 + 布尔掩码</td></tr>
+        <tr><td>相似度计算</td><td>matcher.py</td><td>余弦相似度(权重0.6) + 欧氏距离归一化(权重0.4)，仅在掩码为 True 的维度上计算</td></tr>
+        <tr><td>硬约束过滤</td><td>matcher.py</td><td>学历/血型精确匹配，身高范围匹配，体型/肤色精确匹配；不满足则直接排除</td></tr>
+        <tr><td>阈值筛选</td><td>matcher.py</td><td>综合得分 ≥ 0.7 方可入选</td></tr>
+        <tr><td>排序解释</td><td>ranker.py</td><td>取 Top-5，为每位候选人生成自然语言匹配理由</td></tr>
+    </table>
+</div>
+
+<!-- 5. 特征编码维度 -->
+<div class="section">
+    <h2>5. 特征编码维度 (Feature Vector: 26 维)</h2>
+    <div class="mermaid">
+graph LR
+    subgraph 序数编码["序数编码 (1维)"]
+        E1["学历<br/>大专=0.25 本科=0.5<br/>硕士=0.75 博士=1.0"]
+    end
+    subgraph 归一化["Min-Max (1维)"]
+        E2["身高<br/>(h-150)/(200-150)"]
+    end
+    subgraph OneHot["One-Hot (24维)"]
+        E3["体型 ×4"]
+        E4["肤色 ×3"]
+        E5["血型 ×5"]
+        E6["脸型 ×5"]
+        E7["眼皮 ×3"]
+        E8["形象气质 ×4"]
+    end
+
+    E1 --- E2 --- E3 --- E4 --- E5 --- E6 --- E7 --- E8
+
+    style 序数编码 fill:#dbeafe,stroke:#3b82f6
+    style 归一化 fill:#dcfce7,stroke:#22c55e
+    style OneHot fill:#fef3c7,stroke:#f59e0b
+    </div>
+</div>
+
+<!-- 6. 项目文件结构 -->
+<div class="section">
+    <h2>6. 项目文件结构</h2>
+    <table class="file-table">
+        <tr><th>文件</th><th>模块</th><th>职责</th></tr>
+        <tr><td><code>main.py</code></td><td><span class="tag tag-config">入口</span></td><td>FastAPI 应用创建、启动加载数据/模型、注册路由、静态文件服务</td></tr>
+        <tr><td><code>config.py</code> / <code>.env</code></td><td><span class="tag tag-config">配置</span></td><td>LLM API Key/URL/Model、数据路径、匹配参数、服务端口</td></tr>
+        <tr><td colspan="3" style="background:#f8fafc;font-weight:600">api/</td></tr>
+        <tr><td><code>api/chat.py</code></td><td><span class="tag tag-api">API</span></td><td>POST /api/chat — 普通对话接口，含 mock NLU 回退</td></tr>
+        <tr><td><code>api/chat_stream.py</code></td><td><span class="tag tag-api">API</span></td><td>POST /api/chat/stream — SSE 流式对话接口</td></tr>
+        <tr><td><code>api/feedback.py</code></td><td><span class="tag tag-api">API</span></td><td>POST /api/feedback — 用户反馈接口</td></tr>
+        <tr><td colspan="3" style="background:#f8fafc;font-weight:600">dialogue/</td></tr>
+        <tr><td><code>dialogue/nlu.py</code></td><td><span class="tag tag-dialogue">对话</span></td><td>LLM 意图识别 & 特征提取，System Prompt 定义</td></tr>
+        <tr><td><code>dialogue/dialogue_flow.py</code></td><td><span class="tag tag-dialogue">对话</span></td><td>对话状态机：START→COLLECTING→MATCHING→PRESENTING→FEEDBACK→END</td></tr>
+        <tr><td><code>dialogue/response_gen.py</code></td><td><span class="tag tag-dialogue">对话</span></td><td>综合 NLU 结果、对话状态、匹配结果生成最终回复</td></tr>
+        <tr><td><code>dialogue/session.py</code></td><td><span class="tag tag-dialogue">对话</span></td><td>会话上下文管理：状态、特征累积、历史记录、超时清理</td></tr>
+        <tr><td colspan="3" style="background:#f8fafc;font-weight:600">core/</td></tr>
+        <tr><td><code>core/data_loader.py</code></td><td><span class="tag tag-core">核心</span></td><td>从 Excel 加载捐精人数据，清洗列名，过滤可用记录</td></tr>
+        <tr><td><code>core/feature_engine.py</code></td><td><span class="tag tag-core">核心</span></td><td>特征编码器：序数/归一化/One-Hot 编码，生成 26 维特征矩阵</td></tr>
+        <tr><td><code>core/matcher.py</code></td><td><span class="tag tag-core">核心</span></td><td>相似度计算(余弦+欧氏加权)、硬约束过滤、候选人筛选</td></tr>
+        <tr><td><code>core/ranker.py</code></td><td><span class="tag tag-core">核心</span></td><td>Top-K 排序，为每位候选人生成自然语言匹配解释</td></tr>
+        <tr><td colspan="3" style="background:#f8fafc;font-weight:600">frontend/ & voice/</td></tr>
+        <tr><td><code>frontend/index.html</code></td><td><span class="tag tag-frontend">前端</span></td><td>对话界面 (TailwindCSS)、SSE 流式渲染、候选人卡片、语音交互</td></tr>
+        <tr><td><code>voice/asr.py</code></td><td><span class="tag tag-voice">语音</span></td><td>ASR 占位模块（原型使用前端 Web Speech API）</td></tr>
+        <tr><td><code>voice/tts.py</code></td><td><span class="tag tag-voice">语音</span></td><td>TTS 占位模块（原型使用前端 SpeechSynthesis）</td></tr>
+    </table>
+</div>
+
+<!-- 7. 技术栈 -->
+<div class="section">
+    <h2>7. 技术栈概览</h2>
+    <div class="mermaid">
+mindmap
+  root((智能生育匹配系统))
+    后端
+      Python 3.10+
+      FastAPI + Uvicorn
+      OpenAI SDK
+      Pandas + NumPy
+      Scikit-learn
+    前端
+      HTML5 + TailwindCSS
+      SSE 流式通信
+      Web Speech API
+      Remixicon 图标
+    LLM
+      DeepSeek / OpenAI
+      意图分类 + 特征提取
+      多轮对话提示工程
+    数据
+      Excel 数据源
+      26维特征向量
+      余弦+欧氏混合相似度
+    </div>
+</div>
+
+</div>
+
+<script>
+    mermaid.initialize({
+        startOnLoad: true,
+        theme: 'base',
+        themeVariables: {
+            primaryColor: '#e0e7ff',
+            primaryTextColor: '#1e1b4b',
+            primaryBorderColor: '#6366f1',
+            lineColor: '#94a3b8',
+            secondaryColor: '#f0fdf4',
+            tertiaryColor: '#fffbeb',
+            fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
+            fontSize: '13px',
+        },
+        flowchart: { curve: 'basis', padding: 15 },
+        sequence: { mirrorActors: false, messageMargin: 40 },
+    });
+</script>
+
+</body>
+</html>

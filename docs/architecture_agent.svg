@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="668"
+     viewBox="0 0 1200 668"
+     style="font-family:'PingFang SC','Microsoft YaHei','SimHei',Arial,sans-serif">
+
+<defs>
+  <marker id="arr"    markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/></marker>
+  <marker id="arr-b"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"/></marker>
+  <marker id="arr-o"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f59e0b"/></marker>
+  <marker id="arr-g"  markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/></marker>
+</defs>
+
+<!-- ─── Background ─── -->
+<rect width="1200" height="668" fill="#f8fafc"/>
+
+<!-- ─── Title ─── -->
+<text x="600" y="22" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">智能生育匹配系统 — 智能体系统架构图</text>
+
+<!-- ════════════════════════════════════════════════
+     LAYER BANDS
+════════════════════════════════════════════════ -->
+<rect x="0"  y="30"  width="1200" height="98"  fill="#dbeafe" opacity="0.45"/>
+<rect x="0"  y="132" width="1200" height="54"  fill="#e0e7ff" opacity="0.45"/>
+<rect x="0"  y="190" width="1200" height="106" fill="#ede9fe" opacity="0.35"/>
+<rect x="0"  y="300" width="1200" height="122" fill="#fef3c7" opacity="0.50"/>
+<rect x="0"  y="426" width="1200" height="122" fill="#d1fae5" opacity="0.45"/>
+<rect x="0"  y="552" width="1200" height="108" fill="#f1f5f9" opacity="0.70"/>
+
+<!-- Layer band borders -->
+<rect x="0" y="30"  width="1200" height="98"  fill="none" stroke="#93c5fd" stroke-width="0.6"/>
+<rect x="0" y="132" width="1200" height="54"  fill="none" stroke="#a5b4fc" stroke-width="0.6"/>
+<rect x="0" y="190" width="1200" height="106" fill="none" stroke="#c4b5fd" stroke-width="0.6"/>
+<rect x="0" y="300" width="1200" height="122" fill="none" stroke="#fcd34d" stroke-width="0.6"/>
+<rect x="0" y="426" width="1200" height="122" fill="none" stroke="#6ee7b7" stroke-width="0.6"/>
+<rect x="0" y="552" width="1200" height="108" fill="none" stroke="#cbd5e1" stroke-width="0.6"/>
+
+<!-- Layer labels (vertical, left strip) -->
+<text x="14" y="82"  text-anchor="middle" font-size="10" font-weight="700" fill="#1d4ed8"  transform="rotate(-90,14,82)">前 端 界 面 层</text>
+<text x="14" y="161" text-anchor="middle" font-size="10" font-weight="700" fill="#4338ca"  transform="rotate(-90,14,161)">应 用 网 关</text>
+<text x="14" y="246" text-anchor="middle" font-size="10" font-weight="700" fill="#6d28d9"  transform="rotate(-90,14,246)">A P I  路 由 层</text>
+<text x="14" y="364" text-anchor="middle" font-size="10" font-weight="700" fill="#b45309"  transform="rotate(-90,14,364)">对 话 管 理 层</text>
+<text x="14" y="490" text-anchor="middle" font-size="10" font-weight="700" fill="#047857"  transform="rotate(-90,14,490)">核 心 计 算 层</text>
+<text x="14" y="608" text-anchor="middle" font-size="10" font-weight="700" fill="#475569"  transform="rotate(-90,14,608)">外 部 依 赖</text>
+
+<!-- ════════════════════════════════════════════════
+     L1 FRONTEND  (single wide box, 4 sub-sections)
+     x=30  y=36  w=1154  h=88
+════════════════════════════════════════════════ -->
+<rect x="30" y="36" width="1154" height="88" rx="7" fill="white" stroke="#3b82f6" stroke-width="1.5"/>
+<rect x="30" y="36" width="1154" height="22"  rx="7" fill="#2563eb"/>
+<rect x="30" y="50" width="1154" height="8"        fill="#2563eb"/>
+<text x="607" y="51" text-anchor="middle" font-size="12" font-weight="700" fill="white">前端界面  ·  index_v3.html</text>
+
+<!-- Dividers -->
+<line x1="319" y1="60" x2="319" y2="122" stroke="#bfdbfe" stroke-width="1.2" stroke-dasharray="4,3"/>
+<line x1="607" y1="60" x2="607" y2="122" stroke="#bfdbfe" stroke-width="1.2" stroke-dasharray="4,3"/>
+<line x1="895" y1="60" x2="895" y2="122" stroke="#bfdbfe" stroke-width="1.2" stroke-dasharray="4,3"/>
+
+<!-- Sub 1: 对话面板 -->
+<text x="47"  y="73" font-size="10" font-weight="600" fill="#1e40af">💬 对话聊天面板</text>
+<text x="47"  y="86" font-size="9" fill="#3b5998">• 多轮消息输入 · 历史记录展示</text>
+<text x="47"  y="98" font-size="9" fill="#3b5998">• 流式 token 打字效果（SSE）</text>
+<text x="47" y="110" font-size="9" fill="#3b5998">• LLM 自然语言回复渲染</text>
+
+<!-- Sub 2: 候选人 -->
+<text x="336"  y="73" font-size="10" font-weight="600" fill="#1e40af">📋 候选人卡片面板</text>
+<text x="336"  y="86" font-size="9" fill="#3b5998">• 编号 / 学历 / 身高 / 体型 / 肤色</text>
+<text x="336"  y="98" font-size="9" fill="#3b5998">• 条件命中率 % · ✓/✗ 逐项标注</text>
+<text x="336" y="110" font-size="9" fill="#3b5998">• 推荐理由文字 · like/dislike 反馈</text>
+
+<!-- Sub 3: 筛选 -->
+<text x="624"  y="73" font-size="10" font-weight="600" fill="#1e40af">🔍 结构化筛选面板</text>
+<text x="624"  y="86" font-size="9" fill="#3b5998">• 学历/身高/体型/肤色/眼皮等筛选器</text>
+<text x="624"  y="98" font-size="9" fill="#3b5998">• 多选 + 优先级排序</text>
+<text x="624" y="110" font-size="9" fill="#3b5998">• 直接调用 POST /api/search</text>
+
+<!-- Sub 4: 调试 -->
+<text x="912"  y="73" font-size="10" font-weight="600" fill="#1e40af">🐛 NLU 调试面板</text>
+<text x="912"  y="86" font-size="9" fill="#3b5998">• intent · features · constraints</text>
+<text x="912"  y="98" font-size="9" fill="#3b5998">• remove_fields · pending_relaxations</text>
+<text x="912" y="110" font-size="9" fill="#3b5998">• 当前累积需求 (accumulated)</text>
+
+<!-- ════════════════════════════════════════════════
+     L2 FASTAPI GATEWAY  x=30 y=138 w=1154 h=44
+════════════════════════════════════════════════ -->
+<rect x="30" y="138" width="1154" height="44" rx="7" fill="white" stroke="#6366f1" stroke-width="1.5"/>
+<rect x="30" y="138" width="1154" height="22" rx="7" fill="#4f46e5"/>
+<rect x="30" y="152" width="1154" height="8"       fill="#4f46e5"/>
+<text x="380" y="153" text-anchor="middle" font-size="12" font-weight="700" fill="white">应用网关  ·  main.py  (FastAPI + uvicorn :8000)</text>
+<text x="47"  y="172" font-size="9" fill="#312e81">• 启动时加载 1000 条 Excel 数据  →  构建 1000×43 特征矩阵（内存常驻）</text>
+<text x="570" y="172" font-size="9" fill="#312e81">• CORS 中间件  ·  注册 4 路由  ·  依赖注入（encoder / session_manager / llm_client）</text>
+
+<!-- ════════════════════════════════════════════════
+     L3 API ROUTES  (4 boxes)
+     Box w=277  gaps=10
+     x: 30, 317, 604, 891
+     y=196  h=96
+════════════════════════════════════════════════ -->
+
+<!-- 3.1 chat_stream.py -->
+<rect x="30"  y="196" width="277" height="96" rx="6" fill="white" stroke="#7c3aed" stroke-width="1.5"/>
+<rect x="30"  y="196" width="277" height="22" rx="6" fill="#6d28d9"/>
+<rect x="30"  y="210" width="277" height="8"       fill="#6d28d9"/>
+<text x="168" y="211" text-anchor="middle" font-size="11" font-weight="700" fill="white">流式对话  ·  chat_stream.py</text>
+<text x="46"  y="230" font-size="9" fill="#4c1d95">• POST /api/chat/stream  （SSE 长连接）</text>
+<text x="46"  y="242" font-size="9" fill="#4c1d95">• 主控：NLU → 状态机 → 匹配 → 回复</text>
+<text x="46"  y="254" font-size="9" fill="#4c1d95">• emit: token · reply · candidates · debug</text>
+<text x="46"  y="266" font-size="9" fill="#4c1d95">• pending_relaxations 全局肯定兜底</text>
+<text x="46"  y="278" font-size="9" fill="#4c1d95">• NaN 安全序列化 (_sanitize)</text>
+
+<!-- 3.2 chat.py -->
+<rect x="317" y="196" width="277" height="96" rx="6" fill="white" stroke="#7c3aed" stroke-width="1.5"/>
+<rect x="317" y="196" width="277" height="22" rx="6" fill="#6d28d9"/>
+<rect x="317" y="210" width="277" height="8"       fill="#6d28d9"/>
+<text x="455" y="211" text-anchor="middle" font-size="11" font-weight="700" fill="white">同步对话  ·  chat.py</text>
+<text x="333" y="230" font-size="9" fill="#4c1d95">• POST /api/chat  （标准 JSON 响应）</text>
+<text x="333" y="242" font-size="9" fill="#4c1d95">• 非流式对话，适合 API 直接调用</text>
+<text x="333" y="254" font-size="9" fill="#4c1d95">• 同调用 NLU / 状态机 / 匹配链路</text>
+<text x="333" y="266" font-size="9" fill="#4c1d95">• 返回 ChatResponse (Pydantic)</text>
+<text x="333" y="278" font-size="9" fill="#4c1d95">• _mock_parse 规则兜底（无LLM时）</text>
+
+<!-- 3.3 search.py -->
+<rect x="604" y="196" width="277" height="96" rx="6" fill="white" stroke="#7c3aed" stroke-width="1.5"/>
+<rect x="604" y="196" width="277" height="22" rx="6" fill="#6d28d9"/>
+<rect x="604" y="210" width="277" height="8"       fill="#6d28d9"/>
+<text x="742" y="211" text-anchor="middle" font-size="11" font-weight="700" fill="white">结构化搜索  ·  search.py</text>
+<text x="620" y="230" font-size="9" fill="#4c1d95">• POST /api/search  （不经 LLM）</text>
+<text x="620" y="242" font-size="9" fill="#4c1d95">• 17 个可选字段 · 多选 AND 过滤</text>
+<text x="620" y="254" font-size="9" fill="#4c1d95">• priority 排序权重（用户自定义）</text>
+<text x="620" y="266" font-size="9" fill="#4c1d95">• 渐进放宽：must→prefer 逐步降级</text>
+<text x="620" y="278" font-size="9" fill="#4c1d95">• GET /api/featured  特色捐精人分页</text>
+
+<!-- 3.4 feedback.py -->
+<rect x="891" y="196" width="277" height="96" rx="6" fill="white" stroke="#7c3aed" stroke-width="1.5"/>
+<rect x="891" y="196" width="277" height="22" rx="6" fill="#6d28d9"/>
+<rect x="891" y="210" width="277" height="8"       fill="#6d28d9"/>
+<text x="1029" y="211" text-anchor="middle" font-size="11" font-weight="700" fill="white">反馈与会话  ·  feedback.py</text>
+<text x="907"  y="230" font-size="9" fill="#4c1d95">• POST /api/feedback  (like / dislike)</text>
+<text x="907"  y="242" font-size="9" fill="#4c1d95">• GET  /api/session/{id}  查询会话状态</text>
+<text x="907"  y="254" font-size="9" fill="#4c1d95">• 记录至 session.feedback_log</text>
+<text x="907"  y="266" font-size="9" fill="#4c1d95">• 校验会话有效性（30 min 超时）</text>
+<text x="907"  y="278" font-size="9" fill="#4c1d95">• GET /health  健康检查</text>
+
+<!-- ════════════════════════════════════════════════
+     L4 DIALOGUE  (4 boxes)
+     y=306  h=110
+════════════════════════════════════════════════ -->
+
+<!-- 4.1 nlu.py -->
+<rect x="30"  y="306" width="277" height="110" rx="6" fill="white" stroke="#d97706" stroke-width="1.5"/>
+<rect x="30"  y="306" width="277" height="22"  rx="6" fill="#b45309"/>
+<rect x="30"  y="320" width="277" height="8"        fill="#b45309"/>
+<text x="168" y="321" text-anchor="middle" font-size="11" font-weight="700" fill="white">语义理解  ·  nlu.py</text>
+<text x="46"  y="341" font-size="9" fill="#78350f">• SYSTEM_PROMPT：17 字段解析规则</text>
+<text x="46"  y="353" font-size="9" fill="#78350f">• LLM 流式调用 → 提取 JSON 特征块</text>
+<text x="46"  y="365" font-size="9" fill="#78350f">• 输出: intent · features · constraints</text>
+<text x="46"  y="377" font-size="9" fill="#78350f">•      remove_fields · REMOVE 哨兵</text>
+<text x="46"  y="389" font-size="9" fill="#78350f">• _is_global_affirmative 全局肯定检测</text>
+<text x="46"  y="401" font-size="9" fill="#78350f">• _detect_relaxation_fallback 兜底检测</text>
+
+<!-- 4.2 dialogue_flow.py -->
+<rect x="317" y="306" width="277" height="110" rx="6" fill="white" stroke="#d97706" stroke-width="1.5"/>
+<rect x="317" y="306" width="277" height="22"  rx="6" fill="#b45309"/>
+<rect x="317" y="320" width="277" height="8"        fill="#b45309"/>
+<text x="455" y="321" text-anchor="middle" font-size="11" font-weight="700" fill="white">对话状态机  ·  dialogue_flow.py</text>
+<text x="333" y="341" font-size="9" fill="#78350f">• 6 态: START → COLLECTING</text>
+<text x="333" y="353" font-size="9" fill="#78350f">        → MATCHING → PRESENTING</text>
+<text x="333" y="365" font-size="9" fill="#78350f">        → FEEDBACK → END</text>
+<text x="333" y="377" font-size="9" fill="#78350f">• determine_next_action → action:</text>
+<text x="333" y="389" font-size="9" fill="#78350f">  collect / match / clarify / farewell</text>
+<text x="333" y="401" font-size="9" fill="#78350f">• build_feature_summary 需求可读摘要</text>
+
+<!-- 4.3 session.py -->
+<rect x="604" y="306" width="277" height="110" rx="6" fill="white" stroke="#d97706" stroke-width="1.5"/>
+<rect x="604" y="306" width="277" height="22"  rx="6" fill="#b45309"/>
+<rect x="604" y="320" width="277" height="8"        fill="#b45309"/>
+<text x="742" y="321" text-anchor="middle" font-size="11" font-weight="700" fill="white">会话状态  ·  session.py</text>
+<text x="620" y="341" font-size="9" fill="#78350f">• SessionContext：单会话状态容器</text>
+<text x="620" y="353" font-size="9" fill="#78350f">  parsed_features（多轮累积需求）</text>
+<text x="620" y="365" font-size="9" fill="#78350f">  constraints（must / prefer 约束）</text>
+<text x="620" y="377" font-size="9" fill="#78350f">  pending_relaxations（上轮瓶颈字段）</text>
+<text x="620" y="389" font-size="9" fill="#78350f">• SessionManager：多会话并发管理</text>
+<text x="620" y="401" font-size="9" fill="#78350f">• update_features：REMOVE 哨兵删除</text>
+
+<!-- 4.4 response_gen.py -->
+<rect x="891" y="306" width="277" height="110" rx="6" fill="white" stroke="#d97706" stroke-width="1.5"/>
+<rect x="891" y="306" width="277" height="22"  rx="6" fill="#b45309"/>
+<rect x="891" y="320" width="277" height="8"        fill="#b45309"/>
+<text x="1029" y="321" text-anchor="middle" font-size="11" font-weight="700" fill="white">回复生成  ·  response_gen.py</text>
+<text x="907"  y="341" font-size="9" fill="#78350f">• 整合 LLM 文字回复 + 匹配候选人</text>
+<text x="907"  y="353" font-size="9" fill="#78350f">• full → 完全匹配展示结果</text>
+<text x="907"  y="365" font-size="9" fill="#78350f">• relaxed → bottleneck 字段引导放宽</text>
+<text x="907"  y="377" font-size="9" fill="#78350f">• similarity_only → 建议调整条件</text>
+<text x="907"  y="389" font-size="9" fill="#78350f">• generate_response(session, nlu_result)</text>
+<text x="907"  y="401" font-size="9" fill="#78350f">  → { reply, candidates, state }</text>
+
+<!-- ════════════════════════════════════════════════
+     L5 CORE  (4 boxes)
+     y=432  h=110
+════════════════════════════════════════════════ -->
+
+<!-- 5.1 data_loader.py -->
+<rect x="30"  y="432" width="277" height="110" rx="6" fill="white" stroke="#10b981" stroke-width="1.5"/>
+<rect x="30"  y="432" width="277" height="22"  rx="6" fill="#047857"/>
+<rect x="30"  y="446" width="277" height="8"        fill="#047857"/>
+<text x="168" y="447" text-anchor="middle" font-size="11" font-weight="700" fill="white">数据加载  ·  data_loader.py</text>
+<text x="46"  y="467" font-size="9" fill="#064e3b">• pd.read_excel → DataFrame (1000 行)</text>
+<text x="46"  y="479" font-size="9" fill="#064e3b">• 22 个核心列校验</text>
+<text x="46"  y="491" font-size="9" fill="#064e3b">• get_donor_display_info  30+ 字段脱敏</text>
+<text x="46"  y="503" font-size="9" fill="#064e3b">• _float_safe  防 NaN/Inf 序列化错误</text>
+<text x="46"  y="515" font-size="9" fill="#064e3b">• _calc_age  出生日期 → 年龄计算</text>
+<text x="46"  y="527" font-size="9" fill="#064e3b">• 应用启动时一次性加载至内存</text>
+
+<!-- 5.2 feature_engine.py -->
+<rect x="317" y="432" width="277" height="110" rx="6" fill="white" stroke="#10b981" stroke-width="1.5"/>
+<rect x="317" y="432" width="277" height="22"  rx="6" fill="#047857"/>
+<rect x="317" y="446" width="277" height="8"        fill="#047857"/>
+<text x="455" y="447" text-anchor="middle" font-size="11" font-weight="700" fill="white">特征工程  ·  feature_engine.py</text>
+<text x="333" y="467" font-size="9" fill="#064e3b">• encode_all → 1000×43 特征矩阵</text>
+<text x="333" y="479" font-size="9" fill="#064e3b">• dim[0-3]: 学历/身高/BMI/体重 (MinMax)</text>
+<text x="333" y="491" font-size="9" fill="#064e3b">• dim[4-42]: 体型/肤色/血型/脸型/眼皮…</text>
+<text x="333" y="503" font-size="9" fill="#064e3b">  （独热 one-hot，39 维）</text>
+<text x="333" y="515" font-size="9" fill="#064e3b">• encode_query → (43维向量, mask 数组)</text>
+<text x="333" y="527" font-size="9" fill="#064e3b">• mask: True = 用户指定维度，参与计算</text>
+
+<!-- 5.3 matcher.py -->
+<rect x="604" y="432" width="277" height="110" rx="6" fill="white" stroke="#10b981" stroke-width="1.5"/>
+<rect x="604" y="432" width="277" height="22"  rx="6" fill="#047857"/>
+<rect x="604" y="446" width="277" height="8"        fill="#047857"/>
+<text x="742" y="447" text-anchor="middle" font-size="11" font-weight="700" fill="white">匹配引擎  ·  matcher.py</text>
+<text x="620" y="467" font-size="9" fill="#064e3b">• compute_similarity: 余弦×0.6 + 欧氏×0.4</text>
+<text x="620" y="479" font-size="9" fill="#064e3b">• hard_filter: must 约束逐字段 AND 过滤</text>
+<text x="620" y="491" font-size="9" fill="#064e3b">• match_with_relaxation (top_k=50):</text>
+<text x="620" y="503" font-size="9" fill="#064e3b">  全匹配 → 逐步放宽 → 纯相似度</text>
+<text x="620" y="515" font-size="9" fill="#064e3b">• diagnose_no_match → 瓶颈字段列表</text>
+<text x="620" y="527" font-size="9" fill="#064e3b">• 阈值 MATCH_THRESHOLD = 0.7</text>
+
+<!-- 5.4 ranker.py -->
+<rect x="891" y="432" width="277" height="110" rx="6" fill="white" stroke="#10b981" stroke-width="1.5"/>
+<rect x="891" y="432" width="277" height="22"  rx="6" fill="#047857"/>
+<rect x="891" y="446" width="277" height="8"        fill="#047857"/>
+<text x="1029" y="447" text-anchor="middle" font-size="11" font-weight="700" fill="white">排序与理由  ·  ranker.py</text>
+<text x="907"  y="467" font-size="9" fill="#064e3b">• _apply_text_bonus: 文字字段 +0.06/项</text>
+<text x="907"  y="479" font-size="9" fill="#064e3b">  （籍贯 / 性格 / 职业 / 民族）</text>
+<text x="907"  y="491" font-size="9" fill="#064e3b">• compute_field_match: 逐字段比对</text>
+<text x="907"  y="503" font-size="9" fill="#064e3b">  → { match, user_val, actual_val }</text>
+<text x="907"  y="515" font-size="9" fill="#064e3b">• 条件命中率: matched/total × 100%</text>
+<text x="907"  y="527" font-size="9" fill="#064e3b">• _generate_reason: 自然语言推荐理由</text>
+
+<!-- ════════════════════════════════════════════════
+     L6 EXTERNAL  (3 boxes)
+     Box w=371  gaps=12
+     x: 30, 413, 796
+     y=558  h=96
+════════════════════════════════════════════════ -->
+
+<!-- 6.1 DeepSeek LLM -->
+<rect x="30"  y="558" width="371" height="96" rx="6" fill="white" stroke="#64748b" stroke-width="1.5"/>
+<rect x="30"  y="558" width="371" height="22" rx="6" fill="#334155"/>
+<rect x="30"  y="572" width="371" height="8"       fill="#334155"/>
+<text x="215" y="573" text-anchor="middle" font-size="11" font-weight="700" fill="white">大语言模型  ·  DeepSeek API</text>
+<text x="46"  y="593" font-size="9" fill="#1e293b">• model = deepseek-v4-flash（流式输出）</text>
+<text x="46"  y="605" font-size="9" fill="#1e293b">• 职责：意图识别 · 特征提取 · 澄清追问</text>
+<text x="46"  y="617" font-size="9" fill="#1e293b">• OpenAI 兼容格式 (base_url: api.silra.cn/v1)</text>
+<text x="46"  y="629" font-size="9" fill="#1e293b">• 严禁编造候选人数据，只做结构化解析</text>
+<text x="46"  y="641" font-size="9" fill="#1e293b">• 会话历史窗口：最近 20 轮</text>
+
+<!-- 6.2 Excel Data -->
+<rect x="413" y="558" width="371" height="96" rx="6" fill="white" stroke="#64748b" stroke-width="1.5"/>
+<rect x="413" y="558" width="371" height="22" rx="6" fill="#334155"/>
+<rect x="413" y="572" width="371" height="8"       fill="#334155"/>
+<text x="598" y="573" text-anchor="middle" font-size="11" font-weight="700" fill="white">捐精人数据库  ·  Excel 文件</text>
+<text x="429" y="593" font-size="9" fill="#1e293b">• 1000 条可用记录（is_available = True）</text>
+<text x="429" y="605" font-size="9" fill="#1e293b">• 字段：学历 / 身高 / 体型 / 肤色 / 血型</text>
+<text x="429" y="617" font-size="9" fill="#1e293b">  脸型 / 眼皮 / 星座 / 籍贯 / 职业 / 性格</text>
+<text x="429" y="629" font-size="9" fill="#1e293b">  标本数量 / 精液检测 / 染色体检测 …</text>
+<text x="429" y="641" font-size="9" fill="#1e293b">• 应用启动时一次性加载至内存（常驻）</text>
+
+<!-- 6.3 config.py -->
+<rect x="796" y="558" width="371" height="96" rx="6" fill="white" stroke="#64748b" stroke-width="1.5"/>
+<rect x="796" y="558" width="371" height="22" rx="6" fill="#334155"/>
+<rect x="796" y="572" width="371" height="8"       fill="#334155"/>
+<text x="981" y="573" text-anchor="middle" font-size="11" font-weight="700" fill="white">系统配置  ·  config.py  +  .env</text>
+<text x="812" y="593" font-size="9" fill="#1e293b">• MATCH_TOP_K = 50  ·  MATCH_THRESHOLD = 0.7</text>
+<text x="812" y="605" font-size="9" fill="#1e293b">• COSINE_WEIGHT = 0.6  ·  EUCLIDEAN_WEIGHT = 0.4</text>
+<text x="812" y="617" font-size="9" fill="#1e293b">• SESSION_TIMEOUT_MINUTES = 30</text>
+<text x="812" y="629" font-size="9" fill="#1e293b">• LLM_API_KEY · LLM_MODEL · LLM_BASE_URL</text>
+<text x="812" y="641" font-size="9" fill="#1e293b">• HOST = 0.0.0.0  ·  PORT = 8000</text>
+
+<!-- ════════════════════════════════════════════════
+     ARROWS
+════════════════════════════════════════════════ -->
+
+<!-- ① 主请求流（向下）—— 左侧垂直箭头，x=168 -->
+<!-- L1→L2 -->
+<line x1="168" y1="124" x2="168" y2="136" stroke="#6366f1" stroke-width="1.6" marker-end="url(#arr)"/>
+<!-- L2→L3 -->
+<line x1="168" y1="182" x2="168" y2="194" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#arr)"/>
+<!-- L3→L4 -->
+<line x1="168" y1="292" x2="168" y2="304" stroke="#d97706" stroke-width="1.6" marker-end="url(#arr)"/>
+<!-- L4→L5 -->
+<line x1="168" y1="416" x2="168" y2="430" stroke="#10b981" stroke-width="1.6" marker-end="url(#arr)"/>
+<!-- L5→L6 data_loader→Excel -->
+<line x1="168" y1="542" x2="168" y2="556" stroke="#64748b" stroke-width="1.6" marker-end="url(#arr)"/>
+
+<!-- ② nlu.py → DeepSeek LLM (diagonal dashed) -->
+<!-- nlu.py bottom-center: (168, 416) → but nlu.py goes down to y=306+110=416
+     Actually nlu.py box: x=30, y=306, w=277, h=110 → bottom (168, 416)
+     DeepSeek: x=30, y=558 → top-center (215, 558)
+     Path: from nlu bottom → down through L5 gap → to DeepSeek top -->
+<path d="M 168,416 L 168,422 L 60,422 L 60,556" stroke="#f59e0b" stroke-width="1.4" fill="none" stroke-dasharray="5,3" marker-end="url(#arr-o)"/>
+<text x="38" y="494" font-size="8" fill="#b45309" font-weight="600" transform="rotate(-90,38,494)">LLM 调用</text>
+
+<!-- ③ SSE 回传（右侧，Core bottom → Frontend top） -->
+<line x1="1170" y1="542" x2="1170" y2="128" stroke="#3b82f6" stroke-width="1.6" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-b)"/>
+<text x="1182" y="360" font-size="8" fill="#1d4ed8" font-weight="600" text-anchor="middle" transform="rotate(-90,1182,360)">SSE 流式回传 (token/reply/candidates)</text>
+
+<!-- ④ search.py 直通 Core (竖向虚线) -->
+<line x1="742" y1="292" x2="742" y2="430" stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+<text x="752" y="362" font-size="8" fill="#6d28d9" font-weight="500">直通</text>
+
+<!-- ⑤ 小标注：layer间流转说明 -->
+<text x="192" y="131" font-size="8" fill="#6366f1">HTTP/SSE 请求</text>
+<text x="192" y="192" font-size="8" fill="#7c3aed">路由分发</text>
+<text x="192" y="302" font-size="8" fill="#d97706">NLU 解析 + 状态判断</text>
+<text x="192" y="428" font-size="8" fill="#10b981">特征编码 + 相似度计算</text>
+<text x="192" y="554" font-size="8" fill="#64748b">加载 / 配置读取</text>
+
+</svg>

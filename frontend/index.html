@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能生育匹配系统 - 对话智能体</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Noto Sans SC', 'Inter', sans-serif; color: #0f172a; }
+        .chat-container { height: calc(100vh - 65px); }
+        .msg-bubble { max-width: min(760px, 88%); animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .typing-dot { animation: blink 1.4s infinite both; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+        .candidate-card { transition: all 0.2s ease; }
+        .candidate-card:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(15,23,42,0.12); }
+        .mic-btn.recording { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 15px rgba(239,68,68,0); } 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); } }
+        .score-bar { transition: width 0.8s ease; }
+        /* 美化滚动条 */
+        .chat-messages::-webkit-scrollbar { width: 6px; }
+        .chat-messages::-webkit-scrollbar-track { background: transparent; }
+        .chat-messages::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .app-bg {
+            background:
+                radial-gradient(circle at 18% 12%, rgba(79, 70, 229, 0.08), transparent 28%),
+                radial-gradient(circle at 82% 90%, rgba(59, 130, 246, 0.10), transparent 30%),
+                linear-gradient(180deg, #f8fbff 0%, #f3f6fb 100%);
+        }
+        .input-panel {
+            background: rgba(255,255,255,0.96);
+            border: 1px solid rgba(148,163,184,0.34);
+            box-shadow: 0 20px 46px rgba(15,23,42,0.14), 0 1px 0 rgba(255,255,255,0.8) inset;
+        }
+        .input-textarea {
+            background: #f8fafc;
+            border: 1px solid #dbe3ee;
+            color: #0f172a;
+        }
+        .input-textarea:focus {
+            background: #ffffff;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79,70,229,0.16);
+        }
+        .assistant-card {
+            background: rgba(255,255,255,0.96);
+            border: 1px solid #dbe3ee;
+            box-shadow: 0 10px 28px rgba(15,23,42,0.07);
+        }
+        .option-chip input:checked + span {
+            background: #eef2ff;
+            color: #3730a3;
+            border-color: #818cf8;
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+        }
+        .priority-item.dragging {
+            opacity: 0.45;
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="app-bg min-h-screen overflow-hidden">
+    <!-- Header -->
+    <header class="bg-white/90 backdrop-blur-xl border-b border-slate-200/70 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-5xl mx-auto px-5 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-200">
+                    <i class="ri-heart-pulse-line text-white text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-semibold text-slate-900">智能生育匹配系统</h1>
+                    <p class="text-xs text-slate-500">AI 对话智能体</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200"></span>
+                <span class="text-xs text-slate-600">在线</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Chat Area -->
+    <main class="max-w-5xl mx-auto px-5 chat-container flex flex-col">
+        <!-- Messages -->
+        <div id="chat-messages" class="chat-messages flex-1 overflow-y-auto pt-5 pb-32 space-y-5">
+            <!-- Messages will be inserted here -->
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-panel rounded-3xl p-3 mb-7">
+            <div class="mb-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                        <div class="text-sm font-semibold text-slate-800">结构化条件辅助输入</div>
+                        <div class="text-xs text-slate-500 mt-0.5">支持文本输入、选项勾选、特征拖拽排序和语音输入</div>
+                    </div>
+                    <button type="button" onclick="toggleStructuredPanel()"
+                        class="text-xs px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition-colors">
+                        展开 / 收起
+                    </button>
+                </div>
+                <div id="structured-panel" class="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-3 max-h-[38vh] overflow-y-auto pr-1">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <div class="text-xs font-semibold text-slate-600 mb-2">学历区间</div>
+                            <div class="flex flex-wrap gap-2">
+                                <label class="option-chip"><input type="radio" name="education" value="大专" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">大专</span></label>
+                                <label class="option-chip"><input type="radio" name="education" value="本科" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">本科</span></label>
+                                <label class="option-chip"><input type="radio" name="education" value="硕士" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">硕士</span></label>
+                                <label class="option-chip"><input type="radio" name="education" value="博士" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">博士</span></label>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-semibold text-slate-600 mb-2">身高区间</div>
+                            <div class="flex flex-wrap gap-2">
+                                <label class="option-chip"><input type="radio" name="height" value="170cm以上" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">170cm以上</span></label>
+                                <label class="option-chip"><input type="radio" name="height" value="175cm以上" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">175cm以上</span></label>
+                                <label class="option-chip"><input type="radio" name="height" value="180cm以上" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">180cm以上</span></label>
+                                <label class="option-chip"><input type="radio" name="height" value="170-180cm" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">170-180cm</span></label>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-semibold text-slate-600 mb-2">体型选项</div>
+                            <div class="flex flex-wrap gap-2">
+                                <label class="option-chip"><input type="radio" name="figure" value="匀称型" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">匀称型</span></label>
+                                <label class="option-chip"><input type="radio" name="figure" value="精壮型" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">精壮型</span></label>
+                                <label class="option-chip"><input type="radio" name="figure" value="偏瘦型" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">偏瘦型</span></label>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-xs font-semibold text-slate-600 mb-2">肤色选项</div>
+                            <div class="flex flex-wrap gap-2">
+                                <label class="option-chip"><input type="radio" name="skin" value="偏白肤色" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">偏白肤色</span></label>
+                                <label class="option-chip"><input type="radio" name="skin" value="一般肤色" class="hidden"><span class="inline-flex px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 cursor-pointer">一般肤色</span></label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 bg-white p-3">
+                        <div class="text-xs font-semibold text-slate-600 mb-2">特征拖拽排序（越靠上越优先）</div>
+                        <div id="priority-list" class="space-y-2">
+                            <div draggable="true" data-feature="学历" class="priority-item cursor-move rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 flex items-center justify-between"><span>学历</span><i class="ri-draggable"></i></div>
+                            <div draggable="true" data-feature="身高" class="priority-item cursor-move rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 flex items-center justify-between"><span>身高</span><i class="ri-draggable"></i></div>
+                            <div draggable="true" data-feature="体型" class="priority-item cursor-move rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 flex items-center justify-between"><span>体型</span><i class="ri-draggable"></i></div>
+                            <div draggable="true" data-feature="肤色" class="priority-item cursor-move rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 flex items-center justify-between"><span>肤色</span><i class="ri-draggable"></i></div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2 flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <div id="structured-preview" class="text-xs text-slate-500">尚未选择结构化条件</div>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="clearStructuredOptions()" class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs text-slate-600 hover:bg-slate-100">清空选项</button>
+                            <button type="button" onclick="fillStructuredPrompt()" class="px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs hover:bg-indigo-700 shadow-sm">生成需求到输入框</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-end gap-3">
+                <div class="flex-1 relative">
+                    <textarea id="msg-input"
+                        class="input-textarea w-full resize-none rounded-2xl px-4 py-4 text-sm focus:outline-none placeholder:text-slate-400 transition-all"
+                        placeholder="输入您的需求，例如：想要本科学历、身高175以上、匀称体型的捐精人"
+                        rows="2"
+                        onkeydown="handleKeyDown(event)"
+                    ></textarea>
+                </div>
+                <div class="flex gap-2 pb-1.5">
+                    <button id="mic-btn" onclick="toggleVoice()"
+                        class="mic-btn w-11 h-11 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
+                        title="语音输入">
+                        <i class="ri-mic-line text-lg"></i>
+                    </button>
+                    <button onclick="sendMessage()"
+                        class="w-11 h-11 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 flex items-center justify-center transition-all shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300">
+                        <i class="ri-send-plane-2-fill text-white text-lg"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="voice-status" class="hidden mt-2 flex items-center gap-2 text-sm text-red-500">
+                <span class="w-2 h-2 rounded-full bg-red-500 typing-dot"></span>
+                <span>正在录音，请说出您的需求...</span>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    // ============ 状态 ============
+    let sessionId = null;
+    let isRecording = false;
+    let recognition = null;
+    let isSending = false;
+
+    // ============ 初始化 ============
+    window.addEventListener('DOMContentLoaded', () => {
+        initSpeechRecognition();
+        initStructuredInput();
+        startChat();
+    });
+
+    // ============ 对话 ============
+    async function startChat() {
+        // 发送空消息触发欢迎语
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: null, message: '' }),
+            });
+            const data = await res.json();
+            sessionId = data.session_id;
+            appendMessage('assistant', data.reply);
+        } catch (e) {
+            appendMessage('system', '连接服务器失败，请检查服务是否启动。');
+        }
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('msg-input');
+        const text = buildFinalMessage(input.value.trim());
+        if (!text || isSending) return;
+
+        input.value = '';
+        input.style.height = 'auto';
+        appendMessage('user', text);
+        isSending = true;
+
+        // 创建流式消息气泡
+        const { wrapper, contentEl } = createStreamBubble();
+        const container = document.getElementById('chat-messages');
+        container.appendChild(wrapper);
+        container.scrollTop = container.scrollHeight;
+
+        let streamedText = '';
+        let finalReply = '';
+        let candidates = [];
+
+        try {
+            const res = await fetch('/api/chat/stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId, message: text }),
+            });
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                let eventType = '';
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        eventType = line.slice(7).trim();
+                    } else if (line.startsWith('data: ') && eventType) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            handleSSE(eventType, data, contentEl, () => {
+                                streamedText += data.text || '';
+                            }, (items) => {
+                                candidates = items;
+                            });
+                        } catch (e) { /* ignore parse errors */ }
+                        eventType = '';
+                    }
+                }
+                container.scrollTop = container.scrollHeight;
+            }
+
+            // 处理最终结果：用 reply 事件的文本替换流式文本
+            if (finalReplyText) {
+                contentEl.innerHTML = formatMarkdown(finalReplyText);
+            }
+
+            // 渲染候选人卡片
+            if (candidates.length > 0) {
+                const cardsDiv = document.createElement('div');
+                cardsDiv.className = 'ml-10 mt-3 space-y-3';
+                cardsDiv.innerHTML = candidates.map((c, i) => renderCandidateCard(c, i)).join('');
+                wrapper.querySelector('.msg-bubble').appendChild(cardsDiv);
+            }
+
+            container.scrollTop = container.scrollHeight;
+
+            // 语音播报
+            if (finalReplyText) {
+                speakText(getPlainText(finalReplyText));
+            }
+        } catch (e) {
+            contentEl.innerHTML = '<span class="text-red-500">请求失败，请稍后重试。</span>';
+        } finally {
+            isSending = false;
+        }
+    }
+
+    let finalReplyText = '';
+
+    function handleSSE(event, data, contentEl, onToken, onCandidates) {
+        switch (event) {
+            case 'token':
+                onToken();
+                // 追加流式文字
+                const currentText = contentEl.getAttribute('data-raw') || '';
+                const newText = currentText + (data.text || '');
+                contentEl.setAttribute('data-raw', newText);
+                contentEl.innerHTML = formatMarkdown(newText);
+                break;
+            case 'reply':
+                finalReplyText = data.text || '';
+                contentEl.innerHTML = formatMarkdown(finalReplyText);
+                break;
+            case 'candidates':
+                if (data.items) onCandidates(data.items);
+                break;
+            case 'state':
+                if (data.session_id) sessionId = data.session_id;
+                break;
+            case 'error':
+                contentEl.innerHTML = `<span class="text-red-500">${escapeHtml(data.message || '未知错误')}</span>`;
+                break;
+        }
+    }
+
+    function createStreamBubble() {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'flex justify-start';
+        wrapper.innerHTML = `
+            <div class="msg-bubble">
+                <div class="flex items-start gap-2">
+                    <div class="w-8 h-8 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center flex-shrink-0 mt-1 shadow-sm shadow-indigo-100">
+                        <i class="ri-robot-2-line text-white text-sm"></i>
+                    </div>
+                    <div class="stream-content assistant-card rounded-2xl rounded-tl-md px-4 py-3 text-sm text-slate-700 leading-relaxed">
+                        <span class="typing-dot inline-block w-2 h-2 bg-gray-400 rounded-full"></span>
+                        <span class="typing-dot inline-block w-2 h-2 bg-gray-400 rounded-full"></span>
+                        <span class="typing-dot inline-block w-2 h-2 bg-gray-400 rounded-full"></span>
+                    </div>
+                </div>
+            </div>`;
+        const contentEl = wrapper.querySelector('.stream-content');
+        return { wrapper, contentEl };
+    }
+
+    function handleKeyDown(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    }
+
+    // ============ 结构化输入 ============
+    function initStructuredInput() {
+        document.querySelectorAll('#structured-panel input[type="radio"]').forEach(input => {
+            input.addEventListener('change', updateStructuredPreview);
+        });
+        initPriorityDrag();
+        updateStructuredPreview();
+    }
+
+    function toggleStructuredPanel() {
+        document.getElementById('structured-panel').classList.toggle('hidden');
+    }
+
+    function getCheckedValue(name) {
+        const el = document.querySelector(`input[name="${name}"]:checked`);
+        return el ? el.value : '';
+    }
+
+    function getPriorityOrder() {
+        return Array.from(document.querySelectorAll('#priority-list .priority-item'))
+            .map(el => el.dataset.feature);
+    }
+
+    function buildStructuredPrompt() {
+        const parts = [];
+        const education = getCheckedValue('education');
+        const height = getCheckedValue('height');
+        const figure = getCheckedValue('figure');
+        const skin = getCheckedValue('skin');
+
+        if (education) parts.push(`${education}学历`);
+        if (height) parts.push(`身高${height}`);
+        if (figure) parts.push(`${figure}体型`);
+        if (skin) parts.push(skin);
+
+        if (parts.length === 0) return '';
+
+        const priorities = getPriorityOrder().join(' > ');
+        return `请帮我匹配${parts.join('、')}的捐精人。特征权重优先级为：${priorities}，越靠前权重越高，请优先满足靠前特征。`;
+    }
+
+    function buildFinalMessage(text) {
+        const structured = buildStructuredPrompt();
+        if (text && structured) return `${text}\n补充结构化条件：${structured}`;
+        return text || structured;
+    }
+
+    function fillStructuredPrompt() {
+        const input = document.getElementById('msg-input');
+        const prompt = buildStructuredPrompt();
+        if (!prompt) {
+            updateStructuredPreview();
+            return;
+        }
+        input.value = prompt;
+        input.focus();
+        updateStructuredPreview();
+    }
+
+    function clearStructuredOptions() {
+        document.querySelectorAll('#structured-panel input[type="radio"]').forEach(input => {
+            input.checked = false;
+        });
+        updateStructuredPreview();
+    }
+
+    function updateStructuredPreview() {
+        const preview = document.getElementById('structured-preview');
+        const prompt = buildStructuredPrompt();
+        preview.textContent = prompt || '尚未选择结构化条件';
+    }
+
+    function initPriorityDrag() {
+        const list = document.getElementById('priority-list');
+        let draggingEl = null;
+
+        list.querySelectorAll('.priority-item').forEach(item => {
+            item.addEventListener('dragstart', () => {
+                draggingEl = item;
+                item.classList.add('dragging');
+            });
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                draggingEl = null;
+                updateStructuredPreview();
+            });
+        });
+
+        list.addEventListener('dragover', e => {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(list, e.clientY);
+            if (!draggingEl) return;
+            if (afterElement == null) {
+                list.appendChild(draggingEl);
+            } else {
+                list.insertBefore(draggingEl, afterElement);
+            }
+        });
+    }
+
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.priority-item:not(.dragging)')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset, element: child };
+            }
+            return closest;
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    // ============ 消息渲染 ============
+    function appendMessage(role, content, candidates = null) {
+        const container = document.getElementById('chat-messages');
+        const wrapper = document.createElement('div');
+        wrapper.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+        if (role === 'user') {
+            wrapper.innerHTML = `
+                <div class="msg-bubble bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-2xl rounded-br-md px-4 py-3 text-sm shadow-lg shadow-indigo-200">
+                    ${escapeHtml(content)}
+                </div>`;
+        } else if (role === 'system') {
+            wrapper.innerHTML = `
+                <div class="msg-bubble bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl px-4 py-3 text-sm shadow-sm">
+                    <i class="ri-alert-line mr-1"></i>${escapeHtml(content)}
+                </div>`;
+        } else {
+            let html = `
+                <div class="msg-bubble">
+                    <div class="flex items-start gap-2">
+                        <div class="w-8 h-8 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl flex items-center justify-center flex-shrink-0 mt-1 shadow-sm shadow-indigo-100">
+                            <i class="ri-robot-2-line text-white text-sm"></i>
+                        </div>
+                        <div class="assistant-card rounded-2xl rounded-tl-md px-4 py-3 text-sm text-slate-700 leading-relaxed">
+                            ${formatMarkdown(content)}
+                        </div>
+                    </div>`;
+
+            // 渲染候选人卡片
+            if (candidates && candidates.length > 0) {
+                html += `<div class="ml-10 mt-3 space-y-3">${candidates.map((c, i) => renderCandidateCard(c, i)).join('')}</div>`;
+            }
+
+            html += `</div>`;
+            wrapper.innerHTML = html;
+        }
+
+        container.appendChild(wrapper);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function renderCandidateCard(candidate, index) {
+        const d = candidate.donor_info;
+        const score = Math.round(candidate.score * 100);
+        const scoreColor = score >= 90 ? 'from-green-400 to-emerald-500' :
+                          score >= 80 ? 'from-blue-400 to-cyan-500' :
+                          score >= 70 ? 'from-yellow-400 to-orange-500' : 'from-gray-400 to-gray-500';
+
+        return `
+        <div class="candidate-card bg-white rounded-2xl border border-slate-200 shadow-md shadow-slate-200/60 p-4">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 bg-indigo-50 text-indigo-700 rounded-lg flex items-center justify-center text-xs font-semibold">${index + 1}</span>
+                    <span class="font-semibold text-slate-900">编号 ${escapeHtml(d.code)}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="text-right">
+                        <div class="text-xs text-slate-500">匹配度</div>
+                        <div class="text-lg font-bold bg-gradient-to-r ${scoreColor} bg-clip-text text-transparent">${score}%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                <div class="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-center">
+                    <div class="text-xs text-slate-500">学历</div>
+                    <div class="text-sm font-semibold text-slate-800">${escapeHtml(d.education)}</div>
+                </div>
+                <div class="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-center">
+                    <div class="text-xs text-slate-500">身高</div>
+                    <div class="text-sm font-semibold text-slate-800">${d.height}cm</div>
+                </div>
+                <div class="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-center">
+                    <div class="text-xs text-slate-500">体型</div>
+                    <div class="text-sm font-semibold text-slate-800">${escapeHtml(d.figure)}</div>
+                </div>
+                <div class="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-center">
+                    <div class="text-xs text-slate-500">肤色</div>
+                    <div class="text-sm font-semibold text-slate-800">${escapeHtml(d.skin_color)}</div>
+                </div>
+            </div>
+            <div class="w-full bg-gray-100 rounded-full h-1.5 mb-3">
+                <div class="score-bar bg-gradient-to-r ${scoreColor} h-1.5 rounded-full" style="width: ${score}%"></div>
+            </div>
+            <p class="text-xs text-slate-600 mb-3 leading-relaxed">${escapeHtml(candidate.reason)}</p>
+            <div class="flex gap-2">
+                <button onclick="submitFeedback('${d.code}', 'like')"
+                    class="flex-1 py-1.5 text-xs rounded-lg border border-green-200 text-green-600 hover:bg-green-50 transition-colors flex items-center justify-center gap-1">
+                    <i class="ri-thumb-up-line"></i> 满意
+                </button>
+                <button onclick="submitFeedback('${d.code}', 'dislike')"
+                    class="flex-1 py-1.5 text-xs rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors flex items-center justify-center gap-1">
+                    <i class="ri-thumb-down-line"></i> 不满意
+                </button>
+            </div>
+        </div>`;
+    }
+
+    function showTyping() {
+        const container = document.getElementById('chat-messages');
+        const div = document.createElement('div');
+        div.id = 'typing-indicator';
+        div.className = 'flex justify-start';
+        div.innerHTML = `
+            <div class="msg-bubble flex items-start gap-2">
+                <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i class="ri-robot-2-line text-white text-sm"></i>
+                </div>
+                <div class="bg-white rounded-2xl rounded-tl-md px-4 py-3 shadow-sm border border-gray-100 flex gap-1">
+                    <span class="typing-dot w-2 h-2 bg-gray-400 rounded-full"></span>
+                    <span class="typing-dot w-2 h-2 bg-gray-400 rounded-full"></span>
+                    <span class="typing-dot w-2 h-2 bg-gray-400 rounded-full"></span>
+                </div>
+            </div>`;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function removeTyping() {
+        const el = document.getElementById('typing-indicator');
+        if (el) el.remove();
+    }
+
+    // ============ 反馈 ============
+    async function submitFeedback(candidateId, feedback) {
+        try {
+            const res = await fetch('/api/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    candidate_id: candidateId,
+                    feedback: feedback,
+                }),
+            });
+            const data = await res.json();
+            // 简单提示
+            const icon = feedback === 'like' ? 'ri-thumb-up-fill text-green-500' : 'ri-thumb-down-fill text-red-500';
+            appendMessage('system', `已收到您对 ${candidateId} 的反馈，${data.message}`);
+        } catch (e) {
+            console.error('反馈提交失败', e);
+        }
+    }
+
+    // ============ 语音 ============
+    function initSpeechRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            console.warn('浏览器不支持语音识别');
+            return;
+        }
+        recognition = new SpeechRecognition();
+        recognition.lang = 'zh-CN';
+        recognition.continuous = false;
+        recognition.interimResults = true;
+
+        recognition.onresult = (e) => {
+            let finalTranscript = '';
+            let interimTranscript = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+                if (e.results[i].isFinal) {
+                    finalTranscript += e.results[i][0].transcript;
+                } else {
+                    interimTranscript += e.results[i][0].transcript;
+                }
+            }
+            const input = document.getElementById('msg-input');
+            if (finalTranscript) {
+                input.value = finalTranscript;
+                stopRecording();
+                sendMessage();
+            } else {
+                input.value = interimTranscript;
+            }
+        };
+
+        recognition.onerror = (e) => {
+            console.error('语音识别错误:', e.error);
+            stopRecording();
+            if (e.error === 'not-allowed') {
+                appendMessage('system', '请允许麦克风权限以使用语音功能。');
+            }
+        };
+
+        recognition.onend = () => {
+            if (isRecording) stopRecording();
+        };
+    }
+
+    function toggleVoice() {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            startRecording();
+        }
+    }
+
+    function startRecording() {
+        if (!recognition) {
+            appendMessage('system', '您的浏览器不支持语音识别，请使用 Chrome 浏览器。');
+            return;
+        }
+        isRecording = true;
+        recognition.start();
+        const btn = document.getElementById('mic-btn');
+        btn.classList.add('recording', 'bg-red-100');
+        btn.querySelector('i').className = 'ri-mic-fill text-red-500 text-lg';
+        document.getElementById('voice-status').classList.remove('hidden');
+    }
+
+    function stopRecording() {
+        isRecording = false;
+        if (recognition) recognition.stop();
+        const btn = document.getElementById('mic-btn');
+        btn.classList.remove('recording', 'bg-red-100');
+        btn.querySelector('i').className = 'ri-mic-line text-gray-600 text-lg';
+        document.getElementById('voice-status').classList.add('hidden');
+    }
+
+    function speakText(text) {
+        if (!window.speechSynthesis) return;
+        // 截取前200字符播报，避免过长
+        const shortText = text.substring(0, 200);
+        const utterance = new SpeechSynthesisUtterance(shortText);
+        utterance.lang = 'zh-CN';
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+    }
+
+    // ============ 工具函数 ============
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function formatMarkdown(text) {
+        if (!text) return '';
+        let html = escapeHtml(text);
+        // 简单 markdown: **bold**, 换行
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/\n/g, '<br>');
+        return html;
+    }
+
+    function getPlainText(text) {
+        return text.replace(/\*\*/g, '').replace(/\n/g, ' ').substring(0, 200);
+    }
+    </script>
+</body>
+</html>
