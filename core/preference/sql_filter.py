@@ -50,3 +50,16 @@ def build_hard_filter_sql(profile: PreferenceProfile) -> tuple[str, tuple]:
             clauses.append("(" + joiner.join(likes) + ")")
     sql = "SELECT * FROM donor.donors WHERE " + " AND ".join(clauses)
     return sql, tuple(params)
+
+
+def diagnose_bottlenecks(profile: PreferenceProfile, count_fn) -> list[dict]:
+    must_fields = [f for f, a in profile.attributes.items() if a.constraint == "must"]
+    results = []
+    for field in must_fields:
+        clone = profile.model_copy(deep=True)
+        clone.attributes[field].constraint = "prefer"
+        sql, params = build_hard_filter_sql(clone)
+        recovered = int(count_fn(sql, params))
+        results.append({"field": field, "recovered": recovered})
+    results.sort(key=lambda x: x["recovered"], reverse=True)
+    return results
