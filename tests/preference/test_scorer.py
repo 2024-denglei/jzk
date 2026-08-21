@@ -61,3 +61,39 @@ def test_age_from_birth_date():
 def test_null_prefer_is_zero():
     attr = _attr("hometown", {"constraint": "prefer", "weight": 0.5, "keywords": ["四川"]})
     assert score_field("hometown", attr, {"hometown": None}) == 0.0
+
+
+def test_weighted_average_and_tie_break_specimen():
+    from core.preference.scorer import HeuristicRanker
+
+    profile = parse_profile({
+        "schema_version": "1.0",
+        "attributes": {
+            "abo_blood": {"constraint": "must", "weight": 1.0, "values": ["O"]},
+            "height_cm": {"constraint": "prefer", "weight": 0.9, "range": {"min": 175}},
+        },
+    })
+    ranker = HeuristicRanker()
+    a = {"abo_blood": "O", "height_cm": 185, "specimen_count": 1, "code": "A"}
+    b = {"abo_blood": "O", "height_cm": 175, "specimen_count": 9, "code": "B"}
+    sa, _ = ranker.score(profile, a)
+    sb, _ = ranker.score(profile, b)
+    assert sa > sb
+    ranked = ranker.rank(profile, [b, a])
+    assert ranked[0][0]["code"] == "A"
+
+
+def test_same_score_higher_specimen_first():
+    from core.preference.scorer import HeuristicRanker
+
+    profile = parse_profile({
+        "schema_version": "1.0",
+        "attributes": {
+            "abo_blood": {"constraint": "must", "weight": 1.0, "values": ["O"]},
+        },
+    })
+    ranker = HeuristicRanker()
+    low = {"abo_blood": "O", "specimen_count": 1, "code": "L"}
+    high = {"abo_blood": "O", "specimen_count": 8, "code": "H"}
+    ranked = ranker.rank(profile, [low, high])
+    assert ranked[0][0]["code"] == "H"

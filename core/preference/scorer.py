@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from core.data_loader import _calc_age
@@ -100,3 +101,52 @@ def score_field(field: str, attr: RangeAttr | EnumAttr | KeywordAttr, row: dict[
     if spec.kind == "enum":
         return score_enum(field, attr, donor_text(field, row))
     return score_keyword(attr, donor_text(field, row))
+
+
+@dataclass
+class FieldScore:
+    field: str
+    actual: Any
+    target: Any
+    s: float
+    weight: float
+    constraint: str
+
+
+class Ranker:
+    def score(self, profile, row: dict[str, Any]) -> tuple[float, list[FieldScore]]:
+        raise NotImplementedError
+
+    def rank(self, profile, rows: list[dict[str, Any]]) -> list[tuple[dict[str, Any], float, list[FieldScore]]]:
+        scored = []
+        for row in rows:
+            total, parts = self.score(profile, row)
+            scored.append((row, total, parts))
+        scored.sort(
+            key=lambda t: (t[1], float(t[0].get("specimen_count") or 0)),
+            reverse=True,
+        )
+        return scored
+
+
+class HeuristicRanker(Ranker):
+    def score(self, profile, row: dict[str, Any]) -> tuple[float, list[FieldScore]]:
+        parts: list[FieldScore] = []
+        num = 0.0
+        den = 0.0
+        for field, attr in profile.attributes.items():
+            s = score_field(field, attr, row)
+            if isinstance(attr, RangeAttr):
+                target: Any = {"min": attr.range.min, "max": attr.range.max}
+                actual: Any = donor_numeric(field, row)
+            elif isinstance(attr, EnumAttr):
+                target = list(attr.values)
+                actual = donor_text(field, row)
+            else:
+                target = {"keywords": attr.keywords, "match": attr.match}
+                actual = donor_text(field, row)
+            parts.append(FieldScore(field, actual, target, s, attr.weight, attr.constraint))
+            num += s * attr.weight
+            den += attr.weight
+        total = (num / den) if den else 0.0
+        return total, parts
