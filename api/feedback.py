@@ -3,6 +3,21 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from core.preference.match_log import append_feedback_event
+
+router = APIRouter()
+
+_deps = {}
+
+
+def record_feedback(session_id: str, donor_code: str, feedback: str) -> None:
+    event = {"like": "like", "dislike": "dislike"}[feedback]
+    append_feedback_event({
+        "session_id": session_id,
+        "donor_code": donor_code,
+        "event": event,
+    })
+
 router = APIRouter()
 
 _deps = {}
@@ -40,6 +55,7 @@ async def submit_feedback(request: FeedbackRequest):
         raise HTTPException(status_code=400, detail="feedback 仅支持 like/dislike")
 
     session.add_feedback(request.candidate_id, request.feedback, request.reason)
+    record_feedback(request.session_id, request.candidate_id, request.feedback)
 
     return FeedbackResponse(
         success=True,
