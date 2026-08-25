@@ -2,8 +2,10 @@
 
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from api.auth_utils import get_current_user_id
 
 router = APIRouter()
 
@@ -42,8 +44,8 @@ def inject_dependencies(session_manager, feature_encoder, donor_df, llm_client):
 
 
 @router.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """文本对话主接口。"""
+async def chat(request: ChatRequest, _user_id: int = Depends(get_current_user_id)):
+    """文本对话主接口（需登录）。"""
     from dialogue.session import DialogueState
     from dialogue.nlu import parse_user_intent
     from dialogue.dialogue_flow import get_welcome

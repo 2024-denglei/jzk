@@ -47,8 +47,11 @@ def test_rejects_illegal_enum():
             "education": {"constraint": "prefer", "weight": 0.5, "values": ["小学"]},
         },
     }
-    with pytest.raises(ProfileValidationError):
+    with pytest.raises(ProfileValidationError, match="允许值") as ei:
         parse_profile(raw)
+    msg = str(ei.value)
+    assert "小学" in msg
+    assert "硕士" in msg
 
 
 def test_rejects_empty_range():

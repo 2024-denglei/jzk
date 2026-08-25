@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0a2430;
+  --color-ink-soft: #1a3d4a;
+  --color-teal: #0f6b6d;
+  --color-teal-deep: #0b3d4a;
+  --color-mist: #d8ecef;
+  --color-sand: #f4f8f9;
+  --color-line: #d5e3e6;
+  --font-display: "Noto Serif SC", "Source Han Serif SC", serif;
+  --font-sans: "DM Sans", "Source Han Sans SC", "Noto Sans SC", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-sand);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.scroll-y::-webkit-scrollbar {
+  width: 5px;
+}
+.scroll-y::-webkit-scrollbar-thumb {
+  background: #b7c9ce;
+  border-radius: 3px;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(12px, -10px, 0) scale(1.04);
+  }
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.7s ease both;
+}
+
+.animate-fade-up-delay {
+  animation: fade-up 0.8s ease 0.15s both;
+}
+
+.animate-drift {
+  animation: soft-drift 14s ease-in-out infinite;
+}
+
+.animate-msg-in {
+  animation: msg-in 0.28s ease both;
+}
+
+.animate-toast-in {
+  animation: toast-in 0.35s ease both;
+}
+
+.stagger-item {
+  animation: fade-up 0.45s ease both;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #e8f0f2 25%, #f4f8f9 50%, #e8f0f2 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 8px;
+}
+
+.panel-rail {
+  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1), min-width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.donor-card-lift {
+  transition:
+    transform 0.22s ease,
+    box-shadow 0.22s ease,
+    border-color 0.22s ease;
+}
+.donor-card-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(11, 61, 74, 0.07);
+  border-color: color-mix(in srgb, var(--color-teal) 35%, var(--color-line));
+}

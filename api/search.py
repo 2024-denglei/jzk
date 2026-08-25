@@ -13,13 +13,16 @@ import re
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from core.data_loader import to_card_donor_info
+
 router = APIRouter()
 
 LABEL_TO_FIELD = {
     "学历": "education", "身高": "height", "血型": "blood_type",
     "体型": "figure", "肤色": "skin_color", "脸型": "face_shape",
-    "眼皮": "eyelid", "形象气质": "appearance",
-    "唇形": "lip_shape", "星座": "constellation", "RH血型": "rh_blood",
+    "眼皮": "eyelid",
+    "唇形": "lip_shape", "唇型": "lip_shape", "星座": "constellation",
+    "RH血型": "rh_blood", "Rh血型": "rh_blood",
     "民族": "ethnicity", "籍贯": "hometown", "职业": "occupation",
     "性格": "personality", "年龄": "age", "标本数量": "specimen_min",
 }
@@ -245,6 +248,10 @@ async def search_donors(request: SearchRequest, req: Request):
             hint_parts.append(BROADEN_HINT.get(f, f"{label}(向上兼容)"))
         else:
             hint_parts.append(f"{label}(已移除)")
+
+    for item in results:
+        info = item.get("donor_info") or {}
+        item["donor_info"] = to_card_donor_info(info)
 
     return {
         "items": results,

@@ -1,0 +1,360 @@
+{
+  "ok": true,
+  "skipped": false,
+  "match_level": "full",
+  "filtered_count": 1066,
+  "bottlenecks": [],
+  "candidates": [
+    {
+      "donor_info": {
+        "id": "A2601472",
+        "code": "A2601472",
+        "blood_type": "O",
+        "rh_blood": "阳性",
+        "ethnicity": "汉族",
+        "height": 185,
+        "age": 27,
+        "constellation": "水瓶座",
+        "hometown": "重庆市江北区",
+        "occupation": "设计师",
+        "education": "硕士",
+        "face_shape": "椭圆",
+        "eyelid": "双",
+        "skin_color": "一般",
+        "lip_shape": "一般",
+        "nose_bridge": "中直",
+        "hair_color": "黑",
+        "hair_style": "直",
+        "hair_volume": "浓密",
+        "beard": "无",
+        "mustache": "稀疏",
+        "figure": "一般",
+        "weight": 67.4,
+        "bmi": 19.7,
+        "personality": "内向",
+        "hobby": "运动健身；休闲娱乐；美食饮品",
+        "hobby_sports": "有",
+        "hobby_arts": "无",
+        "hobby_leisure": "有",
+        "hobby_travel": "无",
+        "hobby_reading": "无",
+        "hobby_food": "有",
+        "drink_history": "无",
+        "smoke_history": "无",
+        "personal_disease": "无",
+        "present_illness": "无",
+        "past_illness": "无",
+        "surgery_history": "无",
+        "personal_life_hist": "无",
+        "partners_6m": "1",
+        "std_history": "无",
+        "marital_fertility": "未婚未育",
+        "marriage_age": "",
+        "children_info": "",
+        "genetic_history": "无",
+        "chromosome_disease": "无",
+        "monogenic_disease": "无",
+        "polygenic_disease": "无",
+        "consanguinity": "无",
+        "semen_test": "",
+        "blood_test": "",
+        "chromosome_test": "",
+        "microbio_test": "",
+        "specimen_count": 0,
+        "availability": "可用",
+        "status": "active",
+        "remark": ""
+      },
+      "score": 1.0,
+      "match_pct": 100.0,
+      "reason": "匹配：abo_blood、education、height_cm",
+      "match_level": "full",
+      "field_match": {
+        "abo_blood": {
+          "match": true,
+          "actual": "O",
+          "user": "O"
+        },
+        "education": {
+          "match": true,
+          "actual": "硕士",
+          "user": "硕士、博士"
+        },
+        "height_cm": {
+          "match": true,
+          "actual": 185.0,
+          "user": "{'min': 175.0}"
+        }
+      },
+      "field_scores": [
+        {
+          "field": "abo_blood",
+          "actual": "O",
+          "target": [
+            "O"
+          ],
+          "s": 1.0,
+          "weight": 1.0,
+          "constraint": "must"
+        },
+        {
+          "field": "education",
+          "actual": "硕士",
+          "target": [
+            "硕士",
+            "博士"
+          ],
+          "s": 1.0,
+          "weight": 0.7,
+          "constraint": "prefer"
+        },
+        {
+          "field": "height_cm",
+          "actual": 185.0,
+          "target": {
+            "min": 175.0,
+            "max": null
+          },
+          "s": 1.0,
+          "weight": 0.8,
+          "constraint": "prefer"
+        }
+      ],
+      "rank": 1
+    },
+    {
+      "donor_info": {
+        "id": "A2601734",
+        "code": "A2601734",
+        "blood_type": "O",
+        "rh_blood": "阳性",
+        "ethnicity": "汉族",
+        "height": 185,
+        "age": 28,
+        "constellation": "巨蟹座",
+        "hometown": "四川省达州市通川区",
+        "occupation": "教师",
+        "education": "硕士",
+        "face_shape": "长",
+        "eyelid": "单",
+        "skin_color": "一般",
+        "lip_shape": "一般",
+        "nose_bridge": "中直",
+        "hair_color": "黑",
+        "hair_style": "直",
+        "hair_volume": "一般",
+        "beard": "有",
+        "mustache": "稀疏",
+        "figure": "一般",
+        "weight": 66.7,
+        "bmi": 19.5,
+        "personality": "外向",
+        "hobby": "运动健身；旅游度假；美食饮品",
+        "hobby_sports": "有",
+        "hobby_arts": "无",
+        "hobby_leisure": "无",
+        "hobby_travel": "有",
+        "hobby_reading": "无",
+        "hobby_food": "有",
+        "drink_history": "无",
+        "smoke_history": "无",
+        "personal_disease": "有",
+        "present_illness": "轻度过敏性鼻炎",
+        "past_illness": "无",
+        "surgery_history": "无",
+        "personal_life_hist": "无",
+        "partners_6m": "2",
+        "std_history": "无",
+        "marital_fertility": "已婚已育",
+        "marriage_age": "27.0",
+        "children_info": "1男",
+        "genetic_history": "无",
+        "chromosome_disease": "无",
+        "monogenic_disease": "无",
+        "polygenic_disease": "无",
+        "consanguinity": "无",
+        "semen_test": "",
+        "blood_test": "",
+        "chromosome_test": "",
+        "microbio_test": "",
+        "specimen_count": 0,
+        "availability": "可用",
+        "status": "active",
+        "remark": ""
+      },
+      "score": 1.0,
+      "match_pct": 100.0,
+      "reason": "匹配：abo_blood、education、height_cm",
+      "match_level": "full",
+      "field_match": {
+        "abo_blood": {
+          "match": true,
+          "actual": "O",
+          "user": "O"
+        },
+        "education": {
+          "match": true,
+          "actual": "硕士",
+          "user": "硕士、博士"
+        },
+        "height_cm": {
+          "match": true,
+          "actual": 185.0,
+          "user": "{'min': 175.0}"
+        }
+      },
+      "field_scores": [
+        {
+          "field": "abo_blood",
+          "actual": "O",
+          "target": [
+            "O"
+          ],
+          "s": 1.0,
+          "weight": 1.0,
+          "constraint": "must"
+        },
+        {
+          "field": "education",
+          "actual": "硕士",
+          "target": [
+            "硕士",
+            "博士"
+          ],
+          "s": 1.0,
+          "weight": 0.7,
+          "constraint": "prefer"
+        },
+        {
+          "field": "height_cm",
+          "actual": 185.0,
+          "target": {
+            "min": 175.0,
+            "max": null
+          },
+          "s": 1.0,
+          "weight": 0.8,
+          "constraint": "prefer"
+        }
+      ],
+      "rank": 2
+    },
+    {
+      "donor_info": {
+        "id": "A2602694",
+        "code": "A2602694",
+        "blood_type": "O",
+        "rh_blood": "阳性",
+        "ethnicity": "汉族",
+        "height": 185,
+        "age": 24,
+        "constellation": "狮子座",
+        "hometown": "重庆市九龙坡区",
+        "occupation": "技术员",
+        "education": "硕士",
+        "face_shape": "长",
+        "eyelid": "双",
+        "skin_color": "偏黑",
+        "lip_shape": "一般",
+        "nose_bridge": "中直",
+        "hair_color": "黑",
+        "hair_style": "直",
+        "hair_volume": "浓密",
+        "beard": "无",
+        "mustache": "稀疏",
+        "figure": "强壮",
+        "weight": 89.0,
+        "bmi": 26.0,
+        "personality": "外向",
+        "hobby": "休闲娱乐；小说书籍；美食饮品",
+        "hobby_sports": "无",
+        "hobby_arts": "无",
+        "hobby_leisure": "有",
+        "hobby_travel": "无",
+        "hobby_reading": "有",
+        "hobby_food": "有",
+        "drink_history": "无",
+        "smoke_history": "无",
+        "personal_disease": "无",
+        "present_illness": "无",
+        "past_illness": "无",
+        "surgery_history": "无",
+        "personal_life_hist": "无",
+        "partners_6m": "2",
+        "std_history": "无",
+        "marital_fertility": "已婚未育",
+        "marriage_age": "22.0",
+        "children_info": "",
+        "genetic_history": "无",
+        "chromosome_disease": "无",
+        "monogenic_disease": "无",
+        "polygenic_disease": "无",
+        "consanguinity": "无",
+        "semen_test": "",
+        "blood_test": "",
+        "chromosome_test": "",
+        "microbio_test": "",
+        "specimen_count": 0,
+        "availability": "可用",
+        "status": "active",
+        "remark": ""
+      },
+      "score": 1.0,
+      "match_pct": 100.0,
+      "reason": "匹配：abo_blood、education、height_cm",
+      "match_level": "full",
+      "field_match": {
+        "abo_blood": {
+          "match": true,
+          "actual": "O",
+          "user": "O"
+        },
+        "education": {
+          "match": true,
+          "actual": "硕士",
+          "user": "硕士、博士"
+        },
+        "height_cm": {
+          "match": true,
+          "actual": 185.0,
+          "user": "{'min': 175.0}"
+        }
+      },
+      "field_scores": [
+        {
+          "field": "abo_blood",
+          "actual": "O",
+          "target": [
+            "O"
+          ],
+          "s": 1.0,
+          "weight": 1.0,
+          "constraint": "must"
+        },
+        {
+          "field": "education",
+          "actual": "硕士",
+          "target": [
+            "硕士",
+            "博士"
+          ],
+          "s": 1.0,
+          "weight": 0.7,
+          "constraint": "prefer"
+        },
+        {
+          "field": "height_cm",
+          "actual": 185.0,
+          "target": {
+            "min": 175.0,
+            "max": null
+          },
+          "s": 1.0,
+          "weight": 0.8,
+          "constraint": "prefer"
+        }
+      ],
+      "rank": 3
+    }
+  ]
+}

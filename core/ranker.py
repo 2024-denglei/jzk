@@ -29,6 +29,9 @@ def rank_and_explain(
     """
     if top_k is None:
         top_k = MATCH_TOP_K
+    # <=0：不截断，返回全部候选人
+    if not top_k or top_k <= 0:
+        top_k = len(candidates)
 
     # 软加分：文本偏好字段命中提升排名
     candidates = _apply_text_bonus(candidates, df, parsed_features)
@@ -59,8 +62,8 @@ def rank_and_explain(
 _FIELD_LABEL = {
     "education": "学历", "blood_type": "血型", "height": "身高",
     "age": "年龄", "figure": "体型", "skin_color": "肤色",
-    "face_shape": "脸型", "eyelid": "眼皮", "appearance": "形象气质",
-    "lip_shape": "唇形", "constellation": "星座", "rh_blood": "RH血型",
+    "face_shape": "脸型", "eyelid": "眼皮",
+    "lip_shape": "唇型", "constellation": "星座", "rh_blood": "Rh血型",
     "ethnicity": "民族", "hometown": "籍贯", "occupation": "职业",
     "personality": "性格", "specimen_min": "标本数量",
 }
@@ -123,11 +126,10 @@ def _generate_reason(
     if unmatched:
         parts.append("未完全符合：" + "、".join(unmatched))
 
-    # 补充无关条件的亮点
-    if donor.get("appearance") and "appearance" not in (field_match or {}):
-        parts.append(f"形象气质{donor['appearance']}")
     if donor.get("personality"):
         parts.append(f"性格{donor['personality']}")
+    if donor.get("hobby"):
+        parts.append(f"爱好{donor['hobby']}")
 
     if not parts:
         parts.append("综合特征较为匹配")

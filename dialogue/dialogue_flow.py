@@ -13,7 +13,7 @@ WELCOME_MESSAGE = (
     "• 身高范围（如175cm以上）\n"
     "• 体型偏好（匀称型/精壮型/偏瘦型）\n"
     "• 肤色偏好（偏白/一般）\n"
-    "• 血型、脸型、形象气质等\n\n"
+    "• 血型、脸型、性格等\n\n"
     "您可以一次说出多个条件，也可以分多次补充。请问您有什么需求？"
 )
 
@@ -45,7 +45,6 @@ def build_feature_summary(features: dict) -> str:
         "face_shape": "脸型",
         "eyelid": "眼皮",
         "lip_shape": "唇形",
-        "appearance": "形象气质",
         "constellation": "星座",
         "ethnicity": "民族",
         "hometown": "籍贯",
@@ -103,8 +102,11 @@ def determine_next_action(
             "message": str | None  （仅部分 action 需要附带系统消息）
         }
     """
-    # 歧义 → 需要澄清
-    if ambiguity and clarification_needed:
+    # 歧义澄清：仅在本轮没有可落地的特征变更时才打断；否则优先更新并匹配
+    # （避免 LLM 一边说「已匹配、看下方卡片」一边因 ambiguity 不发 candidates）
+    has_new_features = _has_any_feature(features)
+    has_removals = bool(remove_fields)
+    if ambiguity and clarification_needed and not (has_new_features or has_removals or intent in ("search", "refine")):
         session.state = DialogueState.COLLECTING
         return {"action": "clarify", "message": None}
 
@@ -112,9 +114,6 @@ def determine_next_action(
     if intent == "farewell":
         session.state = DialogueState.END
         return {"action": "farewell", "message": "感谢您使用智能生育匹配系统，祝您一切顺利！再见！"}
-
-    has_new_features = _has_any_feature(features)
-    has_removals = bool(remove_fields)
 
     # 当处于 PRESENTING 状态时：有新特征/删除操作 OR 意图为 refine/search → 更新并重匹配
     if session.state == DialogueState.PRESENTING and (
@@ -167,8 +166,14 @@ def _has_any_feature(features: dict) -> bool:
             continue
         if val == "REMOVE":
             return True  # 删除操作也算一次有效变更
-        if key == "height" and isinstance(val, dict):
-            if val.get("min") or val.get("max"):
+        if key in ("height", "age") and isinstance(val, dict):
+            if val.get("min") is not None or val.get("max") is not None:
+                return True
+        elif isinstance(val, list) and val:
+            return True
+        elif isinstance(val, dict):
+            # 其他字典：有任意非空值才算
+            if any(v is not None and v != "" for v in val.values()):
                 return True
         elif val:
             return True
@@ -192,7 +197,7 @@ def format_results_message(results: list[dict]) -> str:
             f"**{i}. 编号 {d['code']}**\n"
             f"   学历：{d['education']} | 身高：{d['height']}cm | "
             f"体型：{d['figure']} | 肤色：{d['skin_color']}\n"
-            f"   血型：{d['blood_type']} | 形象气质：{d['appearance']}\n"
+            f"   血型：{d['blood_type']} | 性格：{d.get('personality', '')}\n"
             f"   {r['reason']}\n"
         )
     lines.append(f"\n{FEEDBACK_PROMPT}")

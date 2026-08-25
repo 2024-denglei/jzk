@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -29,13 +30,21 @@ def _strip_forbidden(obj: Any) -> Any:
     return obj
 
 
+def _json_default(obj: Any) -> Any:
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    return str(obj)
+
+
 def _append(filename: str, payload: dict[str, Any]) -> None:
     directory = _log_dir()
     directory.mkdir(parents=True, exist_ok=True)
     record = {"ts": datetime.now(timezone.utc).isoformat(), **_strip_forbidden(payload)}
     path = directory / filename
     with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        f.write(json.dumps(record, ensure_ascii=False, default=_json_default) + "\n")
 
 
 def append_match_turn(payload: dict[str, Any]) -> None:

@@ -6,3 +6,7 @@ venv/
 .pytest_cache/
 .mypy_cache/
 *.xlsx
+data/
+web/node_modules/
+web/dist/
+.superpowers/

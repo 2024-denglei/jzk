@@ -4,45 +4,127 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
+
+from core.preference.schema import field_catalog_text, openai_tool_schema
 
 logger = logging.getLogger(__name__)
 
+
+def parse_tool_arguments(raw_arguments: str | None, assistant_content: str | None = None) -> dict[str, Any]:
+    """从工具 arguments 或助手正文中取出 PreferenceProfile 对象。"""
+    for blob in (_extract_json_objects(raw_arguments) + _extract_json_objects(assistant_content)):
+        if isinstance(blob, dict) and ("schema_version" in blob or "attributes" in blob):
+            blob.setdefault("schema_version", "1.0")
+            blob.setdefault("attributes", {})
+            return blob
+        if isinstance(blob, dict) and blob.get("attributes") is None and any(
+            k in blob for k in ("abo_blood", "height_cm", "education")
+        ):
+            return {"schema_version": "1.0", "attributes": blob}
+    return {}
+
+
+def _extract_json_objects(text: str | None) -> list[Any]:
+    if not text or not str(text).strip():
+        return []
+    s = str(text).strip()
+    found: list[Any] = []
+    try:
+        found.append(json.loads(s))
+        return found
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    idx = 0
+    while True:
+        start = s.find("{", idx)
+        if start < 0:
+            break
+        try:
+            obj, end = decoder.raw_decode(s, start)
+            found.append(obj)
+            idx = end
+        except json.JSONDecodeError:
+            idx = start + 1
+    return found
+
 AGENT_SYSTEM_PROMPT = """你是智能生育匹配系统的顾问助手。
 
-职责：
-1. 通过多轮对话理解用户对捐精人各属性的偏好，每轮输出当前完整 PreferenceProfile
-2. 有任何仍生效的偏好时，必须调用工具 submit_preference_profile；禁止只说「已记录」却不调用
-3. 工具返回后用中文简洁总结；人数必须与工具结果一致，禁止虚构捐精人
+你通过对话理解用户对捐精人的偏好，自己判断何时该调用工具。不要用固定口头禅词表，按语义理解。
+
+【必须遵守】
+1. 用户提出、修改、放宽、取消任何偏好时，必须调用 submit_preference_profile，提交当前完整 PreferenceProfile 快照后再总结。禁止只说「已记录/已添加/已放宽」却不调用。
+2. 工具参数必须符合 JSON Schema（见工具 parameters）。每个属性都要有 constraint（must|prefer）和 weight（0~1）。
+3. 人数、代号、匹配度只能来自工具返回的 count / top_preview / prefer_hits。禁止虚构。禁止输出捐精人 Markdown 表格。匹配结果由系统在回复下方展示卡片，引导用户看卡片。
+4. 若工具返回 ok=false，根据 error / allowed_values 修正 parameters，再次调用同一工具，直到成功或确认无法修正。修正期间不要向用户编造成果。
+5. 闲聊、问候、明确说「没了/没有了」且不改条件 → 不调用工具。
+6. 若工具返回 prefer_hits 非空：这些字段只重排、未做硬过滤。count / filtered_count 是必要条件过滤后的人数，可以与上一轮相同。总结必须说明「人数未因该偏好减少，已按偏好重排」，并引用各字段 hits/of（例如：仍是 554 位；已按籍贯偏好重排，其中 230 位更符合，已排在列表前部）。禁止把 prefer 说成筛掉了人。
 
 【画像规则】
-- 每轮提交完整 attributes 快照，不是增量。取消某条件 = 该字段从 attributes 中消失
-- 每个出现的字段必须有 constraint（must|prefer）和 weight（0~1）
-- 用户说「必须/一定要」→ must 且 weight=1.0；「最好/希望」→ prefer；未说强度时 must=1.0、prefer=0.5
-- 数值字段用 range.min/max（height_cm、weight_kg、bmi、age、specimen_count）
-- 枚举字段用 values 数组：education/abo_blood/rh_blood/figure/skin_color/face_shape/eyelid/lip_shape/constellation
+- 每轮提交完整 attributes，不是增量。取消某条件 = 该字段从 attributes 中消失
+- 「必须/一定要/不要（某项）」→ must 且 weight=1.0；「最好/希望」→ prefer；未说强度时 must=1.0、prefer=0.5
+- 「也可以/也行」表示放宽：把新值并入该字段（如籍贯 keywords 同时含重庆和四川），不要丢掉旧值
+- 数值字段用 range.min/max（height_cm、weight_kg、bmi、age、specimen_count）；单边范围另一侧填 null
+- 枚举字段用 values，且必须是该字段允许值
 - 其余文本字段用 keywords + match(any|all)
-- 禁止输出 SQL，禁止编造代号和具体捐精人信息
-- 闲聊、问候且没有偏好 → 不调用工具
-"""
+- 调用时 arguments 必须是完整 JSON（schema_version=1.0 与 attributes），禁止空参数
+- 禁止输出 SQL，禁止编造代号
+
+""" + field_catalog_text()
+
+_DONOR_CODE = re.compile(r"A\d{7}")
+_MD_TABLE_ROW = re.compile(r"(?m)^\s*\|.+\|\s*$")
+
+
+def slim_assistant_for_llm(content: str | None) -> str:
+    """历史里去掉捐精人表格和代号，避免下一轮照抄、跳过工具。"""
+    text = content or ""
+    text = _MD_TABLE_ROW.sub("", text)
+    text = _DONOR_CODE.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
+def tool_failure_payload(error: Any, **extra: Any) -> dict[str, Any]:
+    """校验失败时给模型的工具回执：说明怎么错、如何改、要求重试。"""
+    payload = {
+        "ok": False,
+        "retry": True,
+        "error": str(error),
+        "note": (
+            "参数未通过校验。请根据 error 修正完整 PreferenceProfile 后，"
+            "再次调用 submit_preference_profile。"
+            "不要向用户编造匹配人数、代号或卡片。"
+        ),
+    }
+    payload.update({k: v for k, v in extra.items() if v is not None})
+    return payload
+
+
+def _match_success_note(prefer_hits: list | None) -> str:
+    base = "请根据 count/match_level 总结，引导用户查看下方卡片，勿虚构人数与代号。"
+    if not prefer_hits:
+        return base
+    return (
+        base
+        + " prefer_hits 是偏好字段在当前名单上的命中人数，未做硬过滤。"
+        " 必须说明：人数未因该偏好减少（仍是 count），已按偏好重排，并引用各字段 hits/of。"
+        " 禁止把 prefer 说成筛掉了人。"
+    )
+
 
 SUBMIT_PROFILE_TOOL = {
     "type": "function",
     "function": {
         "name": "submit_preference_profile",
-        "description": "提交当前完整偏好画像并匹配捐精人。每轮有偏好时必须调用；取消的字段不要出现。",
-        "parameters": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["schema_version", "attributes"],
-            "properties": {
-                "schema_version": {"type": "string", "enum": ["1.0"]},
-                "attributes": {
-                    "type": "object",
-                    "description": "完整偏好画像。取消的字段不要出现。未提及不要编造。",
-                },
-            },
-        },
+        "description": (
+            "提交当前完整 PreferenceProfile 并匹配捐精人。"
+            "有偏好或改条件时必须调用。arguments 必须符合 JSON Schema。"
+            "若返回 ok=false，按 error 修正后重试本工具。"
+        ),
+        "parameters": openai_tool_schema(),
     },
 }
 
@@ -366,7 +448,7 @@ def run_preference_match(
     try:
         profile = parse_profile(raw_profile if isinstance(raw_profile, dict) else {})
     except ProfileValidationError as e:
-        return [], {"ok": False, "error": str(e)}
+        return [], tool_failure_payload(e)
 
     dumped = profile.model_dump()
     session.replace_profile(dumped)
@@ -414,9 +496,66 @@ def run_preference_match(
         "feature_summary": build_profile_summary(profile),
         "bottlenecks": result.bottlenecks,
         "top_preview": top,
-        "note": "请根据 count/match_level 总结，引导用户查看下方卡片，勿虚构人数与代号。",
+        "prefer_hits": list(result.prefer_hits or []),
+        "note": _match_success_note(result.prefer_hits),
     }
     return result.candidates, payload
+
+
+def apply_match_api_response(session, raw_profile: dict, status: int, data: dict):
+    """把 POST /api/match 的 HTTP 结果写回会话，并生成给大模型的工具回执。"""
+    from core.preference.validate import ProfileValidationError, parse_profile
+    from dialogue.session import DialogueState
+
+    if status == 400:
+        detail = data.get("detail") if isinstance(data, dict) else status
+        return [], tool_failure_payload(detail)
+    if status != 200 or not (isinstance(data, dict) and data.get("ok")):
+        detail = (data.get("detail") if isinstance(data, dict) else None) or f"match api {status}"
+        return [], tool_failure_payload(detail, retry=status in (400, 422))
+    try:
+        profile = parse_profile(raw_profile if isinstance(raw_profile, dict) else {})
+    except ProfileValidationError as e:
+        return [], tool_failure_payload(e)
+
+    dumped = profile.model_dump()
+    session.replace_profile(dumped)
+    session.parsed_features = dict(dumped.get("attributes") or {})
+    session.constraints = {
+        k: (v.get("constraint") if isinstance(v, dict) else "prefer")
+        for k, v in (dumped.get("attributes") or {}).items()
+    }
+    candidates = data.get("candidates") or []
+    session.candidates = candidates
+    session.state = DialogueState.PRESENTING if candidates else DialogueState.COLLECTING
+    session.pending_relaxations = [b.get("field") for b in (data.get("bottlenecks") or []) if isinstance(b, dict)]
+    top = []
+    for c in candidates[:5]:
+        d = (c or {}).get("donor_info") or {}
+        top.append({
+            "code": d.get("code"),
+            "education": d.get("education"),
+            "height": d.get("height"),
+            "age": d.get("age"),
+            "score": c.get("score"),
+        })
+    prefer_hits = list(data.get("prefer_hits") or [])
+    payload = {
+        "ok": True,
+        "count": len(candidates),
+        "match_level": data.get("match_level"),
+        "filtered_count": data.get("filtered_count"),
+        "feature_summary": build_profile_summary(profile),
+        "bottlenecks": data.get("bottlenecks") or [],
+        "top_preview": top,
+        "prefer_hits": prefer_hits,
+        "note": _match_success_note(prefer_hits),
+    }
+    if data.get("skipped"):
+        payload["skipped"] = True
+        payload["note"] = "无偏好条件，不执行匹配。"
+        payload["feature_summary"] = "（暂无偏好）"
+    return candidates, payload
 
 
 def build_agent_messages(session, user_message: str | None = None) -> list[dict]:
@@ -433,7 +572,7 @@ def build_agent_messages(session, user_message: str | None = None) -> list[dict]
     for m in session.get_llm_messages():
         role = m.get("role")
         if role == "assistant":
-            messages.append({"role": "assistant", "content": m.get("content") or ""})
+            messages.append({"role": "assistant", "content": slim_assistant_for_llm(m.get("content") or "")})
         elif role == "user":
             messages.append({"role": "user", "content": m.get("content") or ""})
     # 若 history 尚未写入本轮用户句，则补上

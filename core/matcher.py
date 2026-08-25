@@ -134,8 +134,9 @@ def hard_filter(
 
     # 血型（无序，broadened = 跳过）
     blood_vals = _to_list(parsed_features.get("blood_type"))
+    blood_col = "ABO血型" if "ABO血型" in donor_df.columns else "血型"
     if blood_vals and _is_must("blood_type") and not _is_broadened("blood_type"):
-        mask &= donor_df["血型"].isin(blood_vals).values
+        mask &= donor_df[blood_col].isin(blood_vals).values
 
     # 身高（单选范围，不变）
     height_spec = parsed_features.get("height")
@@ -177,15 +178,11 @@ def hard_filter(
     if eyelid_vals and _is_must("eyelid") and not _is_broadened("eyelid"):
         mask &= donor_df["眼皮"].isin(eyelid_vals).values
 
-    # 形象气质（无序，broadened = 跳过）
-    appear_vals = _to_list(parsed_features.get("appearance"))
-    if appear_vals and _is_must("appearance") and not _is_broadened("appearance"):
-        mask &= donor_df["形象气质"].isin(appear_vals).values
-
-    # 唇形（无序）
+    # 唇型（无序）
     lip_vals = _to_list(parsed_features.get("lip_shape"))
+    lip_col = "唇型" if "唇型" in donor_df.columns else "唇形"
     if lip_vals and _is_must("lip_shape") and not _is_broadened("lip_shape"):
-        mask &= donor_df["唇形"].isin(lip_vals).values
+        mask &= donor_df[lip_col].isin(lip_vals).values
 
     # 星座（无序）
     const_vals = _to_list(parsed_features.get("constellation"))
@@ -194,8 +191,9 @@ def hard_filter(
 
     # RH血型
     rh_vals = _to_list(parsed_features.get("rh_blood"))
-    if rh_vals and _is_must("rh_blood") and not _is_broadened("rh_blood"):
-        mask &= donor_df["RH血型"].isin(rh_vals).values if "RH血型" in donor_df.columns else mask
+    rh_col = "Rh血型" if "Rh血型" in donor_df.columns else "RH血型"
+    if rh_vals and _is_must("rh_blood") and not _is_broadened("rh_blood") and rh_col in donor_df.columns:
+        mask &= donor_df[rh_col].isin(rh_vals).values
 
     # 民族（关键词包含匹配）
     eth_vals = _to_list(parsed_features.get("ethnicity"))
@@ -274,24 +272,35 @@ def match_with_relaxation(
     parsed_features: dict,
     scores: np.ndarray,
     constraints: dict | None = None,
-    top_k: int = 50,
+    top_k: int | None = None,
     threshold: float | None = None,
 ) -> tuple[list[tuple[int, float]], str, list[str]]:
-    """渐进式放宽硬约束匹配，返回所有符合条件的结果（上限 top_k）。
+    """渐进式放宽硬约束匹配。
+
+    top_k <= 0 或 None 且配置 MATCH_TOP_K<=0 时：返回全部符合条件者（不截断）。
 
     返回:
         (candidates, match_level, relaxed_fields)
         match_level: "full" | "relaxed" | "similarity_only"
         relaxed_fields: 被放宽的字段列表（full 时为空）
     """
+    from config import MATCH_TOP_K as _CFG_TOP_K
+
     if threshold is None:
         threshold = MATCH_THRESHOLD
+    if top_k is None:
+        top_k = _CFG_TOP_K
+
+    def _take(cands: list[tuple[int, float]]) -> list[tuple[int, float]]:
+        if not top_k or top_k <= 0:
+            return cands
+        return cands[:top_k]
 
     # 第一步：全部硬约束
     h_mask = hard_filter(donor_df, parsed_features, constraints)
     cands = filter_candidates(scores, threshold=threshold, hard_mask=h_mask)
     if len(cands) >= 1:
-        return cands[:top_k], "full", []
+        return _take(cands), "full", []
 
     # 第二步：逐步放宽硬约束（按 _RELAX_ORDER 从尾部开始放宽）
     relaxed_constraints = dict(constraints) if constraints else {}
@@ -306,18 +315,18 @@ def match_with_relaxation(
             h_mask = hard_filter(donor_df, parsed_features, relaxed_constraints)
             cands = filter_candidates(scores, threshold=threshold, hard_mask=h_mask)
             if len(cands) >= 1:
-                return cands[:top_k], "relaxed", relaxed_fields
+                return _take(cands), "relaxed", relaxed_fields
 
     # 第三步：去掉阈值限制，仍用放宽后的约束
     h_mask = hard_filter(donor_df, parsed_features, relaxed_constraints)
     cands = filter_candidates(scores, threshold=0.0, hard_mask=h_mask)
     if len(cands) >= 1:
-        return cands[:top_k], "relaxed", relaxed_fields
+        return _take(cands), "relaxed", relaxed_fields
 
     # 第四步：完全不过滤，纯相似度排序
     all_cands = [(int(i), float(scores[i])) for i in range(len(scores))]
     all_cands.sort(key=lambda x: x[1], reverse=True)
-    return all_cands[:top_k], "similarity_only", relaxed_fields
+    return _take(all_cands), "similarity_only", relaxed_fields
 
 
 def diagnose_no_match(
@@ -372,7 +381,7 @@ def compute_field_match(donor_row, parsed_features: dict) -> dict:
 
     blood = parsed_features.get("blood_type")
     if blood:
-        actual = str(donor_row.get("血型", ""))
+        actual = str(donor_row.get("ABO血型") or donor_row.get("血型", ""))
         matched, label = _match_cat(blood, actual)
         result["blood_type"] = {"match": matched, "user": label, "actual": actual}
 
@@ -415,15 +424,9 @@ def compute_field_match(donor_row, parsed_features: dict) -> dict:
         matched, label = _match_cat(eyelid, actual)
         result["eyelid"] = {"match": matched, "user": label, "actual": actual}
 
-    appear = parsed_features.get("appearance")
-    if appear:
-        actual = str(donor_row.get("形象气质", ""))
-        matched, label = _match_cat(appear, actual)
-        result["appearance"] = {"match": matched, "user": label, "actual": actual}
-
     lip = parsed_features.get("lip_shape")
     if lip:
-        actual = str(donor_row.get("唇形", ""))
+        actual = str(donor_row.get("唇型") or donor_row.get("唇形", ""))
         matched, label = _match_cat(lip, actual)
         result["lip_shape"] = {"match": matched, "user": label, "actual": actual}
 
@@ -435,7 +438,7 @@ def compute_field_match(donor_row, parsed_features: dict) -> dict:
 
     rh = parsed_features.get("rh_blood")
     if rh:
-        actual = str(donor_row.get("RH血型", ""))
+        actual = str(donor_row.get("Rh血型") or donor_row.get("RH血型", ""))
         matched, label = _match_cat(rh, actual)
         result["rh_blood"] = {"match": matched, "user": label, "actual": actual}
 

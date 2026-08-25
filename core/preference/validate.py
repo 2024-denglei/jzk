@@ -20,6 +20,17 @@ class ProfileValidationError(ValueError):
     pass
 
 
+def _format_pydantic_error(exc: Exception) -> str:
+    if isinstance(exc, ValidationError):
+        parts = []
+        for err in exc.errors():
+            loc = ".".join(str(x) for x in err.get("loc") or [])
+            msg = err.get("msg") or str(err)
+            parts.append(f"{loc}: {msg}" if loc else msg)
+        return "；".join(parts) if parts else str(exc)
+    return str(exc)
+
+
 def parse_profile(raw: dict[str, Any]) -> PreferenceProfile:
     if not isinstance(raw, dict):
         raise ProfileValidationError("profile must be an object")
@@ -33,7 +44,10 @@ def parse_profile(raw: dict[str, Any]) -> PreferenceProfile:
         parsed: dict[str, RangeAttr | EnumAttr | KeywordAttr] = {}
         for name, payload in attrs_in.items():
             if name in BLOCKED_FIELDS or name not in FIELD_REGISTRY:
-                raise ProfileValidationError(f"unknown or blocked field: {name}")
+                allowed = ", ".join(sorted(FIELD_REGISTRY))
+                raise ProfileValidationError(
+                    f"未知或禁止字段: {name}。允许字段: {allowed}。禁止: {', '.join(sorted(BLOCKED_FIELDS))}"
+                )
             if not isinstance(payload, dict):
                 raise ProfileValidationError(f"{name} must be an object")
             spec = FIELD_REGISTRY[name]
@@ -41,7 +55,13 @@ def parse_profile(raw: dict[str, Any]) -> PreferenceProfile:
                 attr = RangeAttr.model_validate(payload)
             elif spec.kind == "enum":
                 attr = EnumAttr.model_validate(payload)
-                attr.check_enums(spec.enums)
+                try:
+                    attr.check_enums(spec.enums)
+                except ValueError:
+                    raise ProfileValidationError(
+                        f"{name}: 取值非法 {payload.get('values')}。"
+                        f"该字段是枚举，允许值：{list(spec.enums)}"
+                    )
             else:
                 attr = KeywordAttr.model_validate(payload)
             parsed[name] = attr
@@ -49,7 +69,7 @@ def parse_profile(raw: dict[str, Any]) -> PreferenceProfile:
     except (ValidationError, ValueError) as e:
         if isinstance(e, ProfileValidationError):
             raise
-        raise ProfileValidationError(str(e)) from e
+        raise ProfileValidationError(_format_pydantic_error(e)) from e
     if profile.attributes:
         if all(a.weight == 0 for a in profile.attributes.values()):
             raise ProfileValidationError("all weights are 0")

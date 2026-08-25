@@ -1,0 +1,57 @@
+from core.data_loader import to_card_donor_info
+
+CARD_KEYS = {
+    "id",
+    "code",
+    "education",
+    "height",
+    "blood_type",
+    "age",
+    "ethnicity",
+    "hometown",
+    "figure",
+    "personality",
+    "occupation",
+    "specimen_count",
+    "availability",
+}
+
+SENSITIVE_KEYS = (
+    "genetic_history",
+    "std_history",
+    "personal_disease",
+    "rh_blood",
+    "weight",
+    "hobby_sports",
+)
+
+
+def test_to_card_donor_info_keeps_only_card_keys():
+    full = {
+        "id": "D01",
+        "code": "D01",
+        "education": "硕士",
+        "height": 178,
+        "blood_type": "O",
+        "age": 28,
+        "ethnicity": "汉族",
+        "hometown": "四川",
+        "figure": "匀称型",
+        "personality": "开朗",
+        "occupation": "工程师",
+        "specimen_count": 12,
+        "availability": "可用",
+        "genetic_history": "无",
+        "std_history": "无",
+        "personal_disease": "无",
+        "rh_blood": "阳性",
+        "weight": 70,
+        "hobby_sports": "有",
+    }
+    card = to_card_donor_info(full)
+    assert set(card.keys()) == CARD_KEYS
+    assert card["code"] == "D01"
+    assert card["education"] == "硕士"
+    assert card["specimen_count"] == 12
+    for key in SENSITIVE_KEYS:
+        assert key not in card

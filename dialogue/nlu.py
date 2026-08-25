@@ -19,19 +19,18 @@ SYSTEM_PROMPT = """你是智能生育匹配系统的对话助手。你的职责�
 - 身高(height)：{"min":数字,"max":数字}；"偏高"→{min:175}，"适中"→{min:170,max:180}，"偏矮"→{max:170}
 - 年龄(age)：{"min":数字,"max":数字}；"年轻"→{max:28}，"25岁以下"→{max:25}，"20-30岁"→{min:20,max:30}
 - 体重(weight)：数字（kg），如"体重轻"→65以下，较重→75以上（可配合体型综合判断）
-- 体型(figure)：匀称型、精壮型、偏瘦型；"匀称"/"标准"→匀称型，"壮"/"强壮"→精壮型，"瘦"→偏瘦型
-- 肤色(skin_color)：偏白、一般；"白皙"→偏白，"正常"→一般
+- 体型(figure)：一般、瘦弱、强壮、肥胖；"匀称"/"标准"→一般，"壮"→强壮，"瘦"→瘦弱
+- 肤色(skin_color)：偏白、一般、偏黑；"白皙"→偏白，"正常"→一般
 - 血型(blood_type)：A、B、O、AB
 - RH血型(rh_blood)：阳性、阴性；"熊猫血"→阴性，"RH阴性"→阴性
-- 脸型(face_shape)：圆、椭圆、方、长方、瓜子、菱形
-- 眼皮(eyelid)：单、双、内双；"双眼皮"→双
-- 唇形(lip_shape)：厚唇、薄唇、适中；"嘴唇薄"→薄唇
-- 形象气质(appearance)：文艺型、阳光型、成熟型、绅士型；"帅气"→阳光型，"儒雅"→绅士型
+- 脸型(face_shape)：长方、长、椭圆、瓜子（兼容圆/方/菱形）
+- 眼皮(eyelid)：单、双；"双眼皮"→双
+- 唇型(lip_shape)：一般、厚、薄（兼容厚唇/薄唇/适中）
 - 星座(constellation)：白羊座、金牛座、双子座、巨蟹座、狮子座、处女座、天秤座、天蝎座、射手座、摩羯座、水瓶座、双鱼座
 - 民族(ethnicity)：填写民族名称关键词，如"汉族"、"回族"；"少数民族"→["回","藏","蒙","维","苗"]
 - 籍贯(hometown)：填写省/市名称关键词，如"四川"、"重庆"、"东北"；"南方人"→["广东","广西","福建","浙江","江苏"]；"北方人"→["北京","河北","山东","东北","内蒙"]；"东北人"→["黑龙江","吉林","辽宁"]
 - 职业(occupation)：填写职业关键词，如"医生"、"工程师"、"教师"；"理工科"→["工程","技术","计算机"]
-- 性格(personality)：填写性格关键词，如"开朗"、"活泼"、"稳重"、"内向"；可多个，如["开朗","活泼"]
+- 性格(personality)：内向、外向（兼容开朗/活泼/稳重等关键词）
 - 标本数量(specimen_min)：最低标本数量，数字；"标本多"→5，"标本充足"→3
 
 【输出格式】
@@ -42,19 +41,18 @@ SYSTEM_PROMPT = """你是智能生育匹配系统的对话助手。你的职责�
     "education": "本科|硕士|博士|大专|REMOVE|null",
     "height": {"min": null, "max": null},
     "age": {"min": null, "max": null},
-    "figure": "匀称型|精壮型|偏瘦型|REMOVE|null",
-    "skin_color": "偏白|一般|REMOVE|null",
+    "figure": "一般|瘦弱|强壮|肥胖|REMOVE|null",
+    "skin_color": "偏白|一般|偏黑|REMOVE|null",
     "blood_type": "A|B|O|AB|REMOVE|null",
     "rh_blood": "阳性|阴性|REMOVE|null",
-    "face_shape": "圆|椭圆|方|长方|瓜子|菱形|REMOVE|null",
-    "eyelid": "单|双|内双|REMOVE|null",
-    "lip_shape": "厚唇|薄唇|适中|REMOVE|null",
-    "appearance": "文艺型|阳光型|成熟型|绅士型|REMOVE|null",
+    "face_shape": "长方|长|椭圆|瓜子|REMOVE|null",
+    "eyelid": "单|双|REMOVE|null",
+    "lip_shape": "一般|厚|薄|REMOVE|null",
     "constellation": "星座名称|REMOVE|null",
     "ethnicity": "民族关键词或列表|REMOVE|null",
     "hometown": "省市关键词或列表|REMOVE|null",
     "occupation": "职业关键词或列表|REMOVE|null",
-    "personality": "性格关键词或列表|REMOVE|null",
+    "personality": "内向|外向|性格关键词或列表|REMOVE|null",
     "specimen_min": "number|REMOVE|null"
   },
   "remove_fields": [],
@@ -69,7 +67,6 @@ SYSTEM_PROMPT = """你是智能生育匹配系统的对话助手。你的职责�
     "face_shape": "must|prefer|null",
     "eyelid": "must|prefer|null",
     "lip_shape": "must|prefer|null",
-    "appearance": "must|prefer|null",
     "constellation": "must|prefer|null",
     "ethnicity": "must|prefer|null",
     "hometown": "must|prefer|null",
@@ -85,7 +82,7 @@ SYSTEM_PROMPT = """你是智能生育匹配系统的对话助手。你的职责�
 【constraints 默认规则】
 - must（硬约束）：用户用"必须、一定要、只要、要求"等强制表达
 - prefer（软偏好）：用户用"最好、希望、尽量"等非强制表达
-- 默认：学历/血型/RH血型/民族/籍贯/年龄/身高 → must；体型/肤色/脸型/眼皮/唇形/气质/星座/职业/性格/标本数量 → prefer
+- 默认：学历/血型/RH血型/民族/籍贯/年龄/身高 → must；体型/肤色/脸型/眼皮/唇型/星座/职业/性格/标本数量 → prefer
 
 【重要规则】
 - 每次回复必须包含上述 JSON 块（含 features 和 constraints）
@@ -185,9 +182,8 @@ _FIELD_KEYWORDS: dict[str, list[str]] = {
     "figure":     ["体型", "体形", "身材"],
     "skin_color": ["肤色", "皮肤"],
     "eyelid":     ["眼皮", "双眼皮", "单眼皮"],
-    "appearance": ["气质", "形象气质"],
     "face_shape": ["脸型"],
-    "lip_shape":  ["唇形"],
+    "lip_shape":  ["唇形", "唇型"],
     "blood_type": ["血型"],
     "constellation": ["星座"],
     "education":  ["学历"],
@@ -202,6 +198,7 @@ _FIELD_KEYWORDS: dict[str, list[str]] = {
 _RELAX_KEYWORDS = [
     "方框", "放宽", "不限", "随便", "无所谓", "没有要求", "不重要",
     "不做要求", "可以不", "无需", "不必", "不强制", "都可以", "都行",
+    "不作为筛选", "不用作为", "不用筛选", "取消", "去掉", "不用了", "不要了",
 ]
 
 _AFFIRMATIVE_KEYWORDS = [

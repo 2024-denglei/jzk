@@ -75,6 +75,80 @@ BLOCKED_FIELDS = frozenset({
     "chromosome_test", "microbio_test", "remark",
 })
 
+# 给模型看的中文说明；取值来自 FIELD_REGISTRY，不在这里另维护一份枚举。
+FIELD_GUIDE: dict[str, str] = {
+    "height_cm": "身高（cm）。175 以上 → range.min=175, range.max=null；170–180 → min=170,max=180",
+    "weight_kg": "体重（kg）。70kg 以下 → range.max=70；60–70 → min=60,max=70",
+    "bmi": "BMI。单边或区间，写法同身高",
+    "age": "年龄（周岁，由出生日期计算）。30 岁以下 → range.max=30",
+    "specimen_count": "冻存标本管数。至少 5 管 → range.min=5",
+    "education": "学历",
+    "abo_blood": "ABO 血型，不要写「型」字",
+    "rh_blood": "Rh 血型，用「阳性/阴性」不要用 +/-",
+    "figure": "体型",
+    "skin_color": "肤色",
+    "face_shape": "脸型",
+    "eyelid": "眼皮",
+    "lip_shape": "唇型",
+    "constellation": "星座",
+    "ethnicity": "民族，如 汉族",
+    "hometown": "籍贯。重庆或四川都可以 → keywords:[重庆,四川], match:any",
+    "occupation": "职业",
+    "personality": "性格",
+    "hair_color": "发色",
+    "hair_style": "发型",
+    "hair_volume": "发量",
+    "nose_bridge": "鼻梁",
+    "sideburns": "络腮胡",
+    "mustache": "胡须",
+    "hobby_sports": "爱好运动，有/无",
+    "hobby_arts": "爱好艺术，有/无",
+    "hobby_leisure": "爱好休闲，有/无",
+    "hobby_travel": "爱好旅游，有/无",
+    "hobby_reading": "爱好阅读，有/无",
+    "hobby_food": "爱好美食，有/无",
+    "drink_history": "喝酒史。不喝酒 → keywords:[无]",
+    "smoke_history": "吸烟史。不抽烟/无吸烟史 → keywords:[无] 或 [不吸]，match:any",
+    "personal_disease": "个人病史",
+    "present_illness": "现病史",
+    "past_illness": "既往病史",
+    "surgery_history": "手术史",
+    "personal_life_hist": "个人生活史",
+    "partners_6m": "性伴侣数",
+    "std_history": "性传播疾病史",
+    "marital_fertility": "婚育史",
+    "marriage_age": "结婚年龄",
+    "children_info": "生育子女",
+    "genetic_history": "遗传病史",
+    "chromosome_disease": "染色体病",
+    "monogenic_disease": "单基因遗传病",
+    "polygenic_disease": "多基因遗传病",
+    "consanguinity": "近亲婚配",
+    "availability": "标本是否可用",
+}
+
+
+def field_short_label(name: str) -> str:
+    """卡片/顾问话术用的短名。"""
+    raw = FIELD_GUIDE.get(name, name)
+    return raw.split("。")[0].split("（")[0].strip() or name
+
+
+def field_catalog_text() -> str:
+    """从注册表生成字段说明书，供系统提示使用。"""
+    lines = ["【可填字段 catalog】未提到的字段不要写进 attributes。"]
+    for name, spec in FIELD_REGISTRY.items():
+        guide = FIELD_GUIDE.get(name, name)
+        if spec.kind == "range":
+            lines.append(f"- {name}（数值 range）：{guide}")
+        elif spec.kind == "enum":
+            allowed = "、".join(spec.enums)
+            lines.append(f"- {name}（枚举 values）：{guide}。可选值：{allowed}")
+        else:
+            lines.append(f"- {name}（关键词 keywords）：{guide}")
+    lines.append(f"禁止字段（不可出现）：{', '.join(sorted(BLOCKED_FIELDS))}")
+    return "\n".join(lines)
+
 
 class RangeSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -133,7 +207,79 @@ class PreferenceProfile(BaseModel):
 
 
 def openai_tool_schema() -> dict[str, Any]:
-    """submit_preference_profile 的 parameters。attributes 的具体 kind 由 parse_profile 再校验。"""
+    """submit_preference_profile 的 parameters：每字段带说明和可选值。"""
+
+    def _base_props() -> dict[str, Any]:
+        return {
+            "constraint": {
+                "type": "string",
+                "enum": ["must", "prefer"],
+                "description": "must=必须过滤，prefer=只影响排序",
+            },
+            "weight": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "must 用 1.0；prefer 默认 0.5",
+            },
+        }
+
+    attr_props: dict[str, Any] = {}
+    for name, spec in FIELD_REGISTRY.items():
+        guide = FIELD_GUIDE.get(name, name)
+        if spec.kind == "range":
+            attr_props[name] = {
+                "type": "object",
+                "description": guide,
+                "properties": {
+                    **_base_props(),
+                    "range": {
+                        "type": "object",
+                        "description": "至少填 min 或 max，另一侧用 null",
+                        "properties": {
+                            "min": {"type": ["number", "null"]},
+                            "max": {"type": ["number", "null"]},
+                        },
+                    },
+                },
+                "required": ["constraint", "weight", "range"],
+            }
+        elif spec.kind == "enum":
+            allowed = list(spec.enums)
+            attr_props[name] = {
+                "type": "object",
+                "description": f"{guide}。values 只能从可选值中选：{allowed}",
+                "properties": {
+                    **_base_props(),
+                    "values": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {"type": "string", "enum": allowed},
+                        "description": f"可选值：{allowed}",
+                    },
+                },
+                "required": ["constraint", "weight", "values"],
+            }
+        else:
+            attr_props[name] = {
+                "type": "object",
+                "description": guide,
+                "properties": {
+                    **_base_props(),
+                    "keywords": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "items": {"type": "string"},
+                    },
+                    "match": {
+                        "type": "string",
+                        "enum": ["any", "all"],
+                        "description": "any=命中任一关键词；all=全部命中",
+                    },
+                },
+                "required": ["constraint", "weight", "keywords"],
+            }
     return {
         "type": "object",
         "additionalProperties": False,
@@ -142,7 +288,9 @@ def openai_tool_schema() -> dict[str, Any]:
             "schema_version": {"type": "string", "enum": ["1.0"]},
             "attributes": {
                 "type": "object",
-                "description": "完整偏好画像。取消的字段不要出现。未提及不要编造。",
+                "description": "完整偏好画像快照。取消的字段不要出现。未提及不要编造。" + field_catalog_text(),
+                "properties": attr_props,
+                "additionalProperties": False,
             },
         },
     }

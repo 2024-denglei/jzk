@@ -1,0 +1,66 @@
+"""对话持久化辅助。"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from db.database import db_session
+
+
+def upsert_user_chat(
+    user_id: int,
+    session_id: str,
+    messages: list[dict[str, Any]],
+    candidates: list[dict] | None = None,
+    state: dict | None = None,
+    title: str | None = None,
+) -> int:
+    """按 user_id + session_id upsert 对话，返回 chat id。"""
+    if not title:
+        title = "对话"
+        first_user = next((m for m in messages if m.get("role") == "user"), None)
+        if first_user and first_user.get("content"):
+            title = str(first_user["content"])[:40]
+
+    slim_messages = []
+    for m in messages[-40:]:
+        item = {
+            "role": m.get("role"),
+            "content": m.get("content") or "",
+        }
+        cands = m.get("candidates")
+        if isinstance(cands, list) and cands:
+            item["candidates"] = cands
+        slim_messages.append(item)
+
+    msgs = json.dumps(slim_messages, ensure_ascii=False)
+    cands_json = json.dumps(list(candidates or []), ensure_ascii=False)
+    state_json = json.dumps(state or {}, ensure_ascii=False)
+
+    with db_session() as conn:
+        existing = conn.execute(
+            "SELECT id FROM app.chats WHERE user_id = %s AND session_id = %s",
+            (user_id, session_id),
+        ).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE app.chats
+                SET title = %s, messages_json = %s, candidates_json = %s,
+                    state_json = %s, updated_at = now()
+                WHERE id = %s
+                """,
+                (title, msgs, cands_json, state_json, existing["id"]),
+            )
+            return int(existing["id"])
+        row = conn.execute(
+            """
+            INSERT INTO app.chats
+                (user_id, session_id, title, messages_json, candidates_json, state_json)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (user_id, session_id, title, msgs, cands_json, state_json),
+        ).fetchone()
+        return int(row["id"])
