@@ -1,20 +1,21 @@
-const VISIBLE_EDGE_PAGE_COUNT = 3
+const VISIBLE_INNER_EDGE_PAGE_COUNT = 3
 
 /**
- * 分页页码固定展示首页三页和末尾三页；页数较少时展示全部页码。
+ * 首页和尾页由独立按钮承载，数字页码展示紧邻两端的各三页。
  */
 export function getPaginationPages(totalPages: number): number[] {
   const normalizedTotal = Math.max(1, Math.floor(totalPages))
+  const innerPageCount = Math.max(0, normalizedTotal - 2)
 
-  if (normalizedTotal <= VISIBLE_EDGE_PAGE_COUNT * 2) {
-    return Array.from({ length: normalizedTotal }, (_, index) => index + 1)
+  if (innerPageCount <= VISIBLE_INNER_EDGE_PAGE_COUNT * 2) {
+    return Array.from({ length: innerPageCount }, (_, index) => index + 2)
   }
 
   return [
-    ...Array.from({ length: VISIBLE_EDGE_PAGE_COUNT }, (_, index) => index + 1),
+    ...Array.from({ length: VISIBLE_INNER_EDGE_PAGE_COUNT }, (_, index) => index + 2),
     ...Array.from(
-      { length: VISIBLE_EDGE_PAGE_COUNT },
-      (_, index) => normalizedTotal - VISIBLE_EDGE_PAGE_COUNT + index + 1,
+      { length: VISIBLE_INNER_EDGE_PAGE_COUNT },
+      (_, index) => normalizedTotal - VISIBLE_INNER_EDGE_PAGE_COUNT + index,
     ),
   ]
 }

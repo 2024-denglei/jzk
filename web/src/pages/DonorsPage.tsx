@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState } from 'react'
+import { Fragment, startTransition, useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../components/ChatPanel'
 import { DonorCard, DonorCardSkeleton } from '../components/DonorCard'
@@ -431,35 +431,62 @@ export function DonorsPage() {
                     type="button"
                     disabled={page <= 1 || loading}
                     className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
-                    onClick={() => goToPage(1)}
-                  >
-                    首页
-                  </button>
-                  <button
-                    type="button"
-                    disabled={page <= 1 || loading}
-                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
                     onClick={() => goToPage(page - 1)}
                   >
                     上一页
                   </button>
-                  {paginationPages.map((pageNumber) => (
-                    <button
-                      key={pageNumber}
-                      type="button"
-                      disabled={loading}
-                      aria-label={`第 ${pageNumber} 页`}
-                      aria-current={pageNumber === page ? 'page' : undefined}
-                      onClick={() => goToPage(pageNumber)}
-                      className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-35 ${
-                        pageNumber === page
-                          ? 'bg-teal-deep text-white'
-                          : 'border border-line bg-white text-ink-soft/60 hover:border-teal/30 hover:text-teal-deep'
-                      }`}
-                    >
-                      {pageNumber}
-                    </button>
+                  <button
+                    type="button"
+                    disabled={page <= 1 || loading}
+                    aria-current={page === 1 ? 'page' : undefined}
+                    className={`h-9 rounded-lg px-3 text-[12px] transition disabled:pointer-events-none ${
+                      page === 1
+                        ? 'bg-teal-deep text-white'
+                        : 'border border-line bg-white text-ink-soft/70 hover:border-teal/30 hover:text-teal-deep disabled:opacity-35'
+                    }`}
+                    onClick={() => goToPage(1)}
+                  >
+                    首页
+                  </button>
+                  {paginationPages.map((pageNumber, index) => (
+                    <Fragment key={pageNumber}>
+                      {index > 0 && pageNumber - paginationPages[index - 1] > 1 && (
+                        <span
+                          aria-hidden="true"
+                          className="flex h-9 min-w-5 items-center justify-center text-[12px] text-ink-soft/45"
+                        >
+                          …
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        disabled={loading}
+                        aria-label={`第 ${pageNumber} 页`}
+                        aria-current={pageNumber === page ? 'page' : undefined}
+                        onClick={() => goToPage(pageNumber)}
+                        className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-35 ${
+                          pageNumber === page
+                            ? 'bg-teal-deep text-white'
+                            : 'border border-line bg-white text-ink-soft/60 hover:border-teal/30 hover:text-teal-deep'
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    </Fragment>
                   ))}
+                  <button
+                    type="button"
+                    disabled={page >= listTotalPages || loading}
+                    aria-current={page === listTotalPages ? 'page' : undefined}
+                    className={`h-9 rounded-lg px-3 text-[12px] transition disabled:pointer-events-none ${
+                      page === listTotalPages
+                        ? 'bg-teal-deep text-white'
+                        : 'border border-line bg-white text-ink-soft/70 hover:border-teal/30 hover:text-teal-deep disabled:opacity-35'
+                    }`}
+                    onClick={() => goToPage(listTotalPages)}
+                  >
+                    尾页
+                  </button>
                   <button
                     type="button"
                     disabled={page >= listTotalPages || loading}
@@ -467,14 +494,6 @@ export function DonorsPage() {
                     onClick={() => goToPage(page + 1)}
                   >
                     下一页
-                  </button>
-                  <button
-                    type="button"
-                    disabled={page >= listTotalPages || loading}
-                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
-                    onClick={() => goToPage(listTotalPages)}
-                  >
-                    尾页
                   </button>
                 </nav>
               )}
