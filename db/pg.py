@@ -5,14 +5,19 @@ from __future__ import annotations
 from contextlib import contextmanager
 from pathlib import Path
 from decimal import Decimal
+from threading import Lock
 from typing import Any, Iterator
 
 import psycopg
+from psycopg_pool import ConnectionPool
 from psycopg.rows import dict_row
 
 import config
 
 _SCHEMA_DIR = Path(__file__).resolve().parent / "postgres"
+_pool_lock = Lock()
+_app_pool: ConnectionPool | None = None
+_admin_pool: ConnectionPool | None = None
 
 
 def connect(url: str | None = None) -> psycopg.Connection:
@@ -25,17 +30,75 @@ def connect_admin() -> psycopg.Connection:
     return connect(config.DATABASE_ADMIN_URL)
 
 
+def _configure_connection(conn: psycopg.Connection) -> None:
+    conn.execute("SET search_path TO app, donor, admin, public")
+    conn.commit()
+
+
+def _create_pool(url: str, name: str) -> ConnectionPool:
+    return ConnectionPool(
+        conninfo=url,
+        min_size=config.PG_POOL_MIN_SIZE,
+        max_size=config.PG_POOL_MAX_SIZE,
+        timeout=config.PG_POOL_TIMEOUT_SECONDS,
+        kwargs={"row_factory": dict_row},
+        configure=_configure_connection,
+        check=ConnectionPool.check_connection,
+        name=name,
+        open=False,
+    )
+
+
+def initialize_pools() -> None:
+    global _app_pool, _admin_pool
+    created: list[ConnectionPool] = []
+    with _pool_lock:
+        if _app_pool is None:
+            _app_pool = _create_pool(config.DATABASE_URL, "jzk-app")
+            _app_pool.open()
+            created.append(_app_pool)
+        if _admin_pool is None:
+            _admin_pool = _create_pool(config.DATABASE_ADMIN_URL, "jzk-admin")
+            _admin_pool.open()
+            created.append(_admin_pool)
+    try:
+        for pool in created:
+            pool.wait(timeout=config.PG_POOL_TIMEOUT_SECONDS)
+    except Exception:
+        close_pools()
+        raise
+
+
+def close_pools() -> None:
+    global _app_pool, _admin_pool
+    with _pool_lock:
+        app_pool, admin_pool = _app_pool, _admin_pool
+        _app_pool = None
+        _admin_pool = None
+    if app_pool is not None:
+        app_pool.close()
+    if admin_pool is not None:
+        admin_pool.close()
+
+
+def _get_pool(admin: bool) -> ConnectionPool:
+    initialize_pools()
+    pool = _admin_pool if admin else _app_pool
+    if pool is None:  # pragma: no cover - initialize_pools guarantees this
+        raise RuntimeError("数据库连接池未初始化")
+    return pool
+
+
 @contextmanager
 def db_session(admin: bool = False) -> Iterator[psycopg.Connection]:
-    conn = connect_admin() if admin else connect()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    pool = _get_pool(admin)
+    with pool.connection(timeout=config.PG_POOL_TIMEOUT_SECONDS) as conn:
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def ensure_schema() -> None:

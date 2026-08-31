@@ -27,6 +27,15 @@ USER_REFRESH_TOKEN_DAYS = int(os.getenv("USER_REFRESH_TOKEN_DAYS", "30"))
 ADMIN_REFRESH_TOKEN_HOURS = int(os.getenv("ADMIN_REFRESH_TOKEN_HOURS", "8"))
 USER_REFRESH_COOKIE_NAME = os.getenv("USER_REFRESH_COOKIE_NAME", "jzk_user_refresh")
 ADMIN_REFRESH_COOKIE_NAME = os.getenv("ADMIN_REFRESH_COOKIE_NAME", "jzk_admin_refresh")
+CORS_ORIGINS = [
+    item.strip()
+    for item in os.getenv(
+        "CORS_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173",
+    ).split(",")
+    if item.strip()
+]
+CHAT_SESSION_STORE = os.getenv("CHAT_SESSION_STORE", "redis").strip().lower()
 
 # LLM 配置
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
@@ -40,9 +49,16 @@ DATABASE_URL = os.getenv(
 )
 # 管理端可选用独立角色；未设置时回退 DATABASE_URL
 DATABASE_ADMIN_URL = os.getenv("DATABASE_ADMIN_URL", "") or DATABASE_URL
+PG_POOL_MIN_SIZE = int(os.getenv("PG_POOL_MIN_SIZE", "1"))
+PG_POOL_MAX_SIZE = int(os.getenv("PG_POOL_MAX_SIZE", "10"))
+PG_POOL_TIMEOUT_SECONDS = float(os.getenv("PG_POOL_TIMEOUT_SECONDS", "5"))
 
 # Redis 手机验证码（测试阶段会把验证码直接返回给客户端）
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+REDIS_MAX_CONNECTIONS = int(os.getenv("REDIS_MAX_CONNECTIONS", "50"))
+REDIS_CONNECT_TIMEOUT_SECONDS = float(os.getenv("REDIS_CONNECT_TIMEOUT_SECONDS", "2"))
+REDIS_SOCKET_TIMEOUT_SECONDS = float(os.getenv("REDIS_SOCKET_TIMEOUT_SECONDS", "2"))
+REDIS_HEALTH_CHECK_INTERVAL_SECONDS = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL_SECONDS", "30"))
 VERIFICATION_CODE_TTL_SECONDS = int(os.getenv("VERIFICATION_CODE_TTL_SECONDS", "300"))
 VERIFICATION_CODE_COOLDOWN_SECONDS = int(os.getenv("VERIFICATION_CODE_COOLDOWN_SECONDS", "60"))
 VERIFICATION_CODE_MAX_ATTEMPTS = int(os.getenv("VERIFICATION_CODE_MAX_ATTEMPTS", "5"))
@@ -81,6 +97,12 @@ EUCLIDEAN_WEIGHT = 0.4
 
 # 会话配置
 SESSION_TIMEOUT_MINUTES = 30
+SESSION_MAX_ACTIVE_PER_USER = int(os.getenv("SESSION_MAX_ACTIVE_PER_USER", "20"))
+SESSION_MAX_BYTES = int(os.getenv("SESSION_MAX_BYTES", "2000000"))
+MAX_REQUEST_BODY_BYTES = int(os.getenv("MAX_REQUEST_BODY_BYTES", "25000000"))
+MAX_JSON_BODY_BYTES = int(os.getenv("MAX_JSON_BODY_BYTES", "1000000"))
+MAX_AUDIO_UPLOAD_BYTES = int(os.getenv("MAX_AUDIO_UPLOAD_BYTES", "20000000"))
+MAX_EXCEL_UPLOAD_BYTES = int(os.getenv("MAX_EXCEL_UPLOAD_BYTES", "10000000"))
 
 # 服务配置（若本机 8000 被占用，可设 PORT=8010）
 HOST = os.getenv("HOST", "0.0.0.0")
@@ -140,6 +162,14 @@ def validate_security_config() -> None:
         errors.append("生产环境不能使用默认管理员用户名 admin")
     if ADMIN_BOOTSTRAP_PASSWORD == "Admin@ChangeMe1" or len(ADMIN_BOOTSTRAP_PASSWORD) < 12:
         errors.append("生产环境必须设置至少 12 位且非默认的管理员引导密码")
+    if not CORS_ORIGINS or "*" in CORS_ORIGINS:
+        errors.append("生产环境必须配置明确的 CORS_ORIGINS，不能使用通配符")
+    if CHAT_SESSION_STORE != "redis":
+        errors.append("生产环境 CHAT_SESSION_STORE 必须设置为 redis")
+    if PG_POOL_MIN_SIZE < 1 or PG_POOL_MAX_SIZE < PG_POOL_MIN_SIZE:
+        errors.append("PostgreSQL 连接池大小配置无效")
+    if REDIS_MAX_CONNECTIONS < 1:
+        errors.append("Redis 连接池大小配置无效")
 
     redis_url = urlparse(REDIS_URL)
     if redis_url.scheme not in {"redis", "rediss"}:

@@ -55,11 +55,11 @@ export function ForgotPasswordPage() {
           onError={setError}
         />
         <label className="mt-4 block text-xs font-medium text-ink-soft/70">
-          新密码（至少 6 位）
+          新密码（至少 10 位）
           <input
             type="password"
             required
-            minLength={6}
+            minLength={10}
             maxLength={72}
             autoComplete="new-password"
             value={password}
@@ -72,7 +72,7 @@ export function ForgotPasswordPage() {
           <input
             type="password"
             required
-            minLength={6}
+            minLength={10}
             maxLength={72}
             autoComplete="new-password"
             value={confirmPassword}

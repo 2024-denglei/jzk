@@ -22,8 +22,10 @@ from api.refresh_sessions import (
     RefreshSessionUnavailable,
     refresh_sessions,
 )
+from api.security import validate_cookie_origin
 from api.verification_codes import VerificationCodeError, VerificationCodeRateLimitError, verification_codes
 from db.database import db_session
+from password_policy import validate_password_strength
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 CodePurpose = Literal["register", "login", "reset_password"]
@@ -60,7 +62,7 @@ class SendCodeRequest(BaseModel):
 class RegisterRequest(BaseModel):
     email: str
     phone: str
-    password: str = Field(min_length=6, max_length=72)
+    password: str = Field(min_length=10, max_length=72)
     code: str = Field(pattern=r"^\d{6}$")
     nickname: str = Field(default="", max_length=40)
 
@@ -73,6 +75,11 @@ class RegisterRequest(BaseModel):
     @classmethod
     def phone_ok(cls, value: str) -> str:
         return _valid_phone(value)
+
+    @field_validator("password")
+    @classmethod
+    def password_ok(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class LoginRequest(BaseModel):
@@ -101,7 +108,12 @@ class PhoneCodeRequest(BaseModel):
 
 
 class ResetPasswordRequest(PhoneCodeRequest):
-    new_password: str = Field(min_length=6, max_length=72)
+    new_password: str = Field(min_length=10, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_ok(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class UpdateMeRequest(BaseModel):
@@ -110,7 +122,12 @@ class UpdateMeRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     old_password: str
-    new_password: str = Field(min_length=6, max_length=72)
+    new_password: str = Field(min_length=10, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_ok(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 def _user_dict(row) -> dict:
@@ -269,6 +286,7 @@ async def register(
     body: RegisterRequest,
     response: Response,
     client_ip: str = Depends(get_client_ip),
+    _origin: None = Depends(validate_cookie_origin),
 ):
     _check_code_verification_ip(client_ip)
     nickname = (body.nickname or body.email.split("@")[0]).strip()
@@ -304,6 +322,7 @@ async def login(
     body: LoginRequest,
     response: Response,
     client_ip: str = Depends(get_client_ip),
+    _origin: None = Depends(validate_cookie_origin),
 ):
     identifier = body.identifier or ""
     _check_rate("login:account", identifier, config.USER_LOGIN_LIMIT, config.USER_LOGIN_WINDOW_SECONDS)
@@ -323,6 +342,7 @@ async def phone_login(
     body: PhoneCodeRequest,
     response: Response,
     client_ip: str = Depends(get_client_ip),
+    _origin: None = Depends(validate_cookie_origin),
 ):
     _check_code_verification_ip(client_ip)
     with db_session() as conn:
@@ -356,7 +376,11 @@ async def reset_password(body: ResetPasswordRequest, client_ip: str = Depends(ge
 
 
 @router.post("/refresh")
-async def refresh_login(request: Request, response: Response):
+async def refresh_login(
+    request: Request,
+    response: Response,
+    _origin: None = Depends(validate_cookie_origin),
+):
     token = request.cookies.get(config.USER_REFRESH_COOKIE_NAME)
     if not token:
         raise HTTPException(status_code=401, detail="刷新凭证缺失")
@@ -388,7 +412,11 @@ async def refresh_login(request: Request, response: Response):
 
 
 @router.post("/logout")
-async def logout(request: Request, response: Response):
+async def logout(
+    request: Request,
+    response: Response,
+    _origin: None = Depends(validate_cookie_origin),
+):
     token = request.cookies.get(config.USER_REFRESH_COOKIE_NAME)
     if token:
         try:
@@ -403,6 +431,7 @@ async def logout(request: Request, response: Response):
 async def logout_all(
     response: Response,
     user_id: int = Depends(get_current_user_id),
+    _origin: None = Depends(validate_cookie_origin),
 ):
     with db_session() as conn:
         conn.execute(
@@ -441,6 +470,7 @@ async def change_password(
     body: ChangePasswordRequest,
     response: Response,
     user_id: int = Depends(get_current_user_id),
+    _origin: None = Depends(validate_cookie_origin),
 ):
     with db_session() as conn:
         row = conn.execute("SELECT * FROM app.users WHERE id = %s", (user_id,)).fetchone()

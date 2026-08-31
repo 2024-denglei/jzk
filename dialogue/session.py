@@ -38,6 +38,7 @@ class SessionContext:
         self._active_checkpoint: dict[str, Any] | None = None
         self.created_at = time.time()
         self.last_active = time.time()
+        self.storage_version = 0
 
     def add_message(self, role: str, content: str):
         """添加对话记录。"""
@@ -218,32 +219,73 @@ class SessionContext:
             "feedback_count": len(self.feedback_log),
         }
 
+    def to_storage_dict(self) -> dict:
+        """序列化完整临时状态，供 Redis 跨实例共享。"""
+        return {
+            "owner_user_id": self.owner_user_id,
+            "session_id": self.session_id,
+            "state": self.state.value,
+            "parsed_features": self.parsed_features,
+            "constraints": self.constraints,
+            "history": self.history,
+            "candidates": self.candidates,
+            "feedback_log": self.feedback_log,
+            "pending_relaxations": self.pending_relaxations,
+            "preference_profile": self.preference_profile,
+            "active_checkpoint": self._active_checkpoint,
+            "created_at": self.created_at,
+            "last_active": self.last_active,
+            "storage_version": self.storage_version,
+        }
+
+    @classmethod
+    def from_storage_dict(cls, data: dict[str, Any]) -> "SessionContext":
+        session = cls(
+            owner_user_id=int(data["owner_user_id"]),
+            session_id=str(data["session_id"]),
+        )
+        try:
+            session.state = DialogueState(data.get("state") or DialogueState.START.value)
+        except ValueError:
+            session.state = DialogueState.COLLECTING
+        session.parsed_features = dict(data.get("parsed_features") or {})
+        session.constraints = dict(data.get("constraints") or {})
+        session.history = list(data.get("history") or [])
+        session.candidates = list(data.get("candidates") or [])
+        session.feedback_log = list(data.get("feedback_log") or [])
+        session.pending_relaxations = list(data.get("pending_relaxations") or [])
+        raw_profile = data.get("preference_profile")
+        session.preference_profile = dict(raw_profile) if raw_profile else None
+        checkpoint = data.get("active_checkpoint")
+        session._active_checkpoint = dict(checkpoint) if checkpoint else None
+        session.created_at = float(data.get("created_at") or time.time())
+        session.last_active = float(data.get("last_active") or time.time())
+        session.storage_version = int(data.get("storage_version") or 0)
+        return session
+
 
 class SessionManager:
     """全局会话管理器。"""
 
-    def __init__(self):
-        self._sessions: dict[tuple[int, str], SessionContext] = {}
+    def __init__(self, store=None):
+        from dialogue.session_store import InMemorySessionStore
 
-    @staticmethod
-    def _key(user_id: int, session_id: str) -> tuple[int, str]:
-        return user_id, session_id
+        self._store = store or InMemorySessionStore()
 
     def create_session(self, user_id: int) -> SessionContext:
         """创建新会话。"""
         self._cleanup_expired()
         session = SessionContext(owner_user_id=user_id)
-        self._sessions[self._key(user_id, session.session_id)] = session
+        self._store.save(session)
         return session
 
     def get_session(self, user_id: int, session_id: str) -> SessionContext | None:
         """获取当前用户的会话，不存在、越权或过期均返回 None。"""
-        key = self._key(user_id, session_id)
-        session = self._sessions.get(key)
+        session = self._store.load(user_id, session_id)
         if session and not session.is_expired():
             return session
         if session and session.is_expired():
-            del self._sessions[key]
+            self._store.delete(user_id, session_id)
         return None
 
     def get_or_create(self, user_id: int, session_id: str | None) -> SessionContext:
@@ -256,8 +298,8 @@ class SessionManager:
 
     def put_session(self, session: SessionContext) -> SessionContext:
         """写入/覆盖内存会话（用于从 DB resume）。"""
-        self._sessions[self._key(session.owner_user_id, session.session_id)] = session
         session.last_active = time.time()
+        self._store.save(session)
         return session
 
     def restore_session(
@@ -280,6 +322,4 @@ class SessionManager:
 
     def _cleanup_expired(self):
         """清理过期会话。"""
-        expired = [key for key, session in self._sessions.items() if session.is_expired()]
-        for key in expired:
-            del self._sessions[key]
+        self._store.cleanup_expired()

@@ -3,7 +3,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.auth_utils import get_current_user_id
 
@@ -11,8 +11,8 @@ router = APIRouter()
 
 
 class ChatRequest(BaseModel):
-    session_id: str | None = None
-    message: str
+    session_id: str | None = Field(default=None, max_length=64)
+    message: str = Field(max_length=4000)
 
 
 class CandidateInfo(BaseModel):
@@ -67,6 +67,7 @@ async def chat(request: ChatRequest, user_id: int = Depends(get_current_user_id)
     # 首次对话 → 发送欢迎语
     if session.state == DialogueState.START:
         welcome = get_welcome(session)
+        session_manager.put_session(session)
         return ChatResponse(
             reply=welcome,
             candidates=[],
@@ -110,6 +111,7 @@ async def chat(request: ChatRequest, user_id: int = Depends(get_current_user_id)
 
     # 生成回复
     result = generate_response(session, nlu_result, match_func=do_match, match_info=_match_info)
+    session_manager.put_session(session)
 
     return ChatResponse(
         reply=result["reply"],

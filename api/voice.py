@@ -3,6 +3,8 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+import config
+from api.uploads import read_upload_limited
 from voice.asr import transcribe_audio
 from voice.tts import synthesize_speech
 
@@ -28,7 +30,7 @@ async def capabilities():
 @router.post("/transcribe")
 async def voice_transcribe(file: UploadFile = File(...)):
     """生产环境预留：上传音频转写。当前未接入云 ASR。"""
-    content = await file.read()
+    content = await read_upload_limited(file, config.MAX_AUDIO_UPLOAD_BYTES)
     try:
         text = await transcribe_audio(content, format=file.filename or "wav")
     except NotImplementedError as e:

@@ -10,12 +10,19 @@ sys.path.insert(0, os.path.dirname(__file__))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import config
 from core.data_loader import load_donor_data
 from core.feature_engine import FeatureEncoder
 from dialogue.session import SessionManager
+from dialogue.session_store import create_session_store
+from dialogue.session_store import (
+    SessionConflict,
+    SessionLimitExceeded,
+    SessionStoreUnavailable,
+    SessionTooLarge,
+)
 from dialogue.nlu import create_async_llm_client, create_llm_client
 from api.chat import router as chat_router, inject_dependencies as inject_chat_deps
 from api.chat_stream import router as stream_router, inject_dependencies as inject_stream_deps
@@ -30,7 +37,8 @@ from api.admin_admins import router as admin_admins_router
 from api.admin_requests import router as admin_requests_router
 from api.voice import router as voice_router
 from api.match import router as match_router
-from db.database import init_db
+from db.database import close_pools, init_db, initialize_pools
+from redis_client import close_redis_pool
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,13 +54,67 @@ app = FastAPI(
     version="0.1.0",
 )
 
+
+@app.exception_handler(SessionStoreUnavailable)
+async def session_store_unavailable_handler(_request, exc: SessionStoreUnavailable):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(SessionConflict)
+async def session_conflict_handler(_request, exc: SessionConflict):
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(SessionLimitExceeded)
+async def session_limit_handler(_request, exc: SessionLimitExceeded):
+    return JSONResponse(status_code=429, content={"detail": str(exc)})
+
+
+@app.exception_handler(SessionTooLarge)
+async def session_too_large_handler(_request, exc: SessionTooLarge):
+    return JSONResponse(status_code=413, content={"detail": str(exc)})
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    content_length = request.headers.get("content-length")
+    content_type = request.headers.get("content-type", "").lower()
+    request_limit = (
+        config.MAX_JSON_BODY_BYTES
+        if "application/json" in content_type
+        else config.MAX_REQUEST_BODY_BYTES
+    )
+    try:
+        request_too_large = bool(
+            content_length and int(content_length) > request_limit
+        )
+    except ValueError:
+        request_too_large = True
+    if request_too_large:
+        response = JSONResponse(status_code=413, content={"detail": "请求体过大"})
+    else:
+        response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+        "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; "
+        "img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    )
+    if config.ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 # ============ 启动时加载数据 ============
 
@@ -62,6 +124,7 @@ async def startup():
     config.validate_security_config()
     logger.info("正在初始化 PostgreSQL 官方库...")
     try:
+        initialize_pools()
         init_db()
     except Exception as e:
         logger.error("数据库初始化失败: %s", e)
@@ -77,7 +140,7 @@ async def startup():
     encoder.encode_all()
     logger.info(f"特征矩阵维度: {encoder.feature_matrix.shape}")
 
-    session_manager = SessionManager()
+    session_manager = SessionManager(create_session_store())
 
     llm_client = None
     async_llm_client = None
@@ -100,6 +163,12 @@ async def startup():
     app.state.async_llm_client = async_llm_client
 
     logger.info("系统启动完成！")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    close_pools()
+    close_redis_pool()
 
 
 # ============ 注册路由 ============

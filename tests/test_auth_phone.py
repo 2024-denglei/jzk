@@ -219,7 +219,7 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
         registered = await auth_mod.register(RegisterRequest(**{
             "email": "USER@example.com",
             "phone": phone,
-            "password": "oldpass",
+            "password": "old-password-1",
             "code": "654321",
         }), Response(), "test-ip")
         assert registered["user"]["email"] == "user@example.com"
@@ -227,7 +227,7 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
 
         for identifier in ("user@example.com", phone):
             logged_in = await auth_mod.login(
-                LoginRequest(identifier=identifier, password="oldpass"),
+                LoginRequest(identifier=identifier, password="old-password-1"),
                 Response(),
                 "test-ip",
             )
@@ -252,13 +252,13 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
 
         await auth_mod.send_code(SendCodeRequest(phone=phone, purpose="reset_password"), "test-ip")
         reset = await auth_mod.reset_password(
-            ResetPasswordRequest(phone=phone, code="654321", new_password="newpass"),
+            ResetPasswordRequest(phone=phone, code="654321", new_password="new-password-2"),
             "test-ip",
         )
         assert reset == {"ok": True}
         try:
             await auth_mod.login(
-                LoginRequest(identifier=phone, password="oldpass"),
+                LoginRequest(identifier=phone, password="old-password-1"),
                 Response(),
                 "test-ip",
             )
@@ -267,7 +267,7 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
             assert exc.status_code == 400
         assert (
             await auth_mod.login(
-                LoginRequest(identifier=phone, password="newpass"),
+                LoginRequest(identifier=phone, password="new-password-2"),
                 Response(),
                 "test-ip",
             )
@@ -276,7 +276,7 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
         database.users[0]["status"] = "disabled"
         try:
             await auth_mod.login(
-                LoginRequest(identifier=phone, password="newpass"),
+                LoginRequest(identifier=phone, password="new-password-2"),
                 Response(),
                 "test-ip",
             )

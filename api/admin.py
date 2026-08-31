@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 import config
 from api.admin_auth import authenticate_admin, create_admin_token, get_current_admin, set_admin_password
@@ -24,6 +24,8 @@ from api.refresh_sessions import (
     RefreshSessionUnavailable,
     refresh_sessions,
 )
+from api.security import validate_cookie_origin
+from api.uploads import read_upload_limited
 from core.data_loader import get_donor_display_info
 from core.runtime_cache import refresh_donor_cache, update_donor_status_cache
 from db.donor_import import import_excel_bytes
@@ -34,6 +36,7 @@ from db.donors_repo import (
     set_donor_status,
     upsert_donor,
 )
+from password_policy import validate_password_strength
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -45,7 +48,12 @@ class AdminLoginBody(BaseModel):
 
 class AdminPasswordBody(BaseModel):
     old_password: str = Field(min_length=1, max_length=72)
-    new_password: str = Field(min_length=8, max_length=72)
+    new_password: str = Field(min_length=12, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_ok(cls, value: str) -> str:
+        return validate_password_strength(value, admin=True)
 
 
 class DonorUpsertBody(BaseModel):
@@ -160,6 +168,7 @@ async def admin_login(
     body: AdminLoginBody,
     response: Response,
     client_ip: str = Depends(get_client_ip),
+    _origin: None = Depends(validate_cookie_origin),
 ):
     account = body.username.strip().lower()
     try:
@@ -205,7 +214,11 @@ async def admin_login(
 
 
 @router.post("/refresh")
-async def admin_refresh(request: Request, response: Response):
+async def admin_refresh(
+    request: Request,
+    response: Response,
+    _origin: None = Depends(validate_cookie_origin),
+):
     token = request.cookies.get(config.ADMIN_REFRESH_COOKIE_NAME)
     if not token:
         raise HTTPException(status_code=401, detail="管理端刷新凭证缺失")
@@ -233,7 +246,11 @@ async def admin_refresh(request: Request, response: Response):
 
 
 @router.post("/logout")
-async def admin_logout(request: Request, response: Response):
+async def admin_logout(
+    request: Request,
+    response: Response,
+    _origin: None = Depends(validate_cookie_origin),
+):
     token = request.cookies.get(config.ADMIN_REFRESH_COOKIE_NAME)
     if token:
         try:
@@ -248,6 +265,7 @@ async def admin_logout(request: Request, response: Response):
 async def admin_logout_all(
     response: Response,
     admin: dict = Depends(get_current_admin),
+    _origin: None = Depends(validate_cookie_origin),
 ):
     with db_session(admin=True) as conn:
         conn.execute(
@@ -282,6 +300,7 @@ async def admin_change_password(
     body: AdminPasswordBody,
     response: Response,
     admin: dict = Depends(get_current_admin),
+    _origin: None = Depends(validate_cookie_origin),
 ):
     if not set_admin_password(int(admin["id"]), body.old_password, body.new_password):
         raise HTTPException(status_code=400, detail="原密码错误")
@@ -373,7 +392,7 @@ async def admin_import_donors(
     file: UploadFile = File(...),
     admin: dict = Depends(require_permission(DONORS_IMPORT)),
 ):
-    content = await file.read()
+    content = await read_upload_limited(file, config.MAX_EXCEL_UPLOAD_BYTES)
     if not content:
         raise HTTPException(status_code=400, detail="空文件")
     result = import_excel_bytes(content, file.filename or "import.xlsx", int(admin["id"]))

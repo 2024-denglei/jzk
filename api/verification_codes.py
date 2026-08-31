@@ -10,6 +10,7 @@ import redis
 from redis.exceptions import RedisError
 
 import config
+from redis_client import get_redis_client
 
 
 class VerificationCodeError(RuntimeError):
@@ -56,12 +57,7 @@ class VerificationCodeStore:
     """
 
     def __init__(self, client: redis.Redis | None = None):
-        self.client = client or redis.Redis.from_url(
-            config.REDIS_URL,
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
+        self.client = client or get_redis_client()
 
     @staticmethod
     def _phone_key(phone: str) -> str:

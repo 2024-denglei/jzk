@@ -129,8 +129,8 @@ export function UserPage() {
               />
               <input
                 type="password"
-                placeholder="新密码（至少6位）"
-                minLength={6}
+                placeholder="新密码（至少10位）"
+                minLength={10}
                 value={newPw}
                 onChange={(e) => setNewPw(e.target.value)}
                 className="w-full rounded-xl border border-line px-3 py-2 text-sm"

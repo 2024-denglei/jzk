@@ -15,12 +15,12 @@ def test_super_admin_can_create_admin_account(monkeypatch):
     captured = {}
     monkeypatch.setattr(admin_admins_mod, "hash_password", lambda password: f"hashed:{password}")
     monkeypatch.setattr(admin_admins_mod, "create_admin_account", lambda **kwargs: captured.update(kwargs) or {"id": 10, "username": kwargs["username"], "is_active": True})
-    body = admin_admins_mod.AdminCreateBody(username="operator", password="Password1", display_name="运营管理员", role="donor_admin")
+    body = admin_admins_mod.AdminCreateBody(username="operator", password="Str0ng-Admin-Pass!", display_name="运营管理员", role="donor_admin")
 
     data = asyncio.run(admin_admins_mod.admin_create_admin(body, ADMIN))
 
     assert data["id"] == 10
-    assert captured["password_hash"] == "hashed:Password1"
+    assert captured["password_hash"] == "hashed:Str0ng-Admin-Pass!"
     assert captured["operator_id"] == 9
 
 

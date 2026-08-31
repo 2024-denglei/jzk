@@ -75,11 +75,11 @@ export function RegisterPage() {
           />
         </label>
         <label className="mt-4 block text-xs font-medium text-ink-soft/70">
-          密码（至少 6 位）
+          密码（至少 10 位）
           <input
             type="password"
             required
-            minLength={6}
+            minLength={10}
             autoComplete="new-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}

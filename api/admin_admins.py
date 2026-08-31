@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from api.admin_permissions import ADMINS_MANAGE, ADMINS_VIEW, require_permission
 from api.auth_utils import hash_password
@@ -18,15 +18,21 @@ from db.admin_admins_repo import (
     list_admins,
     set_admin_account_active,
 )
+from password_policy import validate_password_strength
 
 router = APIRouter(prefix="/api/admin/admins", tags=["admin-admins"])
 
 
 class AdminCreateBody(BaseModel):
     username: str = Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.-]+$")
-    password: str = Field(min_length=8, max_length=72)
+    password: str = Field(min_length=12, max_length=72)
     display_name: str = Field(min_length=1, max_length=100)
     role: Literal["super_admin", "donor_admin"] = "donor_admin"
+
+    @field_validator("password")
+    @classmethod
+    def password_ok(cls, value: str) -> str:
+        return validate_password_strength(value, admin=True)
 
 
 class AdminStateBody(BaseModel):

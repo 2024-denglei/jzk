@@ -8,7 +8,7 @@ import time
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.auth_utils import get_current_user_id
 from core.data_loader import to_card_donor_info
@@ -64,22 +64,22 @@ def inject_dependencies(session_manager, feature_encoder, donor_df, llm_client):
 
 
 class StreamChatRequest(BaseModel):
-    session_id: str | None = None
-    message: str = ""
+    session_id: str | None = Field(default=None, max_length=64)
+    message: str = Field(default="", max_length=4000)
 
 
 class AbortChatRequest(BaseModel):
-    session_id: str
+    session_id: str = Field(min_length=1, max_length=64)
 
 
 class RewindChatRequest(BaseModel):
-    session_id: str
-    history: list[dict] = []
-    parsed_features: dict = {}
-    constraints: dict = {}
+    session_id: str = Field(min_length=1, max_length=64)
+    history: list[dict] = Field(default_factory=list, max_length=100)
+    parsed_features: dict = Field(default_factory=dict)
+    constraints: dict = Field(default_factory=dict)
     preference_profile: dict | None = None
-    messages: list[dict] | None = None
-    candidates: list | None = None
+    messages: list[dict] | None = Field(default=None, max_length=100)
+    candidates: list | None = Field(default=None, max_length=1000)
 
 
 @router.post("/api/chat/abort")
@@ -92,6 +92,7 @@ async def chat_abort(body: AbortChatRequest, user_id: int = Depends(get_current_
     if not session:
         return {"ok": True, "rolled_back": False}
     rolled = session.abort_turn()
+    session_manager.put_session(session)
     return {"ok": True, "rolled_back": rolled}
 
 
@@ -129,6 +130,7 @@ async def chat_rewind(body: RewindChatRequest, user_id: int = Depends(get_curren
         candidates=body.candidates,
         preference_profile=body.preference_profile,
     )
+    session_manager.put_session(session)
     ui_messages = body.messages
     if ui_messages is None:
         ui_messages = _history_to_ui_messages(session, session.candidates)
@@ -193,6 +195,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
             # 空消息：欢迎语
             if session.state == DialogueState.START and not (body.message or "").strip():
                 welcome = get_welcome(session)
+                session_manager.put_session(session)
                 yield _sse("reply", {"text": welcome})
                 yield _sse("done", {})
                 _maybe_persist(user_id, session, [], [])
@@ -213,6 +216,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
             session.begin_turn()
             turn_started = True
             session.add_message("user", user_text)
+            session_manager.put_session(session)
             t_turn = time.perf_counter()
 
             async def _client_gone() -> bool:
@@ -225,6 +229,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                 nonlocal turn_started
                 if session and turn_started:
                     session.abort_turn()
+                    session_manager.put_session(session)
                     turn_started = False
                 if trace:
                     try:
@@ -519,6 +524,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
 
             session.add_message("assistant", final_reply)
             session.end_turn()
+            session_manager.put_session(session)
             turn_started = False
 
             yield _sse("reply", {"text": final_reply})
@@ -577,6 +583,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
             if session and turn_started:
                 try:
                     session.abort_turn()
+                    session_manager.put_session(session)
                 except Exception:
                     pass
             if trace:

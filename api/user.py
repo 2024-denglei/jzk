@@ -31,10 +31,10 @@ class PreferencesBody(BaseModel):
 
 
 class ChatSaveBody(BaseModel):
-    session_id: str | None = None
-    title: str = "对话"
-    messages: list[dict] = Field(default_factory=list)
-    candidates: list[dict] = Field(default_factory=list)
+    session_id: str | None = Field(default=None, max_length=64)
+    title: str = Field(default="对话", max_length=100)
+    messages: list[dict] = Field(default_factory=list, max_length=100)
+    candidates: list[dict] = Field(default_factory=list, max_length=1000)
     state: dict = Field(default_factory=dict)
 
 

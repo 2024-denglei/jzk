@@ -66,6 +66,7 @@ async def submit_feedback(
         raise HTTPException(status_code=404, detail="候选人不属于该会话")
 
     session.add_feedback(request.candidate_id, request.feedback, request.reason)
+    session_manager.put_session(session)
     record_feedback(request.session_id, request.candidate_id, request.feedback)
 
     return FeedbackResponse(
