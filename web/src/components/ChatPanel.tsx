@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { api, getToken, setToken } from '../lib/api'
+import { api, expireUserSession, getToken } from '../lib/api'
 import {
   createSpeechRecognizer,
   getSpeechSupport,
@@ -423,7 +423,7 @@ export function ChatPanel({
         signal: ac.signal,
       })
       if (res.status === 401) {
-        setToken(null)
+        expireUserSession('登录已失效，请重新登录')
         navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`)
         throw new Error('未登录')
       }

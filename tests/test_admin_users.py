@@ -51,6 +51,40 @@ def test_admin_can_kick_user_with_reason(monkeypatch):
     assert data["token_version"] == 3
 
 
+@pytest.mark.parametrize(
+    ("action", "before_status", "expected_status", "expected_token_version", "sql_fragment"),
+    [
+        ("kick", "active", "active", 3, "token_version = token_version + 1"),
+        ("disable", "active", "disabled", 3, "SET status = 'disabled', token_version = token_version + 1"),
+        ("enable", "disabled", "active", 2, "SET status = 'active'"),
+    ],
+)
+def test_user_control_repository_applies_status_and_token_rules(monkeypatch, action, before_status, expected_status, expected_token_version, sql_fragment):
+    before = {"id": 12, "status": before_status, "token_version": 2, "disabled_at": None, "disabled_reason": None}
+    after = {"id": 12, "status": expected_status, "token_version": expected_token_version, "disabled_at": None, "disabled_reason": None}
+    fetched = iter([before, after])
+    executed = []
+
+    class Conn:
+        def execute(self, sql, params=()):
+            executed.append((" ".join(sql.split()), params))
+
+    @contextmanager
+    def fake_session(admin=False):
+        assert admin is True
+        yield Conn()
+
+    monkeypatch.setattr(admin_users_repo, "db_session", fake_session)
+    monkeypatch.setattr(admin_users_repo, "fetchone", lambda _conn, _sql, _params: next(fetched))
+
+    result = admin_users_repo.control_user(12, action, 9, "安全处理")
+
+    assert result["status"] == expected_status
+    assert result["token_version"] == expected_token_version
+    assert any(sql_fragment in sql for sql, _params in executed)
+    assert any("INSERT INTO admin.user_audit_logs" in sql for sql, _params in executed)
+
+
 def test_admin_chat_lookup_is_scoped_to_user_and_operator(monkeypatch):
     called = {}
 

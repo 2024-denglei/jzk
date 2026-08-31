@@ -5,6 +5,35 @@ export type AdminInfo = {
   role: string
 }
 
+export type AdminActionCount = {
+  source: 'donor' | 'user'
+  action: string
+  count: number
+}
+
+export type AdminRecord = AdminInfo & {
+  is_active: boolean
+  created_at: string
+  updated_at?: string
+  donor_operation_count: number
+  user_operation_count: number
+  operation_count: number
+  last_operation_at?: string | null
+  action_counts?: AdminActionCount[]
+}
+
+export type AdminAuditRecord = {
+  source: 'donor' | 'user'
+  record_id: number
+  action: string
+  target_id?: string | null
+  target_name?: string | null
+  reason?: string | null
+  before_data?: unknown
+  after_data?: unknown
+  created_at: string
+}
+
 export type PageData<T> = {
   items: T[]
   total: number

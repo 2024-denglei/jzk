@@ -22,9 +22,9 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: '数据中心',
-    icon: 'ri-database-2-line',
-    items: [{ to: '/admin/audit', label: '操作审计', icon: 'ri-history-line' }],
+    label: '管理员中心',
+    icon: 'ri-admin-line',
+    items: [{ to: '/admin/admins', label: '管理员信息', icon: 'ri-shield-user-line' }],
   },
 ]
 

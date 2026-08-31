@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { AdminShell } from './admin/AdminShell'
 import { ADMIN_TOKEN_KEY, adminFetch } from './admin/adminApi'
-import { AuditView } from './admin/AuditView'
+import { AdminProfileView } from './admin/AdminProfileView'
+import { AdminsView } from './admin/AdminsView'
 import { DashboardView } from './admin/DashboardView'
 import { DonorsView } from './admin/DonorsView'
 import { ImportView } from './admin/ImportView'
@@ -37,12 +38,15 @@ export function AdminPage() {
   if (location.pathname === '/admin' || location.pathname === '/admin/') return <Navigate to="/admin/dashboard" replace />
 
   const userMatch = location.pathname.match(/^\/admin\/users\/(\d+)$/)
+  const adminMatch = location.pathname.match(/^\/admin\/admins\/(\d+)$/)
   let content = <DashboardView />
-  if (userMatch) content = <UserProfileView userId={Number(userMatch[1])} />
+  if (adminMatch) content = <AdminProfileView adminId={Number(adminMatch[1])} currentAdminId={admin.id} />
+  else if (location.pathname.startsWith('/admin/admins')) content = <AdminsView currentAdminId={admin.id} />
+  else if (userMatch) content = <UserProfileView userId={Number(userMatch[1])} />
   else if (location.pathname.startsWith('/admin/users')) content = <UsersView />
   else if (location.pathname.startsWith('/admin/donors')) content = <DonorsView />
   else if (location.pathname.startsWith('/admin/import')) content = <ImportView />
-  else if (location.pathname.startsWith('/admin/audit')) content = <AuditView />
+  else if (location.pathname.startsWith('/admin/audit')) content = <Navigate to="/admin/admins" replace />
 
   return <AdminShell admin={admin} onLogout={() => { localStorage.removeItem(ADMIN_TOKEN_KEY); setAdmin(null) }}>{content}</AdminShell>
 }

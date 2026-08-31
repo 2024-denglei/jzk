@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { auditActionLabel, formatTime } from './adminFormat.ts'
+import { adminRoleLabel, auditActionLabel, formatTime } from './adminFormat.ts'
 
 test('空时间显示占位符', () => {
   assert.equal(formatTime(null), '—')
@@ -22,4 +22,7 @@ test('审计操作使用中文业务名称', () => {
   assert.equal(auditActionLabel('disable'), '停用档案')
   assert.equal(auditActionLabel('custom_action'), 'custom_action')
   assert.equal(auditActionLabel(null), '—')
+  assert.equal(auditActionLabel('disable', 'user'), '停用账号')
+  assert.equal(auditActionLabel('enable', 'user'), '恢复账号')
+  assert.equal(adminRoleLabel('super_admin'), '超级管理员')
 })

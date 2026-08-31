@@ -33,6 +33,7 @@ export function UserProfileView({ userId }: { userId: number }) {
   const [loading, setLoading] = useState(true)
   const [tabLoading, setTabLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [control, setControl] = useState<UserControlAction | null>(null)
   const [controlBusy, setControlBusy] = useState(false)
 
@@ -92,8 +93,14 @@ export function UserProfileView({ userId }: { userId: number }) {
     if (!control) return
     setControlBusy(true)
     setError('')
+    setSuccess('')
     try {
       await postAdmin(`/api/admin/users/${userId}/${control}`, { reason })
+      setSuccess({
+        kick: '已强制用户下线：现有登录令牌已失效，下一次请求会要求重新登录。',
+        disable: '账号已停用：现有登录令牌已失效，并且恢复前无法再次登录。',
+        enable: '账号已恢复：用户现在可以重新登录，停用前的旧令牌仍不可使用。',
+      }[control])
       setControl(null)
       await loadProfile()
       if (tab === 'audit') await loadTab()
@@ -115,6 +122,7 @@ export function UserProfileView({ userId }: { userId: number }) {
     <div>
       <button onClick={() => navigate('/admin/users')} className="mb-4 inline-flex items-center gap-1 text-xs text-[#617086] hover:text-[#1677ff]"><i className="ri-arrow-left-line" />返回用户档案</button>
       {error ? <ErrorNotice message={error} /> : null}
+      {success ? <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"><i className="ri-checkbox-circle-line mr-1" />{success}</div> : null}
 
       <section className="rounded-xl border border-[#dce4ee] bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -127,8 +135,8 @@ export function UserProfileView({ userId }: { userId: number }) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => setControl('kick')} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700"><i className="ri-logout-box-r-line mr-1" />强制下线</button>
-            <button onClick={() => setControl(user.status === 'active' ? 'disable' : 'enable')} className={`rounded-lg px-3 py-2 text-xs text-white ${user.status === 'active' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
+            <button onClick={() => { setSuccess(''); setControl('kick') }} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700"><i className="ri-logout-box-r-line mr-1" />强制下线</button>
+            <button onClick={() => { setSuccess(''); setControl(user.status === 'active' ? 'disable' : 'enable') }} className={`rounded-lg px-3 py-2 text-xs text-white ${user.status === 'active' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
               <i className={`${user.status === 'active' ? 'ri-user-unfollow-line' : 'ri-user-follow-line'} mr-1`} />{user.status === 'active' ? '停用账号' : '恢复账号'}
             </button>
           </div>

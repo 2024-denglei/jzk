@@ -26,6 +26,7 @@ from api.user import router as user_router
 from api.donors import router as donors_router
 from api.admin import router as admin_router
 from api.admin_users import router as admin_users_router
+from api.admin_admins import router as admin_admins_router
 from api.voice import router as voice_router
 from api.match import router as match_router
 from db.database import init_db
@@ -110,6 +111,7 @@ app.include_router(user_router)
 app.include_router(donors_router)
 app.include_router(admin_router)
 app.include_router(admin_users_router)
+app.include_router(admin_admins_router)
 app.include_router(voice_router)
 app.include_router(match_router)
 

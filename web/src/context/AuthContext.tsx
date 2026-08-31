@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, getToken, setToken } from '../lib/api'
+import { api, getToken, setToken, USER_SESSION_EXPIRED_EVENT } from '../lib/api'
 import type { User } from '../types'
 
 interface AuthContextValue {
@@ -40,6 +40,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    const expired = () => setUser(null)
+    window.addEventListener(USER_SESSION_EXPIRED_EVENT, expired)
+    return () => window.removeEventListener(USER_SESSION_EXPIRED_EVENT, expired)
+  }, [])
 
   const acceptLogin = useCallback((data: { access_token: string; user: User }) => {
     setToken(data.access_token)
