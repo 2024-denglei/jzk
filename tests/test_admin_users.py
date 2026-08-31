@@ -45,6 +45,7 @@ def test_admin_can_kick_user_with_reason(monkeypatch):
         return {"id": user_id, "status": "active", "token_version": 3}
 
     monkeypatch.setattr(admin_users_mod, "control_user", fake_control)
+    monkeypatch.setattr(admin_users_mod.refresh_sessions, "revoke_all", lambda *_args: 1)
     body = admin_users_mod.UserControlBody(reason="异常登录处理")
     data = asyncio.run(admin_users_mod.admin_kick_user(12, body, ADMIN))
     assert called == {"user_id": 12, "action": "kick", "operator_id": 9, "reason": "异常登录处理"}

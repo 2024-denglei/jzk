@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import uuid
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -12,7 +13,6 @@ import config
 
 SECRET_KEY = config.JWT_SECRET
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
@@ -26,15 +26,49 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_access_token(data: dict[str, Any], expires_days: int = ACCESS_TOKEN_EXPIRE_DAYS) -> str:
+def create_access_token(
+    data: dict[str, Any],
+    expires_days: int | None = None,
+    expires_minutes: int | None = None,
+) -> str:
     payload = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=expires_days)
-    payload.update({"exp": expire})
+    now = datetime.now(timezone.utc)
+    if expires_days is not None:
+        expire = now + timedelta(days=expires_days)
+    else:
+        expire = now + timedelta(
+            minutes=expires_minutes or config.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+    payload.setdefault("kind", "user")
+    payload.update(
+        {
+            "iss": config.JWT_ISSUER,
+            "aud": config.JWT_AUDIENCE,
+            "iat": now,
+            "exp": expire,
+            "jti": str(uuid.uuid4()),
+        }
+    )
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def decode_token(token: str) -> dict[str, Any]:
-    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    unverified = jwt.get_unverified_claims(token)
+    if "iss" not in unverified and "aud" not in unverified:
+        # 短期兼容迁移前签发的、没有 iss/aud 的旧 Bearer Token。
+        return jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_aud": False},
+        )
+    return jwt.decode(
+        token,
+        SECRET_KEY,
+        algorithms=[ALGORITHM],
+        issuer=config.JWT_ISSUER,
+        audience=config.JWT_AUDIENCE,
+    )
 
 
 def get_current_user_id(
@@ -44,7 +78,7 @@ def get_current_user_id(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未登录")
     try:
         payload = decode_token(credentials.credentials)
-        if payload.get("kind") == "admin":
+        if payload.get("kind") not in (None, "user"):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效令牌")
         user_id = payload.get("sub")
         token_version = payload.get("ver")

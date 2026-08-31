@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { AdminShell } from './admin/AdminShell'
-import { ADMIN_TOKEN_KEY, adminFetch } from './admin/adminApi'
+import { logoutAdminSession, refreshAdminSession, setAdminToken } from './admin/adminApi'
 import { AdminProfileView } from './admin/AdminProfileView'
 import { AdminsView } from './admin/AdminsView'
 import { DashboardView } from './admin/DashboardView'
@@ -16,11 +16,12 @@ import { ADMIN_PERMISSIONS, firstAllowedAdminPath, hasAdminPermission } from './
 export function AdminPage() {
   const location = useLocation()
   const [admin, setAdmin] = useState<AdminInfo | null>(null)
-  const [checking, setChecking] = useState(Boolean(localStorage.getItem(ADMIN_TOKEN_KEY)))
+  const [checking, setChecking] = useState(true)
 
   const loadMe = useCallback(async () => {
     try {
-      setAdmin(await adminFetch<AdminInfo>('/api/admin/me'))
+      const data = await refreshAdminSession<AdminInfo>()
+      setAdmin(data?.admin ?? null)
     } catch {
       setAdmin(null)
     } finally {
@@ -29,7 +30,7 @@ export function AdminPage() {
   }, [])
 
   useEffect(() => {
-    if (localStorage.getItem(ADMIN_TOKEN_KEY)) void loadMe()
+    void loadMe()
     const unauthorized = () => setAdmin(null)
     window.addEventListener('admin-unauthorized', unauthorized)
     return () => window.removeEventListener('admin-unauthorized', unauthorized)
@@ -53,7 +54,7 @@ export function AdminPage() {
   else if (location.pathname.startsWith('/admin/import')) content = allowed(ADMIN_PERMISSIONS.donorsImport) ? <ImportView /> : <ForbiddenView />
   else if (location.pathname.startsWith('/admin/audit')) content = <Navigate to="/admin/admins" replace />
 
-  return <AdminShell admin={admin} onLogout={() => { localStorage.removeItem(ADMIN_TOKEN_KEY); setAdmin(null) }}>{content}</AdminShell>
+  return <AdminShell admin={admin} onLogout={() => { void logoutAdminSession().finally(() => setAdmin(null)) }}>{content}</AdminShell>
 }
 
 function ForbiddenView() {
@@ -71,10 +72,10 @@ function AdminLogin({ onSuccess }: { onSuccess: (admin: AdminInfo) => void }) {
     setBusy(true)
     setError('')
     try {
-      const response = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) })
+      const response = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ username, password }) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.detail || '登录失败')
-      localStorage.setItem(ADMIN_TOKEN_KEY, data.access_token)
+      setAdminToken(data.access_token)
       onSuccess(data.admin)
       setPassword('')
     } catch (err) {

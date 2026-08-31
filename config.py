@@ -20,6 +20,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
 JWT_SECRET = os.getenv("JWT_SECRET", "jzk-fertility-match-secret-change-me")
 RATE_LIMIT_PEPPER = os.getenv("RATE_LIMIT_PEPPER", "") or JWT_SECRET
+JWT_ISSUER = os.getenv("JWT_ISSUER", "jzk-api")
+JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "jzk-web")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+USER_REFRESH_TOKEN_DAYS = int(os.getenv("USER_REFRESH_TOKEN_DAYS", "30"))
+ADMIN_REFRESH_TOKEN_HOURS = int(os.getenv("ADMIN_REFRESH_TOKEN_HOURS", "8"))
+USER_REFRESH_COOKIE_NAME = os.getenv("USER_REFRESH_COOKIE_NAME", "jzk_user_refresh")
+ADMIN_REFRESH_COOKIE_NAME = os.getenv("ADMIN_REFRESH_COOKIE_NAME", "jzk_admin_refresh")
 
 # LLM 配置
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")

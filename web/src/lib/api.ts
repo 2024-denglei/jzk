@@ -1,13 +1,22 @@
-const TOKEN_KEY = 'jzk_token'
+let accessToken: string | null = null
+
+if (typeof localStorage !== 'undefined') localStorage.removeItem('jzk_token')
+
 export const USER_SESSION_EXPIRED_EVENT = 'user-session-expired'
 
+type AuthPayload<T = unknown> = {
+  access_token: string
+  user: T
+}
+
+let refreshPromise: Promise<AuthPayload | null> | null = null
+
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  return accessToken
 }
 
 export function setToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token)
-  else localStorage.removeItem(TOKEN_KEY)
+  accessToken = token
 }
 
 export function expireUserSession(detail = '登录已失效，请重新登录') {
@@ -15,15 +24,70 @@ export function expireUserSession(detail = '登录已失效，请重新登录') 
   window.dispatchEvent(new CustomEvent(USER_SESSION_EXPIRED_EVENT, { detail }))
 }
 
+export async function refreshAccessToken<T = unknown>(): Promise<AuthPayload<T> | null> {
+  if (!refreshPromise) {
+    refreshPromise = fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          setToken(null)
+          return null
+        }
+        const data = await response.json() as AuthPayload
+        setToken(data.access_token)
+        return data
+      })
+      .catch(() => {
+        setToken(null)
+        return null
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise as Promise<AuthPayload<T> | null>
+}
+
+const NO_AUTO_REFRESH = new Set([
+  '/api/auth/login',
+  '/api/auth/phone-login',
+  '/api/auth/register',
+  '/api/auth/refresh',
+  '/api/auth/logout',
+  '/api/auth/send-code',
+  '/api/auth/reset-password',
+])
+
+export async function authFetch(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  const headers = new Headers(init.headers)
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  let response = await fetch(path, { ...init, headers, credentials: 'include' })
+  if (response.status === 401 && retry && !NO_AUTO_REFRESH.has(path.split('?')[0])) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) response = await authFetch(path, init, false)
+  }
+  return response
+}
+
+export async function logoutUserSession() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+  } finally {
+    setToken(null)
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (!headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json')
   }
-  const token = getToken()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  const res = await fetch(path, { ...init, headers })
+  const res = await authFetch(path, { ...init, headers })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     const detail = (data as { detail?: string }).detail || '请求失败'

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from api.admin_permissions import ADMINS_MANAGE, ADMINS_VIEW, require_permission
 from api.auth_utils import hash_password
+from api.refresh_sessions import RefreshSessionUnavailable, refresh_sessions
 from db.admin_admins_repo import (
     admin_exists,
     create_admin_account,
@@ -109,6 +110,10 @@ async def admin_delete_admin(
         raise HTTPException(status_code=404, detail="管理员不存在")
     except (PermissionError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    try:
+        refresh_sessions.revoke_all("admin", admin_id)
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return _serialize(row)
 
 

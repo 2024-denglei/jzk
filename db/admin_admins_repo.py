@@ -119,7 +119,7 @@ def set_admin_account_active(
             conn,
             """
             UPDATE admin.admin_users
-            SET is_active = %s, updated_at = now()
+            SET is_active = %s, token_version = token_version + 1, updated_at = now()
             WHERE id = %s
             RETURNING id, username, display_name, role, is_active, created_at, updated_at
             """,

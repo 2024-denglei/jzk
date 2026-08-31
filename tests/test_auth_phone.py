@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from pydantic import ValidationError
 
 import config
@@ -68,6 +68,20 @@ class _NoopRateLimiter:
 
     def reset(self, *_args, **_kwargs):
         return None
+
+
+class _FakeRefreshSessions:
+    def __init__(self):
+        self.created: list[tuple[int, str, int, int]] = []
+        self.revoked: list[tuple[str, int]] = []
+
+    def create(self, subject_id, kind, token_version, ttl_seconds):
+        self.created.append((subject_id, kind, token_version, ttl_seconds))
+        return "refresh-token"
+
+    def revoke_all(self, kind, subject_id):
+        self.revoked.append((kind, subject_id))
+        return 1
 
 
 def test_verification_code_is_scoped_one_time_and_rate_limited(monkeypatch):
@@ -193,6 +207,8 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
     monkeypatch.setattr(auth_mod, "verification_codes", codes)
     monkeypatch.setattr(auth_mod.config, "EXPOSE_TEST_VERIFICATION_CODE", True)
     monkeypatch.setattr(auth_mod, "rate_limiter", _NoopRateLimiter())
+    refresh = _FakeRefreshSessions()
+    monkeypatch.setattr(auth_mod, "refresh_sessions", refresh)
 
     phone = "13800138000"
 
@@ -205,19 +221,31 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
             "phone": phone,
             "password": "oldpass",
             "code": "654321",
-        }), "test-ip")
+        }), Response(), "test-ip")
         assert registered["user"]["email"] == "user@example.com"
         assert registered["user"]["phone"] == "+8613800138000"
 
         for identifier in ("user@example.com", phone):
-            logged_in = await auth_mod.login(LoginRequest(identifier=identifier, password="oldpass"), "test-ip")
+            logged_in = await auth_mod.login(
+                LoginRequest(identifier=identifier, password="oldpass"),
+                Response(),
+                "test-ip",
+            )
             assert logged_in["access_token"]
 
         await auth_mod.send_code(SendCodeRequest(phone=phone, purpose="login"), "test-ip")
-        code_login = await auth_mod.phone_login(PhoneCodeRequest(phone=phone, code="654321"), "test-ip")
+        code_login = await auth_mod.phone_login(
+            PhoneCodeRequest(phone=phone, code="654321"),
+            Response(),
+            "test-ip",
+        )
         assert code_login["access_token"]
         try:
-            await auth_mod.phone_login(PhoneCodeRequest(phone=phone, code="654321"), "test-ip")
+            await auth_mod.phone_login(
+                PhoneCodeRequest(phone=phone, code="654321"),
+                Response(),
+                "test-ip",
+            )
             assert False, "expected one-time code rejection"
         except HTTPException as exc:
             assert exc.status_code == 400
@@ -229,19 +257,36 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
         )
         assert reset == {"ok": True}
         try:
-            await auth_mod.login(LoginRequest(identifier=phone, password="oldpass"), "test-ip")
+            await auth_mod.login(
+                LoginRequest(identifier=phone, password="oldpass"),
+                Response(),
+                "test-ip",
+            )
             assert False, "expected old password rejection"
         except HTTPException as exc:
             assert exc.status_code == 400
-        assert (await auth_mod.login(LoginRequest(identifier=phone, password="newpass"), "test-ip"))["access_token"]
+        assert (
+            await auth_mod.login(
+                LoginRequest(identifier=phone, password="newpass"),
+                Response(),
+                "test-ip",
+            )
+        )["access_token"]
 
         database.users[0]["status"] = "disabled"
         try:
-            await auth_mod.login(LoginRequest(identifier=phone, password="newpass"), "test-ip")
+            await auth_mod.login(
+                LoginRequest(identifier=phone, password="newpass"),
+                Response(),
+                "test-ip",
+            )
             assert False, "expected disabled account rejection"
         except HTTPException as exc:
             assert exc.status_code == 403
             assert "账号已停用" in exc.detail
+
+        assert refresh.created
+        assert ("user", 1) in refresh.revoked
 
     asyncio.run(scenario())
 

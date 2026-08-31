@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { api, expireUserSession, getToken } from '../lib/api'
+import { api, authFetch, expireUserSession } from '../lib/api'
 import {
   createSpeechRecognizer,
   getSpeechSupport,
@@ -412,13 +412,9 @@ export function ChatPanel({
     abortRef.current = ac
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      const token = getToken()
-      if (token) headers.Authorization = `Bearer ${token}`
-
-      const res = await fetch('/api/chat/stream', {
+      const res = await authFetch('/api/chat/stream', {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, message: text }),
         signal: ac.signal,
       })

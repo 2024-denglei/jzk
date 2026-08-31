@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.admin_permissions import USERS_CONTROL, USERS_VIEW, require_permission
+from api.refresh_sessions import RefreshSessionUnavailable, refresh_sessions
 from db.admin_users_repo import (
     control_user,
     get_user_chat,
@@ -169,6 +170,11 @@ async def _control(user_id: int, action: str, body: UserControlBody, admin: dict
         row = control_user(user_id, action, int(admin["id"]), body.reason.strip())
     except KeyError:
         raise HTTPException(status_code=404, detail="用户不存在")
+    if action in {"kick", "disable"}:
+        try:
+            refresh_sessions.revoke_all("user", user_id)
+        except RefreshSessionUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
     return _serialize(row)
 
 

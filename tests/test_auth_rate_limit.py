@@ -1,7 +1,7 @@
 import asyncio
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from redis.exceptions import RedisError
 
 from api import admin as admin_api
@@ -68,10 +68,10 @@ def test_admin_login_endpoint_blocks_repeated_failures(monkeypatch):
 
     for _ in range(2):
         with pytest.raises(HTTPException) as exc:
-            asyncio.run(admin_api.admin_login(body, "127.0.0.1"))
+            asyncio.run(admin_api.admin_login(body, Response(), "127.0.0.1"))
         assert exc.value.status_code == 400
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(admin_api.admin_login(body, "127.0.0.1"))
+        asyncio.run(admin_api.admin_login(body, Response(), "127.0.0.1"))
     assert exc.value.status_code == 429
     assert exc.value.headers["Retry-After"] == str(admin_api.config.ADMIN_LOGIN_WINDOW_SECONDS)

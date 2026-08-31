@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from psycopg.errors import UniqueViolation
 
@@ -16,6 +16,11 @@ from api.rate_limit import (
     RateLimitUnavailable,
     get_client_ip,
     rate_limiter,
+)
+from api.refresh_sessions import (
+    InvalidRefreshToken,
+    RefreshSessionUnavailable,
+    refresh_sessions,
 )
 from api.verification_codes import VerificationCodeError, VerificationCodeRateLimitError, verification_codes
 from db.database import db_session
@@ -127,10 +132,51 @@ def _user_dict(row) -> dict:
     }
 
 
-def _token_response(row) -> dict:
+def _access_response(row) -> dict:
     version = int((row.get("token_version") if hasattr(row, "get") else None) or 0)
-    token = create_access_token({"sub": str(row["id"]), "ver": version})
+    token = create_access_token({"sub": str(row["id"]), "kind": "user", "ver": version})
     return {"access_token": token, "token_type": "bearer", "user": _user_dict(row)}
+
+
+def _user_refresh_ttl() -> int:
+    return config.USER_REFRESH_TOKEN_DAYS * 24 * 60 * 60
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=config.USER_REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=_user_refresh_ttl(),
+        path="/api/auth",
+        secure=config.ENVIRONMENT == "production",
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _delete_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=config.USER_REFRESH_COOKIE_NAME,
+        path="/api/auth",
+        secure=config.ENVIRONMENT == "production",
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _token_response(row, response: Response) -> dict:
+    version = int((row.get("token_version") if hasattr(row, "get") else None) or 0)
+    try:
+        refresh_token = refresh_sessions.create(
+            int(row["id"]),
+            "user",
+            version,
+            _user_refresh_ttl(),
+        )
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _set_refresh_cookie(response, refresh_token)
+    return _access_response(row)
 
 
 def _ensure_login_allowed(row) -> None:
@@ -219,7 +265,11 @@ async def send_code(body: SendCodeRequest, client_ip: str = Depends(get_client_i
 
 
 @router.post("/register")
-async def register(body: RegisterRequest, client_ip: str = Depends(get_client_ip)):
+async def register(
+    body: RegisterRequest,
+    response: Response,
+    client_ip: str = Depends(get_client_ip),
+):
     _check_code_verification_ip(client_ip)
     nickname = (body.nickname or body.email.split("@")[0]).strip()
     with db_session() as conn:
@@ -246,11 +296,15 @@ async def register(body: RegisterRequest, client_ip: str = Depends(get_client_ip
             ).fetchone()
     except UniqueViolation as exc:
         raise HTTPException(status_code=400, detail="邮箱或手机号已注册") from exc
-    return _token_response(_record_login(int(row["id"])) or row)
+    return _token_response(_record_login(int(row["id"])) or row, response)
 
 
 @router.post("/login")
-async def login(body: LoginRequest, client_ip: str = Depends(get_client_ip)):
+async def login(
+    body: LoginRequest,
+    response: Response,
+    client_ip: str = Depends(get_client_ip),
+):
     identifier = body.identifier or ""
     _check_rate("login:account", identifier, config.USER_LOGIN_LIMIT, config.USER_LOGIN_WINDOW_SECONDS)
     _check_rate("login:ip", client_ip, config.USER_LOGIN_LIMIT, config.USER_LOGIN_WINDOW_SECONDS)
@@ -261,11 +315,15 @@ async def login(body: LoginRequest, client_ip: str = Depends(get_client_ip)):
         raise HTTPException(status_code=400, detail="邮箱/手机号或密码错误")
     _ensure_login_allowed(row)
     _reset_rate("login:account", identifier)
-    return _token_response(_record_login(int(row["id"])) or row)
+    return _token_response(_record_login(int(row["id"])) or row, response)
 
 
 @router.post("/phone-login")
-async def phone_login(body: PhoneCodeRequest, client_ip: str = Depends(get_client_ip)):
+async def phone_login(
+    body: PhoneCodeRequest,
+    response: Response,
+    client_ip: str = Depends(get_client_ip),
+):
     _check_code_verification_ip(client_ip)
     with db_session() as conn:
         row = conn.execute("SELECT * FROM app.users WHERE phone = %s", (body.phone,)).fetchone()
@@ -273,7 +331,7 @@ async def phone_login(body: PhoneCodeRequest, client_ip: str = Depends(get_clien
         raise HTTPException(status_code=400, detail="手机号或验证码错误")
     _ensure_login_allowed(row)
     _consume_code("login", body.phone, body.code)
-    return _token_response(_record_login(int(row["id"])) or row)
+    return _token_response(_record_login(int(row["id"])) or row, response)
 
 
 @router.post("/reset-password")
@@ -290,6 +348,72 @@ async def reset_password(body: ResetPasswordRequest, client_ip: str = Depends(ge
             "UPDATE app.users SET password_hash = %s, token_version = token_version + 1, updated_at = now() WHERE id = %s",
             (hash_password(body.new_password), row["id"]),
         )
+    try:
+        refresh_sessions.revoke_all("user", int(row["id"]))
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@router.post("/refresh")
+async def refresh_login(request: Request, response: Response):
+    token = request.cookies.get(config.USER_REFRESH_COOKIE_NAME)
+    if not token:
+        raise HTTPException(status_code=401, detail="刷新凭证缺失")
+    try:
+        session = refresh_sessions.inspect(token)
+        if session.kind != "user":
+            raise InvalidRefreshToken("刷新凭证类型错误")
+        with db_session() as conn:
+            row = conn.execute(
+                "SELECT * FROM app.users WHERE id = %s",
+                (session.subject_id,),
+            ).fetchone()
+        if (
+            not row
+            or row["status"] != "active"
+            or int(row["token_version"]) != session.token_version
+        ):
+            refresh_sessions.revoke_all("user", session.subject_id)
+            raise InvalidRefreshToken("登录状态已失效")
+        new_token = refresh_sessions.rotate(token, session, _user_refresh_ttl())
+    except InvalidRefreshToken as exc:
+        _delete_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    _set_refresh_cookie(response, new_token)
+    return _access_response(row)
+
+
+@router.post("/logout")
+async def logout(request: Request, response: Response):
+    token = request.cookies.get(config.USER_REFRESH_COOKIE_NAME)
+    if token:
+        try:
+            refresh_sessions.revoke(token)
+        except RefreshSessionUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _delete_refresh_cookie(response)
+    return {"ok": True}
+
+
+@router.post("/logout-all")
+async def logout_all(
+    response: Response,
+    user_id: int = Depends(get_current_user_id),
+):
+    with db_session() as conn:
+        conn.execute(
+            "UPDATE app.users SET token_version = token_version + 1, updated_at = now() WHERE id = %s",
+            (user_id,),
+        )
+    try:
+        refresh_sessions.revoke_all("user", user_id)
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _delete_refresh_cookie(response)
     return {"ok": True}
 
 
@@ -313,7 +437,11 @@ async def update_me(body: UpdateMeRequest, user_id: int = Depends(get_current_us
 
 
 @router.post("/change-password")
-async def change_password(body: ChangePasswordRequest, user_id: int = Depends(get_current_user_id)):
+async def change_password(
+    body: ChangePasswordRequest,
+    response: Response,
+    user_id: int = Depends(get_current_user_id),
+):
     with db_session() as conn:
         row = conn.execute("SELECT * FROM app.users WHERE id = %s", (user_id,)).fetchone()
         if not row or not verify_password(body.old_password, row["password_hash"]):
@@ -322,4 +450,9 @@ async def change_password(body: ChangePasswordRequest, user_id: int = Depends(ge
             "UPDATE app.users SET password_hash = %s, token_version = token_version + 1, updated_at = now() WHERE id = %s",
             (hash_password(body.new_password), user_id),
         )
+    try:
+        refresh_sessions.revoke_all("user", user_id)
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _delete_refresh_cookie(response)
     return {"ok": True}

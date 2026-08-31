@@ -63,6 +63,7 @@ def ensure_schema() -> None:
             "06_add_admin_user_archives.sql",
             "07_add_operation_requests.sql",
             "08_add_admin_account_audit.sql",
+            "09_add_admin_token_version.sql",
         ):
             path = _SCHEMA_DIR / name
             if path.exists():

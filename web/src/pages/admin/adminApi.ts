@@ -1,17 +1,71 @@
-export const ADMIN_TOKEN_KEY = 'jzk_admin_token'
+let adminAccessToken: string | null = null
 
-export async function adminFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem(ADMIN_TOKEN_KEY)
+if (typeof localStorage !== 'undefined') localStorage.removeItem('jzk_admin_token')
+
+type AdminAuthPayload<T = unknown> = {
+  access_token: string
+  admin: T
+}
+
+let refreshPromise: Promise<AdminAuthPayload | null> | null = null
+
+export function setAdminToken(token: string | null) {
+  adminAccessToken = token
+}
+
+export async function refreshAdminSession<T = unknown>(): Promise<AdminAuthPayload<T> | null> {
+  if (!refreshPromise) {
+    refreshPromise = fetch('/api/admin/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          setAdminToken(null)
+          return null
+        }
+        const data = await response.json() as AdminAuthPayload
+        setAdminToken(data.access_token)
+        return data
+      })
+      .catch(() => {
+        setAdminToken(null)
+        return null
+      })
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise as Promise<AdminAuthPayload<T> | null>
+}
+
+export async function logoutAdminSession() {
+  try {
+    await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' })
+  } finally {
+    setAdminToken(null)
+  }
+}
+
+export async function adminFetch<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const headers = new Headers(init.headers)
-  if (token) headers.set('Authorization', `Bearer ${token}`)
+  if (adminAccessToken) headers.set('Authorization', `Bearer ${adminAccessToken}`)
   if (!(init.body instanceof FormData) && !headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(path, { ...init, headers })
+  let response = await fetch(path, { ...init, headers, credentials: 'include' })
+  if (response.status === 401 && retry && path !== '/api/admin/refresh') {
+    const refreshed = await refreshAdminSession()
+    if (refreshed) {
+      const retryHeaders = new Headers(headers)
+      retryHeaders.set('Authorization', `Bearer ${adminAccessToken}`)
+      response = await fetch(path, { ...init, headers: retryHeaders, credentials: 'include' })
+    }
+  }
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     if (response.status === 401) {
-      localStorage.removeItem(ADMIN_TOKEN_KEY)
+      setAdminToken(null)
       window.dispatchEvent(new Event('admin-unauthorized'))
     }
     throw new Error((data as { detail?: string }).detail || response.statusText || '请求失败')

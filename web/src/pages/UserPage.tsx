@@ -61,7 +61,8 @@ export function UserPage() {
     await api.post('/api/auth/change-password', { old_password: oldPw, new_password: newPw })
     setOldPw('')
     setNewPw('')
-    setMsg('密码已修改')
+    await logout()
+    navigate('/login')
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -142,7 +143,7 @@ export function UserPage() {
             <button
               type="button"
               onClick={() => {
-                logout()
+                void logout()
                 navigate('/')
               }}
               className="text-sm font-medium text-rose-600"

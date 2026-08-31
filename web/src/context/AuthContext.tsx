@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, getToken, setToken, USER_SESSION_EXPIRED_EVENT } from '../lib/api'
+import { api, logoutUserSession, refreshAccessToken, setToken, USER_SESSION_EXPIRED_EVENT } from '../lib/api'
 import type { User } from '../types'
 
 interface AuthContextValue {
@@ -8,7 +8,7 @@ interface AuthContextValue {
   login: (identifier: string, password: string) => Promise<void>
   loginWithCode: (phone: string, code: string) => Promise<void>
   register: (email: string, phone: string, password: string, code: string, nickname?: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   refresh: () => Promise<void>
   updateNickname: (nickname: string) => Promise<void>
 }
@@ -20,15 +20,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
-    const token = getToken()
-    if (!token) {
-      setUser(null)
-      setLoading(false)
-      return
-    }
     try {
-      const me = await api.get<User>('/api/auth/me')
-      setUser(me)
+      const data = await refreshAccessToken<User>()
+      setUser(data?.user ?? null)
     } catch {
       setToken(null)
       setUser(null)
@@ -73,9 +67,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     acceptLogin(data)
   }, [acceptLogin])
 
-  const logout = useCallback(() => {
-    setToken(null)
-    setUser(null)
+  const logout = useCallback(async () => {
+    try {
+      await logoutUserSession()
+    } finally {
+      setUser(null)
+    }
   }, [])
 
   const updateNickname = useCallback(async (nickname: string) => {

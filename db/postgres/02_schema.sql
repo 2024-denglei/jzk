@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS admin.admin_users (
     role            TEXT NOT NULL DEFAULT 'donor_admin'
                     CHECK (role IN ('super_admin', 'donor_admin')),
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    token_version   INTEGER NOT NULL DEFAULT 0,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );

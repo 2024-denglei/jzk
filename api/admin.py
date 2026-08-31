@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
 import config
@@ -19,6 +19,11 @@ from api.admin_permissions import (
     require_permission,
 )
 from api.rate_limit import RateLimitError, RateLimitUnavailable, get_client_ip, rate_limiter
+from api.refresh_sessions import (
+    InvalidRefreshToken,
+    RefreshSessionUnavailable,
+    refresh_sessions,
+)
 from core.data_loader import get_donor_display_info
 from core.runtime_cache import refresh_donor_cache, update_donor_status_cache
 from db.donor_import import import_excel_bytes
@@ -39,6 +44,7 @@ class AdminLoginBody(BaseModel):
 
 
 class AdminPasswordBody(BaseModel):
+    old_password: str = Field(min_length=1, max_length=72)
     new_password: str = Field(min_length=8, max_length=72)
 
 
@@ -107,8 +113,54 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _admin_refresh_ttl() -> int:
+    return config.ADMIN_REFRESH_TOKEN_HOURS * 60 * 60
+
+
+def _set_admin_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=config.ADMIN_REFRESH_COOKIE_NAME,
+        value=token,
+        max_age=_admin_refresh_ttl(),
+        path="/api/admin",
+        secure=config.ENVIRONMENT == "production",
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _delete_admin_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=config.ADMIN_REFRESH_COOKIE_NAME,
+        path="/api/admin",
+        secure=config.ENVIRONMENT == "production",
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def _admin_access_response(admin: dict) -> dict:
+    version = int(admin.get("token_version") or 0)
+    token = create_admin_token(int(admin["id"]), admin["role"], version)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "admin": {
+            "id": admin["id"],
+            "username": admin["username"],
+            "display_name": admin["display_name"],
+            "role": admin["role"],
+            "permissions": permissions_for_role(admin["role"]),
+        },
+    }
+
+
 @router.post("/login")
-async def admin_login(body: AdminLoginBody, client_ip: str = Depends(get_client_ip)):
+async def admin_login(
+    body: AdminLoginBody,
+    response: Response,
+    client_ip: str = Depends(get_client_ip),
+):
     account = body.username.strip().lower()
     try:
         rate_limiter.check(
@@ -139,18 +191,79 @@ async def admin_login(body: AdminLoginBody, client_ip: str = Depends(get_client_
         rate_limiter.reset("admin-login:account", account)
     except RateLimitUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    token = create_admin_token(int(admin["id"]), admin["role"])
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "admin": {
-            "id": admin["id"],
-            "username": admin["username"],
-            "display_name": admin["display_name"],
-            "role": admin["role"],
-            "permissions": permissions_for_role(admin["role"]),
-        },
-    }
+    try:
+        refresh_token = refresh_sessions.create(
+            int(admin["id"]),
+            "admin",
+            int(admin.get("token_version") or 0),
+            _admin_refresh_ttl(),
+        )
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _set_admin_refresh_cookie(response, refresh_token)
+    return _admin_access_response(admin)
+
+
+@router.post("/refresh")
+async def admin_refresh(request: Request, response: Response):
+    token = request.cookies.get(config.ADMIN_REFRESH_COOKIE_NAME)
+    if not token:
+        raise HTTPException(status_code=401, detail="管理端刷新凭证缺失")
+    try:
+        session = refresh_sessions.inspect(token)
+        if session.kind != "admin":
+            raise InvalidRefreshToken("刷新凭证类型错误")
+        with db_session(admin=True) as conn:
+            admin = conn.execute(
+                "SELECT * FROM admin.admin_users WHERE id = %s AND is_active = TRUE",
+                (session.subject_id,),
+            ).fetchone()
+        if not admin or int(admin["token_version"]) != session.token_version:
+            refresh_sessions.revoke_all("admin", session.subject_id)
+            raise InvalidRefreshToken("管理端登录状态已失效")
+        new_token = refresh_sessions.rotate(token, session, _admin_refresh_ttl())
+    except InvalidRefreshToken as exc:
+        _delete_admin_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    _set_admin_refresh_cookie(response, new_token)
+    return _admin_access_response(dict(admin))
+
+
+@router.post("/logout")
+async def admin_logout(request: Request, response: Response):
+    token = request.cookies.get(config.ADMIN_REFRESH_COOKIE_NAME)
+    if token:
+        try:
+            refresh_sessions.revoke(token)
+        except RefreshSessionUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _delete_admin_refresh_cookie(response)
+    return {"ok": True}
+
+
+@router.post("/logout-all")
+async def admin_logout_all(
+    response: Response,
+    admin: dict = Depends(get_current_admin),
+):
+    with db_session(admin=True) as conn:
+        conn.execute(
+            """
+            UPDATE admin.admin_users
+            SET token_version = token_version + 1, updated_at = now()
+            WHERE id = %s
+            """,
+            (admin["id"],),
+        )
+    try:
+        refresh_sessions.revoke_all("admin", int(admin["id"]))
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _delete_admin_refresh_cookie(response)
+    return {"ok": True}
 
 
 @router.get("/me")
@@ -165,8 +278,18 @@ async def admin_me(admin: dict = Depends(get_current_admin)):
 
 
 @router.post("/change-password")
-async def admin_change_password(body: AdminPasswordBody, admin: dict = Depends(get_current_admin)):
-    set_admin_password(int(admin["id"]), body.new_password)
+async def admin_change_password(
+    body: AdminPasswordBody,
+    response: Response,
+    admin: dict = Depends(get_current_admin),
+):
+    if not set_admin_password(int(admin["id"]), body.old_password, body.new_password):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    try:
+        refresh_sessions.revoke_all("admin", int(admin["id"]))
+    except RefreshSessionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    _delete_admin_refresh_cookie(response)
     return {"ok": True}
 
 
