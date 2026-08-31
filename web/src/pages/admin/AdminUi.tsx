@@ -1,3 +1,6 @@
+import type { ReactNode } from 'react'
+import { adminStickyTableCardClass } from './adminLayout'
+
 export function StatusBadge({ status }: { status: string }) {
   const active = status === 'active'
   return (
@@ -5,6 +8,27 @@ export function StatusBadge({ status }: { status: string }) {
       <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-rose-500'}`} />
       {active ? '正常' : '已停用'}
     </span>
+  )
+}
+
+/** Table card with pinned toolbar / footer and an independently scrolling body. */
+export function StickyTableCard({
+  toolbar,
+  footer,
+  children,
+  className = '',
+}: {
+  toolbar: ReactNode
+  footer?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={adminStickyTableCardClass(className)}>
+      <div className="shrink-0">{toolbar}</div>
+      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+      {footer ? <div className="shrink-0 bg-white">{footer}</div> : null}
+    </div>
   )
 }
 

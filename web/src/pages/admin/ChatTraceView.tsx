@@ -7,8 +7,8 @@ export function ChatTraceView({ chat }: { chat: ChatDetail }) {
   const summary = summarizeTraces(turns)
 
   return (
-    <div className="flex h-full min-h-[620px] flex-col bg-[#f6f8fb]">
-      <header className="border-b border-[#dfe6ef] bg-white px-5 py-4">
+    <div className="flex h-full min-h-0 flex-col bg-[#f6f8fb]">
+      <header className="shrink-0 border-b border-[#dfe6ef] bg-white px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#1677ff]">

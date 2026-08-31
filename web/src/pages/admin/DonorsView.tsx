@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import { adminFetch, postAdmin } from './adminApi'
 import { DonorEditor } from './DonorEditor'
 import { createDonorForm, donorFormToPayload, type DonorFormValues } from './donorForm'
-import { ErrorNotice, PageHeader, Pagination, StatusBadge } from './AdminUi'
+import { adminPageShellClass } from './adminLayout'
+import { ErrorNotice, PageHeader, Pagination, StatusBadge, StickyTableCard } from './AdminUi'
 import type { DonorRow, PageData } from './types'
 
 type EditorState = {
@@ -95,53 +96,56 @@ export function DonorsView() {
   }
 
   return (
-    <div>
-      <PageHeader title="捐精人档案" description="维护捐精人基础资料、标本库存和启停状态。" />
-      {error ? <ErrorNotice message={error} /> : null}
-      <div className="rounded-xl border border-[#dce4ee] bg-white">
-        <form onSubmit={(event) => { event.preventDefault(); setQuery(draft.trim()); setPage(1) }} className="flex flex-wrap gap-2 border-b border-[#e2e8f0] p-3">
-          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="搜索代号、编号或民族" className="h-9 min-w-[240px] flex-1 rounded-lg border border-[#d9e1ec] px-3 text-xs outline-none focus:border-[#1677ff]" />
-          <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }} className="h-9 rounded-lg border border-[#d9e1ec] bg-white px-3 text-xs">
-            <option value="">全部状态</option>
-            <option value="active">正常</option>
-            <option value="disabled">已停用</option>
-          </select>
-          <button className="h-9 rounded-lg bg-[#1677ff] px-4 text-xs text-white">查询</button>
-          <button type="button" onClick={() => openEditor()} className="h-9 rounded-lg border border-[#9fc7ff] px-4 text-xs text-[#1677ff]">新建档案</button>
-        </form>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-xs">
-            <thead className="bg-[#f7f9fc] text-[#667389]">
-              <tr><th className="px-4 py-3 font-medium">代号</th><th className="px-4 py-3 font-medium">编号</th><th className="px-4 py-3 font-medium">学历</th><th className="px-4 py-3 font-medium">民族</th><th className="px-4 py-3 font-medium">身高</th><th className="px-4 py-3 font-medium">标本库存</th><th className="px-4 py-3 font-medium">状态</th><th className="px-4 py-3 font-medium">操作</th></tr>
-            </thead>
-            <tbody className="divide-y divide-[#e5eaf1]">
-              {data.items.map((row) => {
-                const pending = pendingCodes.has(row.code)
-                return (
-                  <tr key={row.code} className="hover:bg-[#f8fbff]">
-                    <td className="px-4 py-3 font-medium text-[#1d4f91]">{row.code}</td>
-                    <td className="px-4 py-3">{row.serial_no || '—'}</td>
-                    <td className="px-4 py-3">{row.donor_info?.education || row.education || '—'}</td>
-                    <td className="px-4 py-3">{row.donor_info?.ethnicity || row.ethnicity || '—'}</td>
-                    <td className="px-4 py-3">{row.donor_info?.height || row.height_cm || '—'}</td>
-                    <td className="px-4 py-3">{row.specimen_count}</td>
-                    <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
-                    <td className="px-4 py-3">
-                      <button type="button" onClick={() => openEditor(row)} className="mr-3 text-[#1677ff]">编辑</button>
-                      <button type="button" disabled={pending} onClick={() => void toggle(row)} className={`${row.status === 'active' ? 'text-rose-600' : 'text-emerald-600'} disabled:text-[#9aa5b5]`}>
-                        {pending ? '处理中…' : row.status === 'active' ? '停用' : '启用'}
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-              {loading ? <tr><td colSpan={8} className="py-16 text-center text-sm text-[#8c98aa]">正在加载档案…</td></tr> : null}
-              {!loading && !data.items.length ? <tr><td colSpan={8} className="py-16 text-center text-sm text-[#9aa5b5]">暂无档案</td></tr> : null}
-            </tbody>
-          </table>
-        </div>
-        <Pagination page={page} pageSize={data.page_size} total={data.total} onChange={setPage} />
+    <div className={adminPageShellClass()}>
+      <div className="shrink-0">
+        <PageHeader title="捐精人档案" description="维护捐精人基础资料、标本库存和启停状态。" />
+        {error ? <ErrorNotice message={error} /> : null}
       </div>
+      <StickyTableCard
+        toolbar={(
+          <form onSubmit={(event) => { event.preventDefault(); setQuery(draft.trim()); setPage(1) }} className="flex flex-wrap gap-2 border-b border-[#e2e8f0] p-3">
+            <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="搜索代号、编号或民族" className="h-9 min-w-[240px] flex-1 rounded-lg border border-[#d9e1ec] px-3 text-xs outline-none focus:border-[#1677ff]" />
+            <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }} className="h-9 rounded-lg border border-[#d9e1ec] bg-white px-3 text-xs">
+              <option value="">全部状态</option>
+              <option value="active">正常</option>
+              <option value="disabled">已停用</option>
+            </select>
+            <button className="h-9 rounded-lg bg-[#1677ff] px-4 text-xs text-white">查询</button>
+            <button type="button" onClick={() => openEditor()} className="h-9 rounded-lg border border-[#9fc7ff] px-4 text-xs text-[#1677ff]">新建档案</button>
+          </form>
+        )}
+        footer={<Pagination page={page} pageSize={data.page_size} total={data.total} onChange={setPage} />}
+      >
+        <table className="w-full min-w-[900px] text-left text-xs">
+          <thead className="sticky top-0 z-10 bg-[#f7f9fc] text-[#667389]">
+            <tr><th className="px-4 py-3 font-medium">代号</th><th className="px-4 py-3 font-medium">编号</th><th className="px-4 py-3 font-medium">学历</th><th className="px-4 py-3 font-medium">民族</th><th className="px-4 py-3 font-medium">身高</th><th className="px-4 py-3 font-medium">标本库存</th><th className="px-4 py-3 font-medium">状态</th><th className="px-4 py-3 font-medium">操作</th></tr>
+          </thead>
+          <tbody className="divide-y divide-[#e5eaf1]">
+            {data.items.map((row) => {
+              const pending = pendingCodes.has(row.code)
+              return (
+                <tr key={row.code} className="hover:bg-[#f8fbff]">
+                  <td className="px-4 py-3 font-medium text-[#1d4f91]">{row.code}</td>
+                  <td className="px-4 py-3">{row.serial_no || '—'}</td>
+                  <td className="px-4 py-3">{row.donor_info?.education || row.education || '—'}</td>
+                  <td className="px-4 py-3">{row.donor_info?.ethnicity || row.ethnicity || '—'}</td>
+                  <td className="px-4 py-3">{row.donor_info?.height || row.height_cm || '—'}</td>
+                  <td className="px-4 py-3">{row.specimen_count}</td>
+                  <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
+                  <td className="px-4 py-3">
+                    <button type="button" onClick={() => openEditor(row)} className="mr-3 text-[#1677ff]">编辑</button>
+                    <button type="button" disabled={pending} onClick={() => void toggle(row)} className={`${row.status === 'active' ? 'text-rose-600' : 'text-emerald-600'} disabled:text-[#9aa5b5]`}>
+                      {pending ? '处理中…' : row.status === 'active' ? '停用' : '启用'}
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+            {loading ? <tr><td colSpan={8} className="py-16 text-center text-sm text-[#8c98aa]">正在加载档案…</td></tr> : null}
+            {!loading && !data.items.length ? <tr><td colSpan={8} className="py-16 text-center text-sm text-[#9aa5b5]">暂无档案</td></tr> : null}
+          </tbody>
+        </table>
+      </StickyTableCard>
       {editor ? (
         <DonorEditor
           originalCode={editor.originalCode}

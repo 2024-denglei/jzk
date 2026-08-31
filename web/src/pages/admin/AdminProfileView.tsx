@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { adminFetch } from './adminApi'
-import { AdminStatus, ErrorNotice, Pagination } from './AdminUi'
+import { adminPageShellClass } from './adminLayout'
+import { AdminStatus, ErrorNotice, Pagination, StickyTableCard } from './AdminUi'
 import { adminRoleLabel, auditActionLabel, formatTime } from './adminFormat'
 import type { AdminAuditRecord, AdminRecord, PageData } from './types'
 
@@ -37,40 +38,44 @@ export function AdminProfileView({ adminId, currentAdminId }: { adminId: number;
   if (!profile) return <div>{error ? <ErrorNotice message={error} /> : null}<button onClick={() => navigate('/admin/admins')} className="text-sm text-[#1677ff]">返回管理员中心</button></div>
 
   return (
-    <div>
-      <button onClick={() => navigate('/admin/admins')} className="mb-4 inline-flex items-center gap-1 text-xs text-[#617086] hover:text-[#1677ff]"><i className="ri-arrow-left-line" />返回管理员中心</button>
-      {error ? <ErrorNotice message={error} /> : null}
-      <section className="rounded-xl border border-[#dce4ee] bg-white p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[#e8f2ff] text-xl font-semibold text-[#1677ff]">{(profile.display_name || profile.username).slice(0, 1)}</div>
-            <div><div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold">{profile.display_name || '未设置姓名'}</h1><AdminStatus active={profile.is_active} />{profile.id === currentAdminId ? <span className="rounded bg-blue-50 px-2 py-1 text-[10px] text-blue-600">当前登录管理员</span> : null}</div><div className="mt-1 font-mono text-xs text-[#7d899a]">{profile.username} · Admin ID {profile.id}</div></div>
+    <div className={adminPageShellClass('gap-0')}>
+      <div className="shrink-0">
+        <button onClick={() => navigate('/admin/admins')} className="mb-4 inline-flex items-center gap-1 text-xs text-[#617086] hover:text-[#1677ff]"><i className="ri-arrow-left-line" />返回管理员中心</button>
+        {error ? <ErrorNotice message={error} /> : null}
+        <section className="rounded-xl border border-[#dce4ee] bg-white p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[#e8f2ff] text-xl font-semibold text-[#1677ff]">{(profile.display_name || profile.username).slice(0, 1)}</div>
+              <div><div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold">{profile.display_name || '未设置姓名'}</h1><AdminStatus active={profile.is_active} />{profile.id === currentAdminId ? <span className="rounded bg-blue-50 px-2 py-1 text-[10px] text-blue-600">当前登录管理员</span> : null}</div><div className="mt-1 font-mono text-xs text-[#7d899a]">{profile.username} · Admin ID {profile.id}</div></div>
+            </div>
+            <span className="rounded-lg border border-[#dbe5f2] bg-[#f7faff] px-3 py-2 text-xs font-medium text-[#365478]">{adminRoleLabel(profile.role)}</span>
           </div>
-          <span className="rounded-lg border border-[#dbe5f2] bg-[#f7faff] px-3 py-2 text-xs font-medium text-[#365478]">{adminRoleLabel(profile.role)}</span>
-        </div>
-        <div className="mt-5 grid gap-3 border-t border-[#e5eaf1] pt-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Info label="全部操作" value={String(profile.operation_count)} />
-          <Info label="捐精人档案操作" value={String(profile.donor_operation_count)} />
-          <Info label="用户管理操作" value={String(profile.user_operation_count)} />
-          <Info label="最近操作" value={formatTime(profile.last_operation_at)} />
-          <Info label="创建时间" value={formatTime(profile.created_at)} />
-        </div>
-        {profile.action_counts?.length ? <div className="mt-4 flex flex-wrap gap-2 border-t border-[#edf1f5] pt-4">{profile.action_counts.map((item) => <span key={`${item.source}-${item.action}`} className="rounded-md bg-[#f1f5f9] px-2.5 py-1.5 text-[10px] text-[#5e6d82]">{auditActionLabel(item.action, item.source)} <b className="ml-1 tabular-nums text-[#34445b]">{item.count}</b></span>)}</div> : null}
-      </section>
+          <div className="mt-5 grid gap-3 border-t border-[#e5eaf1] pt-4 sm:grid-cols-2 xl:grid-cols-5">
+            <Info label="全部操作" value={String(profile.operation_count)} />
+            <Info label="捐精人档案操作" value={String(profile.donor_operation_count)} />
+            <Info label="用户管理操作" value={String(profile.user_operation_count)} />
+            <Info label="最近操作" value={formatTime(profile.last_operation_at)} />
+            <Info label="创建时间" value={formatTime(profile.created_at)} />
+          </div>
+          {profile.action_counts?.length ? <div className="mt-4 flex flex-wrap gap-2 border-t border-[#edf1f5] pt-4">{profile.action_counts.map((item) => <span key={`${item.source}-${item.action}`} className="rounded-md bg-[#f1f5f9] px-2.5 py-1.5 text-[10px] text-[#5e6d82]">{auditActionLabel(item.action, item.source)} <b className="ml-1 tabular-nums text-[#34445b]">{item.count}</b></span>)}</div> : null}
+        </section>
+      </div>
 
-      <section className="mt-4 overflow-hidden rounded-xl border border-[#dce4ee] bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 py-3">
-          <div><h2 className="text-sm font-semibold text-[#27364d]">操作审计</h2><p className="mt-1 text-[10px] text-[#8b97a8]">仅显示该管理员执行的操作。</p></div>
-          <select value={source} onChange={(event) => { setSource(event.target.value); setPage(1) }} className="h-9 rounded-lg border border-[#d9e1ec] bg-white px-3 text-xs"><option value="">全部业务</option><option value="donor">捐精人档案</option><option value="user">用户管理</option></select>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-left text-xs">
-            <thead className="bg-[#f7f9fc] text-[#667389]"><tr><th className="px-4 py-3 font-medium">时间</th><th className="px-4 py-3 font-medium">业务</th><th className="px-4 py-3 font-medium">操作</th><th className="px-4 py-3 font-medium">操作对象</th><th className="px-4 py-3 font-medium">原因</th><th className="px-4 py-3 font-medium">数据详情</th></tr></thead>
-            <tbody className="divide-y divide-[#e5eaf1]">{audits.items.map((item) => <AuditRow key={`${item.source}-${item.record_id}`} item={item} />)}{!audits.items.length ? <tr><td colSpan={6} className="py-16 text-center text-sm text-[#9aa5b5]">该管理员暂无操作记录</td></tr> : null}</tbody>
-          </table>
-        </div>
-        <Pagination page={page} pageSize={audits.page_size} total={audits.total} onChange={setPage} />
-      </section>
+      <StickyTableCard
+        className="mt-4"
+        toolbar={(
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 py-3">
+            <div><h2 className="text-sm font-semibold text-[#27364d]">操作审计</h2><p className="mt-1 text-[10px] text-[#8b97a8]">仅显示该管理员执行的操作。</p></div>
+            <select value={source} onChange={(event) => { setSource(event.target.value); setPage(1) }} className="h-9 rounded-lg border border-[#d9e1ec] bg-white px-3 text-xs"><option value="">全部业务</option><option value="donor">捐精人档案</option><option value="user">用户管理</option></select>
+          </div>
+        )}
+        footer={<Pagination page={page} pageSize={audits.page_size} total={audits.total} onChange={setPage} />}
+      >
+        <table className="w-full min-w-[920px] text-left text-xs">
+          <thead className="sticky top-0 z-10 bg-[#f7f9fc] text-[#667389]"><tr><th className="px-4 py-3 font-medium">时间</th><th className="px-4 py-3 font-medium">业务</th><th className="px-4 py-3 font-medium">操作</th><th className="px-4 py-3 font-medium">操作对象</th><th className="px-4 py-3 font-medium">原因</th><th className="px-4 py-3 font-medium">数据详情</th></tr></thead>
+          <tbody className="divide-y divide-[#e5eaf1]">{audits.items.map((item) => <AuditRow key={`${item.source}-${item.record_id}`} item={item} />)}{!audits.items.length ? <tr><td colSpan={6} className="py-16 text-center text-sm text-[#9aa5b5]">该管理员暂无操作记录</td></tr> : null}</tbody>
+        </table>
+      </StickyTableCard>
     </div>
   )
 }
