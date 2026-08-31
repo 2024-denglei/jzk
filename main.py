@@ -136,6 +136,10 @@ async def featured_donors(page: int = 1, page_size: int = 12):
     df = app.state.donor_df
     if df is None or len(df) == 0:
         return {"items": [], "total": 0, "page": 1, "page_size": page_size, "total_pages": 0}
+    if "状态" in df.columns:
+        df = df[df["状态"].fillna("active") != "disabled"]
+    if len(df) == 0:
+        return {"items": [], "total": 0, "page": 1, "page_size": page_size, "total_pages": 0}
     col = "标本数量" if "标本数量" in df.columns else df.columns[0]
     sorted_df = df.sort_values(col, ascending=False)
     total = len(sorted_df)

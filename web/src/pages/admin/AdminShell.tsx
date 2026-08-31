@@ -2,13 +2,33 @@ import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { AdminInfo } from './types'
 
-const NAV = [
-  { to: '/admin/dashboard', label: '工作台', icon: 'ri-dashboard-line' },
-  { to: '/admin/users', label: '用户档案', icon: 'ri-user-3-line', group: '用户管理' },
-  { to: '/admin/donors', label: '档案列表', icon: 'ri-archive-line', group: '捐献者管理' },
-  { to: '/admin/import', label: 'Excel 导入', icon: 'ri-file-upload-line' },
-  { to: '/admin/audit', label: '操作审计', icon: 'ri-history-line', group: '数据中心' },
+const NAV_SECTIONS = [
+  {
+    label: '总览',
+    icon: 'ri-layout-grid-line',
+    items: [{ to: '/admin/dashboard', label: '工作台', icon: 'ri-dashboard-line' }],
+  },
+  {
+    label: '用户管理',
+    icon: 'ri-user-settings-line',
+    items: [{ to: '/admin/users', label: '用户档案', icon: 'ri-user-3-line' }],
+  },
+  {
+    label: '捐精人管理',
+    icon: 'ri-folder-user-line',
+    items: [
+      { to: '/admin/donors', label: '捐精人档案', icon: 'ri-archive-line' },
+      { to: '/admin/import', label: 'Excel 导入', icon: 'ri-file-upload-line' },
+    ],
+  },
+  {
+    label: '数据中心',
+    icon: 'ri-database-2-line',
+    items: [{ to: '/admin/audit', label: '操作审计', icon: 'ri-history-line' }],
+  },
 ]
+
+const NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items)
 
 export function AdminShell({ admin, children, onLogout }: { admin: AdminInfo; children: ReactNode; onLogout: () => void }) {
   return (
@@ -22,21 +42,31 @@ export function AdminShell({ admin, children, onLogout }: { admin: AdminInfo; ch
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          {NAV.map((item, index) => (
-            <div key={item.to}>
-              {item.group ? <div className={`px-3 pb-2 text-[11px] tracking-widest text-white/35 ${index ? 'pt-5' : ''}`}>{item.group}</div> : null}
-              <NavLink
-                to={item.to}
-                className={({ isActive }) =>
-                  `mb-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition ${
-                    isActive ? 'bg-[#1d4f91] font-medium text-white' : 'text-white/72 hover:bg-white/7 hover:text-white'
-                  }`
-                }
-              >
-                <i className={`${item.icon} text-base`} />
-                {item.label}
-              </NavLink>
-            </div>
+          {NAV_SECTIONS.map((section, index) => (
+            <section key={section.label} className={index ? 'mt-5' : ''}>
+              <div className="flex items-center gap-2 px-2.5 pb-2 text-[13px] font-semibold text-white/88">
+                <i className={`${section.icon} text-[15px] text-[#72aefc]`} />
+                <span>{section.label}</span>
+              </div>
+              <div className="ml-[17px] border-l border-white/10 pl-2">
+                {section.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      `mb-1 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[12px] transition ${
+                        isActive
+                          ? 'bg-[#245b9f] font-medium text-white shadow-[inset_3px_0_0_#69a9ff]'
+                          : 'text-white/58 hover:bg-white/7 hover:text-white/90'
+                      }`
+                    }
+                  >
+                    <i className={`${item.icon} text-[14px]`} />
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            </section>
           ))}
         </nav>
       </aside>
@@ -65,7 +95,7 @@ export function AdminShell({ admin, children, onLogout }: { admin: AdminInfo; ch
         </header>
 
         <nav className="flex gap-1 overflow-x-auto border-b border-[#dbe3ee] bg-white px-2 py-1.5 lg:hidden">
-          {NAV.map((item) => (
+          {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

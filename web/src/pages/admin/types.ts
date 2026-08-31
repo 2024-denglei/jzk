@@ -101,4 +101,5 @@ export type DonorAuditRow = {
   action: string
   created_at: string
   operator_id: number | null
+  operator_name?: string | null
 }

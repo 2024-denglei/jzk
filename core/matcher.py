@@ -121,6 +121,10 @@ def hard_filter(
 
     mask = np.ones(len(donor_df), dtype=bool)
 
+    # 停用是运营侧的永久硬约束，不会随用户条件放宽。
+    if "状态" in donor_df.columns:
+        mask &= donor_df["状态"].fillna("active").ne("disabled").values
+
     # 学历（有序，支持多选 + broadened 向上兼容）
     edu_vals = _to_list(parsed_features.get("education"))
     if edu_vals and _is_must("education"):
@@ -323,8 +327,9 @@ def match_with_relaxation(
     if len(cands) >= 1:
         return _take(cands), "relaxed", relaxed_fields
 
-    # 第四步：完全不过滤，纯相似度排序
-    all_cands = [(int(i), float(scores[i])) for i in range(len(scores))]
+    # 第四步：只放宽用户偏好；运营侧停用状态仍然不可放宽。
+    active_mask = hard_filter(donor_df, {}, {})
+    all_cands = [(int(i), float(scores[i])) for i in range(len(scores)) if active_mask[i]]
     all_cands.sort(key=lambda x: x[1], reverse=True)
     return _take(all_cands), "similarity_only", relaxed_fields
 

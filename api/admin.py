@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from api.admin_auth import authenticate_admin, create_admin_token, get_current_admin, set_admin_password
 from core.data_loader import get_donor_display_info
-from core.runtime_cache import refresh_donor_cache
+from core.runtime_cache import refresh_donor_cache, update_donor_status_cache
 from db.donor_import import import_excel_bytes
 from db.donors_repo import (
     get_donor_by_code,
@@ -199,7 +199,8 @@ async def admin_set_status(
         raise HTTPException(status_code=404, detail="未找到该捐献者")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    refresh_donor_cache(request.app)
+    if not update_donor_status_cache(request.app, code, body.status):
+        refresh_donor_cache(request.app)
     return _serialize_row(row)
 
 

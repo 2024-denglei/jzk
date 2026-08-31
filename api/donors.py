@@ -23,6 +23,8 @@ async def get_donor(code: str, req: Request, _user_id: int = Depends(get_current
         raise HTTPException(status_code=404, detail="未找到该捐献者")
 
     row = matched.iloc[0]
+    if str(row.get("状态", "active")) == "disabled":
+        raise HTTPException(status_code=404, detail="该捐精人档案已停用")
     try:
         from core.preference.match_log import append_feedback_event
 

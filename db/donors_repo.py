@@ -292,9 +292,11 @@ def list_audit(page: int = 1, page_size: int = 50, donor_code: str | None = None
         rows = fetchall(
             conn,
             f"""
-            SELECT * FROM donor.audit_logs
+            SELECT l.*, COALESCE(NULLIF(a.display_name, ''), a.username) AS operator_name
+            FROM donor.audit_logs l
+            LEFT JOIN admin.admin_users a ON a.id = l.operator_id
             WHERE {where}
-            ORDER BY created_at DESC
+            ORDER BY l.created_at DESC
             LIMIT %s OFFSET %s
             """,
             params + [page_size, (page - 1) * page_size],

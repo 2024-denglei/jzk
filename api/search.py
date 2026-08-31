@@ -222,7 +222,9 @@ async def search_donors(request: SearchRequest, req: Request):
     if not cands:
         # 第四轮：兜底，纯相似度排序
         import numpy as np
+        active_mask = hard_filter(donor_df, {}, {})
         all_idx = np.argsort(-scores)
+        all_idx = [i for i in all_idx if active_mask[i]]
         cands = [(int(i), float(scores[i])) for i in all_idx[:request.top_k]]
         match_level = "similarity_only"
         relaxed_fields = list(parsed_features.keys())

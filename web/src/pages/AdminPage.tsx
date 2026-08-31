@@ -77,7 +77,7 @@ function AdminLogin({ onSuccess }: { onSuccess: (admin: AdminInfo) => void }) {
         <div className="absolute -left-24 top-20 h-80 w-80 rounded-full bg-[#1677ff]/12 blur-2xl" />
         <div className="absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-cyan-300/8 blur-3xl" />
         <div className="relative flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1677ff] text-lg font-bold">智</div><div><div className="text-lg font-semibold">智育管理平台</div><div className="text-xs text-white/45">运营管理后台</div></div></div>
-        <div className="relative max-w-xl"><div className="text-sm font-medium text-[#72aefc]">ADMIN WORKSPACE</div><h1 className="mt-4 text-4xl font-semibold leading-tight">集中管理用户档案与<br />捐献者运营数据</h1><p className="mt-5 max-w-md text-sm leading-7 text-white/55">查看用户账号、收藏、浏览历史和 AI 会话，维护捐献者档案，并保留完整的管理操作记录。</p></div>
+        <div className="relative max-w-xl"><div className="text-sm font-medium text-[#72aefc]">ADMIN WORKSPACE</div><h1 className="mt-4 text-4xl font-semibold leading-tight">集中管理用户档案与<br />捐精人运营数据</h1><p className="mt-5 max-w-md text-sm leading-7 text-white/55">查看用户账号、收藏、浏览历史和 AI 会话，维护捐精人档案，并保留完整的管理操作记录。</p></div>
         <div className="relative text-xs text-white/30">智育匹配 · 管理系统</div>
       </div>
       <div className="flex items-center justify-center px-5 py-12">
