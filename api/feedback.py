@@ -1,8 +1,11 @@
-"""用户反馈 API 路由。"""
+"""用户反馈与临时会话查询 API。"""
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from typing import Literal
 
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from api.auth_utils import get_current_user_id
 from core.preference.match_log import append_feedback_event
 
 router = APIRouter()
@@ -18,21 +21,16 @@ def record_feedback(session_id: str, donor_code: str, feedback: str) -> None:
         "event": event,
     })
 
-router = APIRouter()
-
-_deps = {}
-
-
 def inject_dependencies(session_manager):
     """注入运行时依赖。"""
     _deps["session_manager"] = session_manager
 
 
 class FeedbackRequest(BaseModel):
-    session_id: str
-    candidate_id: str
-    feedback: str  # "like" | "dislike"
-    reason: str | None = None
+    session_id: str = Field(min_length=1, max_length=64)
+    candidate_id: str = Field(min_length=1, max_length=100)
+    feedback: Literal["like", "dislike"]
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class FeedbackResponse(BaseModel):
@@ -41,18 +39,31 @@ class FeedbackResponse(BaseModel):
 
 
 @router.post("/api/feedback", response_model=FeedbackResponse)
-async def submit_feedback(request: FeedbackRequest):
+async def submit_feedback(
+    request: FeedbackRequest,
+    user_id: int = Depends(get_current_user_id),
+):
     """提交用户反馈。"""
     session_manager = _deps.get("session_manager")
     if not session_manager:
         raise HTTPException(status_code=500, detail="系统未就绪")
 
-    session = session_manager.get_session(request.session_id)
+    session = session_manager.get_session(user_id, request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在或已过期")
 
-    if request.feedback not in ("like", "dislike"):
-        raise HTTPException(status_code=400, detail="feedback 仅支持 like/dislike")
+    candidate_ids: set[str] = set()
+    for candidate in session.candidates:
+        if not isinstance(candidate, dict):
+            continue
+        donor_info = candidate.get("donor_info")
+        if isinstance(donor_info, dict) and donor_info.get("code") is not None:
+            candidate_ids.add(str(donor_info["code"]))
+        for key in ("candidate_id", "code", "id"):
+            if candidate.get(key) is not None:
+                candidate_ids.add(str(candidate[key]))
+    if request.candidate_id not in candidate_ids:
+        raise HTTPException(status_code=404, detail="候选人不属于该会话")
 
     session.add_feedback(request.candidate_id, request.feedback, request.reason)
     record_feedback(request.session_id, request.candidate_id, request.feedback)
@@ -64,13 +75,16 @@ async def submit_feedback(request: FeedbackRequest):
 
 
 @router.get("/api/session/{session_id}")
-async def get_session_info(session_id: str):
+async def get_session_info(
+    session_id: str,
+    user_id: int = Depends(get_current_user_id),
+):
     """获取会话信息。"""
     session_manager = _deps.get("session_manager")
     if not session_manager:
         raise HTTPException(status_code=500, detail="系统未就绪")
 
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(user_id, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在或已过期")
 

@@ -44,7 +44,7 @@ def inject_dependencies(session_manager, feature_encoder, donor_df, llm_client):
 
 
 @router.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, _user_id: int = Depends(get_current_user_id)):
+async def chat(request: ChatRequest, user_id: int = Depends(get_current_user_id)):
     """文本对话主接口（需登录）。"""
     from dialogue.session import DialogueState
     from dialogue.nlu import parse_user_intent
@@ -62,7 +62,7 @@ async def chat(request: ChatRequest, _user_id: int = Depends(get_current_user_id
         raise HTTPException(status_code=500, detail="系统未就绪")
 
     # 获取或创建会话
-    session = session_manager.get_or_create(request.session_id)
+    session = session_manager.get_or_create(user_id, request.session_id)
 
     # 首次对话 → 发送欢迎语
     if session.state == DialogueState.START:

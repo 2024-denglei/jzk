@@ -266,7 +266,7 @@ def test_apply_match_api_response_400_keeps_session():
     from dialogue.agent_tools import apply_match_api_response
     from dialogue.session import SessionContext
 
-    session = SessionContext()
+    session = SessionContext(owner_user_id=1)
     good = {
         "schema_version": "1.0",
         "attributes": {"abo_blood": {"constraint": "must", "weight": 1, "values": ["O"]}},
@@ -287,7 +287,7 @@ def test_apply_match_api_response_200_updates_session():
     from dialogue.agent_tools import apply_match_api_response
     from dialogue.session import SessionContext
 
-    session = SessionContext()
+    session = SessionContext(owner_user_id=1)
     raw = {
         "schema_version": "1.0",
         "attributes": {"abo_blood": {"constraint": "must", "weight": 1, "values": ["O"]}},

@@ -286,7 +286,7 @@ async def resume_chat(
     sm = getattr(request.app.state, "session_manager", None)
     if sm is None:
         raise HTTPException(status_code=503, detail="会话服务未就绪")
-    session = sm.restore_session(session_id, state=state, candidates=candidates)
+    session = sm.restore_session(user_id, session_id, state=state, candidates=candidates)
 
     return {
         "ok": True,

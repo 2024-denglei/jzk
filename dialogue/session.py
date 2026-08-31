@@ -22,7 +22,10 @@ class DialogueState(str, Enum):
 class SessionContext:
     """单个会话上下文。"""
 
-    def __init__(self, session_id: str | None = None):
+    def __init__(self, owner_user_id: int, session_id: str | None = None):
+        if owner_user_id <= 0:
+            raise ValueError("owner_user_id 必须是有效用户 ID")
+        self.owner_user_id = owner_user_id
         self.session_id = session_id or str(uuid.uuid4())
         self.state = DialogueState.START
         self.parsed_features: dict[str, Any] = {}
@@ -220,48 +223,54 @@ class SessionManager:
     """全局会话管理器。"""
 
     def __init__(self):
-        self._sessions: dict[str, SessionContext] = {}
+        self._sessions: dict[tuple[int, str], SessionContext] = {}
 
-    def create_session(self) -> SessionContext:
+    @staticmethod
+    def _key(user_id: int, session_id: str) -> tuple[int, str]:
+        return user_id, session_id
+
+    def create_session(self, user_id: int) -> SessionContext:
         """创建新会话。"""
         self._cleanup_expired()
-        session = SessionContext()
-        self._sessions[session.session_id] = session
+        session = SessionContext(owner_user_id=user_id)
+        self._sessions[self._key(user_id, session.session_id)] = session
         return session
 
-    def get_session(self, session_id: str) -> SessionContext | None:
-        """获取会话，不存在或过期返回 None。"""
-        session = self._sessions.get(session_id)
+    def get_session(self, user_id: int, session_id: str) -> SessionContext | None:
+        """获取当前用户的会话，不存在、越权或过期均返回 None。"""
+        key = self._key(user_id, session_id)
+        session = self._sessions.get(key)
         if session and not session.is_expired():
             return session
         if session and session.is_expired():
-            del self._sessions[session_id]
+            del self._sessions[key]
         return None
 
-    def get_or_create(self, session_id: str | None) -> SessionContext:
-        """获取或创建会话。"""
+    def get_or_create(self, user_id: int, session_id: str | None) -> SessionContext:
+        """获取当前用户的会话，不存在时创建新会话。"""
         if session_id:
-            session = self.get_session(session_id)
+            session = self.get_session(user_id, session_id)
             if session:
                 return session
-        return self.create_session()
+        return self.create_session(user_id)
 
     def put_session(self, session: SessionContext) -> SessionContext:
         """写入/覆盖内存会话（用于从 DB resume）。"""
-        self._sessions[session.session_id] = session
+        self._sessions[self._key(session.owner_user_id, session.session_id)] = session
         session.last_active = time.time()
         return session
 
     def restore_session(
         self,
+        user_id: int,
         session_id: str,
         state: dict | None = None,
         candidates: list | None = None,
     ) -> SessionContext:
-        """按 session_id 恢复或创建，并灌入状态。"""
-        session = self.get_session(session_id)
+        """按用户和 session_id 恢复或创建，并灌入状态。"""
+        session = self.get_session(user_id, session_id)
         if not session:
-            session = SessionContext(session_id=session_id)
+            session = SessionContext(owner_user_id=user_id, session_id=session_id)
         session.load_state(state)
         if candidates is not None:
             session.candidates = list(candidates)
@@ -271,8 +280,6 @@ class SessionManager:
 
     def _cleanup_expired(self):
         """清理过期会话。"""
-        expired = [
-            sid for sid, s in self._sessions.items() if s.is_expired()
-        ]
-        for sid in expired:
-            del self._sessions[sid]
+        expired = [key for key, session in self._sessions.items() if session.is_expired()]
+        for key in expired:
+            del self._sessions[key]

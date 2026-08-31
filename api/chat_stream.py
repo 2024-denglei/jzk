@@ -83,12 +83,12 @@ class RewindChatRequest(BaseModel):
 
 
 @router.post("/api/chat/abort")
-async def chat_abort(body: AbortChatRequest, _user_id: int = Depends(get_current_user_id)):
+async def chat_abort(body: AbortChatRequest, user_id: int = Depends(get_current_user_id)):
     """中止进行中的一轮：回滚本轮对会话的修改，不落库。"""
     session_manager = _deps.get("session_manager")
     if not session_manager:
         return {"ok": False, "reason": "not_ready"}
-    session = session_manager.get_session(body.session_id)
+    session = session_manager.get_session(user_id, body.session_id)
     if not session:
         return {"ok": True, "rolled_back": False}
     rolled = session.abort_turn()
@@ -105,9 +105,11 @@ async def chat_rewind(body: RewindChatRequest, user_id: int = Depends(get_curren
         from fastapi import HTTPException
 
         raise HTTPException(status_code=503, detail="系统未就绪")
-    session = session_manager.get_session(body.session_id)
+    session = session_manager.get_session(user_id, body.session_id)
     if not session:
-        session = session_manager.put_session(SessionContext(session_id=body.session_id))
+        session = session_manager.put_session(
+            SessionContext(owner_user_id=user_id, session_id=body.session_id)
+        )
     # 若仍有未完成轮次，先丢掉
     session.abort_turn()
     history = []
@@ -175,7 +177,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                 yield _sse("error", {"message": "系统未就绪"})
                 return
 
-            session = session_manager.get_or_create(body.session_id)
+            session = session_manager.get_or_create(user_id, body.session_id)
 
             yield _sse(
                 "state",

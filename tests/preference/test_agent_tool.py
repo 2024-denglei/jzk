@@ -33,7 +33,7 @@ def test_field_catalog_is_generated_from_registry():
 
 
 def test_invalid_profile_keeps_previous():
-    session = SessionContext()
+    session = SessionContext(owner_user_id=1)
     good = {"schema_version": "1.0", "attributes": {"abo_blood": {"constraint": "must", "weight": 1, "values": ["O"]}}}
     session.replace_profile(good)
     candidates, payload = run_preference_match(
@@ -50,7 +50,7 @@ def test_invalid_profile_keeps_previous():
 
 
 def test_valid_profile_replaces_and_matches():
-    session = SessionContext()
+    session = SessionContext(owner_user_id=1)
     rows = [{"code": "T", "abo_blood": "O", "height_cm": 180, "specimen_count": 2}]
     candidates, payload = run_preference_match(
         session,
@@ -85,7 +85,7 @@ def test_validation_error_payload_tells_model_how_to_fix():
 
 
 def test_http_400_is_retryable_for_model():
-    session = SessionContext()
+    session = SessionContext(owner_user_id=1)
     good = {
         "schema_version": "1.0",
         "attributes": {"abo_blood": {"constraint": "must", "weight": 1, "values": ["O"]}},
