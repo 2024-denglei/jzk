@@ -31,7 +31,8 @@ services:
     container_name: jzk-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      # 仅供本地开发访问；生产环境不要发布 Redis 端口，应使用私网和 ACL。
+      - "${REDIS_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - jzk_redis_data:/data
     command: ["redis-server", "--appendonly", "yes"]

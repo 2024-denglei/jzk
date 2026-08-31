@@ -59,6 +59,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     """应用启动时加载数据、初始化组件。"""
+    config.validate_security_config()
     logger.info("正在初始化 PostgreSQL 官方库...")
     try:
         init_db()

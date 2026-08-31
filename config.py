@@ -1,7 +1,24 @@
 import os
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+class SecurityConfigError(RuntimeError):
+    """生产安全配置不完整或仍在使用开发默认值。"""
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+JWT_SECRET = os.getenv("JWT_SECRET", "jzk-fertility-match-secret-change-me")
 
 # LLM 配置
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
@@ -20,11 +37,7 @@ DATABASE_ADMIN_URL = os.getenv("DATABASE_ADMIN_URL", "") or DATABASE_URL
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 VERIFICATION_CODE_TTL_SECONDS = int(os.getenv("VERIFICATION_CODE_TTL_SECONDS", "300"))
 VERIFICATION_CODE_COOLDOWN_SECONDS = int(os.getenv("VERIFICATION_CODE_COOLDOWN_SECONDS", "60"))
-EXPOSE_TEST_VERIFICATION_CODE = os.getenv("EXPOSE_TEST_VERIFICATION_CODE", "1").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-}
+EXPOSE_TEST_VERIFICATION_CODE = _env_bool("EXPOSE_TEST_VERIFICATION_CODE", True)
 
 # 首次启动若无管理员则创建（务必在生产修改）
 ADMIN_BOOTSTRAP_USERNAME = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "admin")
@@ -81,3 +94,37 @@ V2_CONFIG_PATH = os.getenv(
     os.path.join(_AGENT_ROOT, "core", "preference", "v2", "config_v2.json"),
 )
 V2_FORCE_CPU = os.getenv("V2_FORCE_CPU", "1").strip().lower() in {"1", "true", "yes"}
+
+
+_INSECURE_JWT_SECRETS = {
+    "",
+    "change-me-in-production",
+    "jzk-fertility-match-secret-change-me",
+}
+
+
+def validate_security_config() -> None:
+    """在生产启动前拒绝已知不安全的开发配置。"""
+    if ENVIRONMENT not in {"development", "test", "production"}:
+        raise SecurityConfigError("ENVIRONMENT 仅支持 development、test 或 production")
+    if ENVIRONMENT != "production":
+        return
+
+    errors: list[str] = []
+    if JWT_SECRET in _INSECURE_JWT_SECRETS or len(JWT_SECRET.encode("utf-8")) < 32:
+        errors.append("JWT_SECRET 必须是至少 32 字节的随机密钥，且不能使用示例值")
+    if EXPOSE_TEST_VERIFICATION_CODE:
+        errors.append("生产环境必须设置 EXPOSE_TEST_VERIFICATION_CODE=0")
+    if ADMIN_BOOTSTRAP_USERNAME == "admin":
+        errors.append("生产环境不能使用默认管理员用户名 admin")
+    if ADMIN_BOOTSTRAP_PASSWORD == "Admin@ChangeMe1" or len(ADMIN_BOOTSTRAP_PASSWORD) < 12:
+        errors.append("生产环境必须设置至少 12 位且非默认的管理员引导密码")
+
+    redis_url = urlparse(REDIS_URL)
+    if redis_url.scheme not in {"redis", "rediss"}:
+        errors.append("REDIS_URL 必须使用 redis:// 或 rediss://")
+    elif not redis_url.password:
+        errors.append("生产 Redis 必须配置认证凭证")
+
+    if errors:
+        raise SecurityConfigError("生产安全配置校验失败：" + "；".join(errors))

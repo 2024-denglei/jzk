@@ -1,6 +1,5 @@
 """JWT 与密码工具。"""
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -9,7 +8,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-SECRET_KEY = os.getenv("JWT_SECRET", "jzk-fertility-match-secret-change-me")
+import config
+
+SECRET_KEY = config.JWT_SECRET
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
