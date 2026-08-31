@@ -6,6 +6,7 @@ import { DonorDetailPanel } from '../components/DonorDetailPanel'
 import { FilterPanel } from '../components/FilterPanel'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { getPaginationPages } from '../lib/pagination'
 import type { Candidate, FilterState } from '../types'
 import { DEFAULT_PRIORITY, EMPTY_FILTERS } from '../types'
 
@@ -200,6 +201,16 @@ export function DonorsPage() {
       : items.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE)
   const listTotalPages =
     mode === 'featured' ? totalPages : Math.max(1, Math.ceil(items.length / LIST_PAGE_SIZE))
+  const paginationPages = getPaginationPages(listTotalPages)
+
+  function goToPage(targetPage: number) {
+    if (targetPage === page || loading) return
+    if (mode === 'featured') {
+      void loadFeatured(targetPage)
+    } else {
+      setPage(targetPage)
+    }
+  }
 
   const filterProps = {
     collapsed,
@@ -412,51 +423,60 @@ export function DonorsPage() {
               )}
 
               {listTotalPages > 1 && (
-                <div className="mt-6 flex items-center justify-center gap-1.5">
+                <nav
+                  aria-label="列表分页"
+                  className="mt-6 flex flex-wrap items-center justify-center gap-1.5"
+                >
                   <button
                     type="button"
                     disabled={page <= 1 || loading}
-                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 disabled:opacity-35"
-                    onClick={() =>
-                      mode === 'featured' ? void loadFeatured(page - 1) : setPage((p) => p - 1)
-                    }
+                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
+                    onClick={() => goToPage(1)}
+                  >
+                    首页
+                  </button>
+                  <button
+                    type="button"
+                    disabled={page <= 1 || loading}
+                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
+                    onClick={() => goToPage(page - 1)}
                   >
                     上一页
                   </button>
-                  {Array.from({ length: Math.min(listTotalPages, 5) }, (_, i) => {
-                    let p = i + 1
-                    if (listTotalPages > 5) {
-                      const start = Math.max(1, Math.min(page - 2, listTotalPages - 4))
-                      p = start + i
-                    }
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() =>
-                          mode === 'featured' ? void loadFeatured(p) : setPage(p)
-                        }
-                        className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium ${
-                          p === page
-                            ? 'bg-teal-deep text-white'
-                            : 'border border-line bg-white text-ink-soft/60 hover:border-teal/30'
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    )
-                  })}
+                  {paginationPages.map((pageNumber) => (
+                    <button
+                      key={pageNumber}
+                      type="button"
+                      disabled={loading}
+                      aria-label={`第 ${pageNumber} 页`}
+                      aria-current={pageNumber === page ? 'page' : undefined}
+                      onClick={() => goToPage(pageNumber)}
+                      className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-35 ${
+                        pageNumber === page
+                          ? 'bg-teal-deep text-white'
+                          : 'border border-line bg-white text-ink-soft/60 hover:border-teal/30 hover:text-teal-deep'
+                      }`}
+                    >
+                      {pageNumber}
+                    </button>
+                  ))}
                   <button
                     type="button"
                     disabled={page >= listTotalPages || loading}
-                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 disabled:opacity-35"
-                    onClick={() =>
-                      mode === 'featured' ? void loadFeatured(page + 1) : setPage((p) => p + 1)
-                    }
+                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
+                    onClick={() => goToPage(page + 1)}
                   >
                     下一页
                   </button>
-                </div>
+                  <button
+                    type="button"
+                    disabled={page >= listTotalPages || loading}
+                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
+                    onClick={() => goToPage(listTotalPages)}
+                  >
+                    尾页
+                  </button>
+                </nav>
               )}
             </div>
           </>
