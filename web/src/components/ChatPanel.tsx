@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api, getToken, setToken } from '../lib/api'
@@ -13,6 +13,8 @@ import { ChatMatchCards } from './ChatMatchCards'
 
 const SUGGESTIONS = ['硕士，身高 175 以上', 'O 型血，体型一般', '本科以上，标本充足']
 const GUEST_WELCOME = '描述您的期望，我会帮您筛选合适的候选人。'
+/** 写入 React 消息状态的预览条数；完整列表放 matchBagsRef，避免卡顿 */
+const CHAT_STATE_PREVIEW = 20
 
 type ChatListItem = { id: number; session_id: string; title: string; updated_at: string }
 
@@ -80,9 +82,27 @@ export function ChatPanel({
   const featuresRef = useRef<Record<string, unknown>>({})
   const constraintsRef = useRef<Record<string, string>>({})
   const messagesRef = useRef<ChatMessage[]>([])
+  const matchBagsRef = useRef<Record<string, Candidate[]>>({})
   const speechSupport = getSpeechSupport()
 
   messagesRef.current = messages
+
+  function bagCandidates(full: Candidate[], preferHits?: PreferHit[]) {
+    const bagId = `bag_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+    matchBagsRef.current[bagId] = full
+    return {
+      match_bag_id: bagId,
+      candidates: full.slice(0, CHAT_STATE_PREVIEW),
+      candidates_total: full.length,
+      prefer_hits: preferHits?.length ? preferHits : undefined,
+    }
+  }
+
+  function pushCandidatesToMiddle(items: Candidate[]) {
+    startTransition(() => {
+      onCandidates(items)
+    })
+  }
 
   useEffect(() => {
     return () => {
@@ -147,16 +167,29 @@ export function ChatPanel({
             content: m.content || '',
             candidates: m.candidates,
             prefer_hits: m.prefer_hits,
+            candidates_total: m.candidates_total,
+            match_bag_id: m.match_bag_id,
           }
         })
-        setMessages(msgs)
+        const full =
+          (Array.isArray(data.candidates) && data.candidates.length && data.candidates) ||
+          [...msgs].reverse().find((m) => m.candidates && m.candidates.length)?.candidates ||
+          []
+        if (full.length) {
+          const bag = bagCandidates(full)
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === 'bot' && msgs[i].candidates?.length) {
+              msgs[i] = { ...msgs[i], ...bag }
+              break
+            }
+          }
+          setMessages(msgs)
+          pushCandidatesToMiddle(full)
+        } else {
+          setMessages(msgs)
+        }
         setShowWelcome(false)
         setWelcome('')
-        const lastCands =
-          [...msgs].reverse().find((m) => m.candidates && m.candidates.length)?.candidates ||
-          data.candidates ||
-          []
-        if (lastCands.length) onCandidates(lastCands)
       } catch {
         /* ignore */
       } finally {
@@ -235,21 +268,34 @@ export function ChatPanel({
           roleRaw === 'user' ? 'user' : roleRaw === 'system' ? 'system' : 'bot'
         return {
           role,
-            content: m.content || '',
-            candidates: m.candidates,
-            prefer_hits: m.prefer_hits,
+          content: m.content || '',
+          candidates: m.candidates,
+          prefer_hits: m.prefer_hits,
+          candidates_total: m.candidates_total,
+          match_bag_id: m.match_bag_id,
+        }
+      })
+      const full =
+        (Array.isArray(data.candidates) && data.candidates.length && data.candidates) ||
+        [...msgs].reverse().find((m) => m.candidates && m.candidates.length)?.candidates ||
+        []
+      if (full.length) {
+        const bag = bagCandidates(full)
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === 'bot' && msgs[i].candidates?.length) {
+            msgs[i] = { ...msgs[i], ...bag }
+            break
           }
-        })
+        }
         setMessages(msgs)
-        setShowWelcome(false)
-        setWelcome('')
-        const lastCands =
-          [...msgs].reverse().find((m) => m.candidates && m.candidates.length)?.candidates ||
-          data.candidates ||
-          []
-        if (lastCands.length) onCandidates(lastCands)
-      } catch {
-        setMessages([{ role: 'system', content: '无法打开该历史对话。' }])
+        pushCandidatesToMiddle(full)
+      } else {
+        setMessages(msgs)
+      }
+      setShowWelcome(false)
+      setWelcome('')
+    } catch {
+      setMessages([{ role: 'system', content: '无法打开该历史对话。' }])
     }
   }
 
@@ -280,12 +326,17 @@ export function ChatPanel({
 
     let cands: Candidate[] = []
     for (let i = kept.length - 1; i >= 0; i--) {
-      if (kept[i].candidates?.length) {
-        cands = kept[i].candidates || []
+      const m = kept[i]
+      if (m.match_bag_id && matchBagsRef.current[m.match_bag_id]?.length) {
+        cands = matchBagsRef.current[m.match_bag_id]
+        break
+      }
+      if (m.candidates?.length) {
+        cands = m.candidates
         break
       }
     }
-    onCandidates(cands)
+    pushCandidatesToMiddle(cands)
 
     setMessages(kept)
     messagesRef.current = kept
@@ -351,6 +402,7 @@ export function ChatPanel({
     let botText = ''
     let candidates: Candidate[] = []
     let preferHits: PreferHit[] = []
+    let bagMeta: ReturnType<typeof bagCandidates> | null = null
     let currentSession = sessionId
     let aborted = false
     let featuresAfter = featuresBefore
@@ -391,36 +443,21 @@ export function ChatPanel({
               aborted = true
             } else if (evt === 'token') {
               botText += data.text || ''
-              setMessages([
-                ...nextMessages,
-                {
-                  role: 'bot',
-                  content: botText,
-                  candidates: candidates.length ? candidates : undefined,
-                  prefer_hits: preferHits.length ? preferHits : undefined,
-                },
-              ])
+              // 流式阶段不挂候选列表，避免每 token 都拷贝大数组
+              setMessages([...nextMessages, { role: 'bot', content: botText }])
             } else if (evt === 'reply') {
               botText = data.text || botText
-              setMessages([
-                ...nextMessages,
-                {
-                  role: 'bot',
-                  content: botText,
-                  candidates: candidates.length ? candidates : undefined,
-                  prefer_hits: preferHits.length ? preferHits : undefined,
-                },
-              ])
+              setMessages([...nextMessages, { role: 'bot', content: botText }])
             } else if (evt === 'candidates' && Array.isArray(data.items)) {
               candidates = data.items
               preferHits = Array.isArray(data.prefer_hits) ? data.prefer_hits : []
+              bagMeta = bagCandidates(candidates, preferHits)
               setMessages([
                 ...nextMessages,
                 {
                   role: 'bot',
                   content: botText,
-                  candidates: candidates.length ? candidates : undefined,
-                  prefer_hits: preferHits.length ? preferHits : undefined,
+                  ...bagMeta,
                 },
               ])
             } else if (evt === 'state' && data.session_id) {
@@ -473,11 +510,11 @@ export function ChatPanel({
         return
       }
 
+      const bag = bagMeta || (candidates.length ? bagCandidates(candidates, preferHits) : null)
       const botMsg: ChatMessage = {
         role: 'bot',
         content: botText || '已完成回复。',
-        candidates: candidates.length ? candidates : undefined,
-        prefer_hits: preferHits.length ? preferHits : undefined,
+        ...(bag || {}),
         snapshot: {
           parsed_features: featuresAfter,
           constraints: constraintsAfter,
@@ -736,7 +773,12 @@ export function ChatPanel({
               <ChatMatchCards
                 candidates={m.candidates}
                 preferHits={m.prefer_hits}
-                onViewInMiddle={onCandidates}
+                totalOverride={m.candidates_total}
+                onViewInMiddle={() => {
+                  const full =
+                    (m.match_bag_id && matchBagsRef.current[m.match_bag_id]) || m.candidates || []
+                  pushCandidatesToMiddle(full)
+                }}
               />
             )}
           </div>

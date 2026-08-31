@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { startTransition, useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../components/ChatPanel'
 import { DonorCard, DonorCardSkeleton } from '../components/DonorCard'
@@ -14,6 +14,9 @@ const MODE_META = {
   search: { label: '条件筛选', title: '筛选结果', blurb: '根据左侧条件匹配' },
   chat: { label: '对话推荐', title: '对话结果', blurb: '已根据顾问对话更新' },
 } as const
+
+/** 中间栏每页卡片数，避免一次挂载上千张 DonorCard */
+const LIST_PAGE_SIZE = 12
 
 export function DonorsPage() {
   const { user, loading: authLoading } = useAuth()
@@ -149,10 +152,11 @@ export function DonorsPage() {
         match_level?: string
         relaxed_hint?: string
       }>('/api/search', body)
-      setItems(data.items || [])
-      setTotal(data.items?.length || 0)
-      setTotalPages(1)
+      const next = data.items || []
+      setItems(next)
+      setTotal(next.length)
       setPage(1)
+      setTotalPages(Math.max(1, Math.ceil(next.length / LIST_PAGE_SIZE)))
       const level =
         data.match_level === 'full'
           ? '完全匹配'
@@ -190,6 +194,12 @@ export function DonorsPage() {
   }
 
   const meta = MODE_META[mode]
+  const pagedItems =
+    mode === 'featured'
+      ? items
+      : items.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE)
+  const listTotalPages =
+    mode === 'featured' ? totalPages : Math.max(1, Math.ceil(items.length / LIST_PAGE_SIZE))
 
   const filterProps = {
     collapsed,
@@ -220,12 +230,16 @@ export function DonorsPage() {
       }
     },
     onCandidates: (cands: Candidate[]) => {
-      setItems(cands)
-      setTotal(cands.length)
-      setHint(MODE_META.chat.blurb)
-      setLoading(false)
-      flashList('chat', '已根据对话更新中间结果')
-      setMobileChat(false)
+      startTransition(() => {
+        setItems(cands)
+        setTotal(cands.length)
+        setPage(1)
+        setTotalPages(Math.max(1, Math.ceil(cands.length / LIST_PAGE_SIZE)))
+        setHint(MODE_META.chat.blurb)
+        setLoading(false)
+        flashList('chat', '已根据对话更新中间结果')
+        setMobileChat(false)
+      })
       if (showingDetail) navigate('/donors')
     },
     onSessionPersist: (payload: {
@@ -387,33 +401,41 @@ export function DonorsPage() {
                 </div>
               ) : (
                 <div key={listKey} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {items.map((c, i) => (
-                    <DonorCard key={c.donor_info.code} candidate={c} index={i} />
+                  {pagedItems.map((c, i) => (
+                    <DonorCard
+                      key={c.donor_info.code}
+                      candidate={c}
+                      index={(page - 1) * LIST_PAGE_SIZE + i}
+                    />
                   ))}
                 </div>
               )}
 
-              {mode === 'featured' && totalPages > 1 && (
+              {listTotalPages > 1 && (
                 <div className="mt-6 flex items-center justify-center gap-1.5">
                   <button
                     type="button"
                     disabled={page <= 1 || loading}
                     className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 disabled:opacity-35"
-                    onClick={() => void loadFeatured(page - 1)}
+                    onClick={() =>
+                      mode === 'featured' ? void loadFeatured(page - 1) : setPage((p) => p - 1)
+                    }
                   >
                     上一页
                   </button>
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  {Array.from({ length: Math.min(listTotalPages, 5) }, (_, i) => {
                     let p = i + 1
-                    if (totalPages > 5) {
-                      const start = Math.max(1, Math.min(page - 2, totalPages - 4))
+                    if (listTotalPages > 5) {
+                      const start = Math.max(1, Math.min(page - 2, listTotalPages - 4))
                       p = start + i
                     }
                     return (
                       <button
                         key={p}
                         type="button"
-                        onClick={() => void loadFeatured(p)}
+                        onClick={() =>
+                          mode === 'featured' ? void loadFeatured(p) : setPage(p)
+                        }
                         className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium ${
                           p === page
                             ? 'bg-teal-deep text-white'
@@ -426,9 +448,11 @@ export function DonorsPage() {
                   })}
                   <button
                     type="button"
-                    disabled={page >= totalPages || loading}
+                    disabled={page >= listTotalPages || loading}
                     className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 disabled:opacity-35"
-                    onClick={() => void loadFeatured(page + 1)}
+                    onClick={() =>
+                      mode === 'featured' ? void loadFeatured(page + 1) : setPage((p) => p + 1)
+                    }
                   >
                     下一页
                   </button>

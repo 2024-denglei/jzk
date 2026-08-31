@@ -117,7 +117,12 @@ export interface ChatSnapshot {
 export interface ChatMessage {
   role: 'user' | 'bot' | 'system'
   content: string
+  /** 聊天侧预览用（通常最多 20 条），完整列表放 match_bag_id 对应缓存 */
   candidates?: Candidate[]
+  /** 完整匹配结果在 ChatPanel 本地缓存中的 key */
+  match_bag_id?: string
+  /** 本轮匹配总数（可大于 candidates 预览长度） */
+  candidates_total?: number
   prefer_hits?: PreferHit[]
   /** 用户消息：发送前条件；助手消息：本轮结束后条件 */
   snapshot?: ChatSnapshot

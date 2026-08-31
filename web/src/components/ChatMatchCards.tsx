@@ -55,17 +55,24 @@ function derivePreferHits(candidates: Candidate[]): PreferHit[] {
   return out
 }
 
+/** 聊天侧预览条数；中间栏由页面分页，避免一次挂载数千张卡片 */
+const CHAT_PREVIEW = 20
+
 type Props = {
   candidates: Candidate[]
   preferHits?: PreferHit[]
-  onViewInMiddle: (items: Candidate[]) => void
+  /** 匹配总数；大于 candidates.length 时表示侧栏仅为预览 */
+  totalOverride?: number
+  onViewInMiddle: () => void
 }
 
-export function ChatMatchCards({ candidates, preferHits, onViewInMiddle }: Props) {
+export function ChatMatchCards({ candidates, preferHits, totalOverride, onViewInMiddle }: Props) {
   if (!candidates.length) return null
   const hits = preferHits?.length ? preferHits : derivePreferHits(candidates)
-  const total = hits[0]?.of ?? candidates.length
+  const total = totalOverride ?? hits[0]?.of ?? candidates.length
   const hitSummary = hits.map((h) => `${h.label} ${h.hits}/${h.of}`).join(' · ')
+  const preview = candidates.slice(0, CHAT_PREVIEW)
+  const truncated = total > preview.length || candidates.length > CHAT_PREVIEW
 
   return (
     <div className="mt-2 flex w-full max-w-[92%] flex-col overflow-hidden rounded-2xl border border-line/70 bg-white">
@@ -82,7 +89,7 @@ export function ChatMatchCards({ candidates, preferHits, onViewInMiddle }: Props
         </div>
         <button
           type="button"
-          onClick={() => onViewInMiddle(candidates)}
+          onClick={() => onViewInMiddle()}
           className="shrink-0 rounded-md bg-teal-deep px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-ink"
         >
           在中间查看
@@ -90,7 +97,7 @@ export function ChatMatchCards({ candidates, preferHits, onViewInMiddle }: Props
       </div>
 
       <ul className="scroll-y max-h-[280px] divide-y divide-line/40 overflow-y-auto overscroll-contain">
-        {candidates.map((c) => {
+        {preview.map((c) => {
           const d = c.donor_info
           const letter = (d.code?.replace(/[^A-Za-z]/g, '')[0] || d.code?.[0] || 'D').toUpperCase()
           const pct =
@@ -145,6 +152,11 @@ export function ChatMatchCards({ candidates, preferHits, onViewInMiddle }: Props
           )
         })}
       </ul>
+      {truncated ? (
+        <div className="border-t border-line/50 px-3 py-2 text-[11px] text-ink-soft/50">
+          侧栏仅预览前 {CHAT_PREVIEW} 位，点「在中间查看」分页浏览全部 {total} 位
+        </div>
+      ) : null}
     </div>
   )
 }

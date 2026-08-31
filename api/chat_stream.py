@@ -11,12 +11,48 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from api.auth_utils import get_current_user_id
+from core.data_loader import to_card_donor_info
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 _deps = {}
+
+
+def _slim_candidates_for_sse(
+    candidates: list,
+    prefer_hits: list | None = None,
+) -> list[dict]:
+    """对话 SSE 保留全量条数，但去掉 field_scores 等重字段，避免前端解析卡死。"""
+    prefer_fields = {
+        h.get("field")
+        for h in (prefer_hits or [])
+        if isinstance(h, dict) and h.get("field")
+    }
+    slimmed: list[dict] = []
+    for c in candidates or []:
+        if not isinstance(c, dict):
+            continue
+        fm = c.get("field_match") or {}
+        slim_fm = (
+            {k: fm[k] for k in prefer_fields if k in fm}
+            if prefer_fields and isinstance(fm, dict)
+            else {}
+        )
+        info = c.get("donor_info") if isinstance(c.get("donor_info"), dict) else {}
+        slimmed.append(
+            {
+                "donor_info": to_card_donor_info(info),
+                "score": c.get("score"),
+                "match_pct": c.get("match_pct"),
+                "reason": "",
+                "match_level": c.get("match_level") or "",
+                "field_match": slim_fm,
+                "rank": c.get("rank"),
+            }
+        )
+    return slimmed
 
 
 def inject_dependencies(session_manager, feature_encoder, donor_df, llm_client):
@@ -486,7 +522,15 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
             yield _sse("reply", {"text": final_reply})
             if candidates:
                 t_sse = time.perf_counter()
-                candidates_event = _sse("candidates", {"items": candidates, "prefer_hits": prefer_hits})
+                slim_items = _slim_candidates_for_sse(candidates, prefer_hits)
+                candidates_event = _sse(
+                    "candidates",
+                    {
+                        "items": slim_items,
+                        "prefer_hits": prefer_hits,
+                        "total": len(candidates),
+                    },
+                )
                 if trace:
                     trace.mark(
                         "sse_candidates",
