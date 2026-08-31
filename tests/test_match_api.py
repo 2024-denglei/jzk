@@ -1,7 +1,30 @@
+from contextlib import contextmanager
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.auth_utils import create_access_token
+
+
+class _SessionRow:
+    def fetchone(self):
+        return {"status": "active", "token_version": 0}
+
+
+class _SessionConn:
+    def execute(self, _sql, _params=()):
+        return _SessionRow()
+
+
+@contextmanager
+def _active_user_session():
+    yield _SessionConn()
+
+
+@pytest.fixture(autouse=True)
+def active_user(monkeypatch):
+    monkeypatch.setattr("db.database.db_session", _active_user_session)
 from api.match import router as match_router
 from core.preference.pipeline import MatchResult
 
@@ -13,7 +36,7 @@ def _app() -> FastAPI:
 
 
 def _auth_headers() -> dict[str, str]:
-    token = create_access_token({"sub": "42"})
+    token = create_access_token({"sub": "42", "ver": 0})
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -226,7 +249,7 @@ def test_invoke_match_endpoint_hits_route():
 
     from api.match import invoke_match_endpoint
 
-    token = create_access_token({"sub": "42"})
+    token = create_access_token({"sub": "42", "ver": 0})
     status, data = asyncio.run(
         invoke_match_endpoint(
             _app(),
@@ -294,4 +317,3 @@ def test_apply_match_api_response_200_updates_session():
     assert cands[0]["donor_info"]["code"] == "T"
     assert session.preference_profile["attributes"]["abo_blood"]["values"] == ["O"]
     assert session.candidates[0]["donor_info"]["code"] == "T"
-

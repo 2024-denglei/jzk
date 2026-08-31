@@ -94,6 +94,9 @@ class _FakeConnection:
                 "phone": phone,
                 "password_hash": password_hash,
                 "nickname": nickname,
+                "status": "active",
+                "token_version": 0,
+                "last_login_at": None,
                 "created_at": datetime.now(timezone.utc),
             }
             self.database.users.append(user)
@@ -102,10 +105,16 @@ class _FakeConnection:
             return _Cursor(self._find("email", params[0]))
         if normalized.startswith("SELECT * FROM app.users WHERE phone"):
             return _Cursor(self._find("phone", params[0]))
+        if normalized.startswith("UPDATE app.users SET last_login_at"):
+            user = self._find("id", params[0])
+            if user:
+                user["last_login_at"] = datetime.now(timezone.utc)
+            return _Cursor(user)
         if normalized.startswith("UPDATE app.users SET password_hash"):
             user = self._find("id", params[1])
             if user:
                 user["password_hash"] = params[0]
+                user["token_version"] += 1
             return _Cursor()
         raise AssertionError(f"unexpected SQL: {normalized}")
 
@@ -175,6 +184,14 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
         except HTTPException as exc:
             assert exc.status_code == 400
         assert (await auth_mod.login(LoginRequest(identifier=phone, password="newpass")))["access_token"]
+
+        database.users[0]["status"] = "disabled"
+        try:
+            await auth_mod.login(LoginRequest(identifier=phone, password="newpass"))
+            assert False, "expected disabled account rejection"
+        except HTTPException as exc:
+            assert exc.status_code == 403
+            assert "账号已停用" in exc.detail
 
     asyncio.run(scenario())
 

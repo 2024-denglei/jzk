@@ -107,18 +107,37 @@ def _user_dict(row) -> dict:
     if hasattr(created, "isoformat"):
         created = created.isoformat()
     phone = row.get("phone") if hasattr(row, "get") else row["phone"]
+    last_login = row.get("last_login_at") if hasattr(row, "get") else None
+    if hasattr(last_login, "isoformat"):
+        last_login = last_login.isoformat()
     return {
         "id": row["id"],
         "email": row["email"],
         "phone": phone,
         "nickname": row["nickname"] or row["email"].split("@")[0],
+        "status": (row.get("status") if hasattr(row, "get") else None) or "active",
         "created_at": created,
+        "last_login_at": last_login,
     }
 
 
 def _token_response(row) -> dict:
-    token = create_access_token({"sub": str(row["id"])})
+    version = int((row.get("token_version") if hasattr(row, "get") else None) or 0)
+    token = create_access_token({"sub": str(row["id"]), "ver": version})
     return {"access_token": token, "token_type": "bearer", "user": _user_dict(row)}
+
+
+def _ensure_login_allowed(row) -> None:
+    if (row.get("status") if hasattr(row, "get") else "active") == "disabled":
+        raise HTTPException(status_code=403, detail="账号已停用，请联系管理员")
+
+
+def _record_login(user_id: int):
+    with db_session() as conn:
+        return conn.execute(
+            "UPDATE app.users SET last_login_at = now(), updated_at = now() WHERE id = %s RETURNING *",
+            (user_id,),
+        ).fetchone()
 
 
 def _consume_code(purpose: CodePurpose, phone: str, code: str) -> None:
@@ -184,7 +203,7 @@ async def register(body: RegisterRequest):
             ).fetchone()
     except UniqueViolation as exc:
         raise HTTPException(status_code=400, detail="邮箱或手机号已注册") from exc
-    return _token_response(row)
+    return _token_response(_record_login(int(row["id"])) or row)
 
 
 @router.post("/login")
@@ -195,7 +214,8 @@ async def login(body: LoginRequest):
         row = conn.execute(f"SELECT * FROM app.users WHERE {field} = %s", (identifier,)).fetchone()
     if not row or not verify_password(body.password, row["password_hash"]):
         raise HTTPException(status_code=400, detail="邮箱/手机号或密码错误")
-    return _token_response(row)
+    _ensure_login_allowed(row)
+    return _token_response(_record_login(int(row["id"])) or row)
 
 
 @router.post("/phone-login")
@@ -204,8 +224,9 @@ async def phone_login(body: PhoneCodeRequest):
         row = conn.execute("SELECT * FROM app.users WHERE phone = %s", (body.phone,)).fetchone()
     if not row:
         raise HTTPException(status_code=400, detail="该手机号尚未注册")
+    _ensure_login_allowed(row)
     _consume_code("login", body.phone, body.code)
-    return _token_response(row)
+    return _token_response(_record_login(int(row["id"])) or row)
 
 
 @router.post("/reset-password")
@@ -218,7 +239,7 @@ async def reset_password(body: ResetPasswordRequest):
     _consume_code("reset_password", body.phone, body.code)
     with db_session() as conn:
         conn.execute(
-            "UPDATE app.users SET password_hash = %s WHERE id = %s",
+            "UPDATE app.users SET password_hash = %s, token_version = token_version + 1, updated_at = now() WHERE id = %s",
             (hash_password(body.new_password), row["id"]),
         )
     return {"ok": True}
@@ -237,7 +258,7 @@ async def me(user_id: int = Depends(get_current_user_id)):
 async def update_me(body: UpdateMeRequest, user_id: int = Depends(get_current_user_id)):
     with db_session() as conn:
         row = conn.execute(
-            "UPDATE app.users SET nickname = %s WHERE id = %s RETURNING *",
+            "UPDATE app.users SET nickname = %s, updated_at = now() WHERE id = %s RETURNING *",
             (body.nickname.strip(), user_id),
         ).fetchone()
     return _user_dict(row)
@@ -250,7 +271,7 @@ async def change_password(body: ChangePasswordRequest, user_id: int = Depends(ge
         if not row or not verify_password(body.old_password, row["password_hash"]):
             raise HTTPException(status_code=400, detail="原密码错误")
         conn.execute(
-            "UPDATE app.users SET password_hash = %s WHERE id = %s",
+            "UPDATE app.users SET password_hash = %s, token_version = token_version + 1, updated_at = now() WHERE id = %s",
             (hash_password(body.new_password), user_id),
         )
     return {"ok": True}

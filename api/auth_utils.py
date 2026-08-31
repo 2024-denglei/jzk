@@ -46,13 +46,30 @@ def get_current_user_id(
         if payload.get("kind") == "admin":
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效令牌")
         user_id = payload.get("sub")
-        if user_id is None:
+        token_version = payload.get("ver")
+        if user_id is None or token_version is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效令牌")
-        return int(user_id)
+        user_id = int(user_id)
+        token_version = int(token_version)
     except HTTPException:
         raise
-    except (JWTError, ValueError):
+    except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效令牌")
+
+    from db.database import db_session
+
+    with db_session() as conn:
+        row = conn.execute(
+            "SELECT status, token_version FROM app.users WHERE id = %s",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
+    if row["status"] != "active":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号已停用")
+    if int(row["token_version"]) != token_version:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效，请重新登录")
+    return user_id
 
 
 def get_optional_user_id(
@@ -61,7 +78,6 @@ def get_optional_user_id(
     if credentials is None:
         return None
     try:
-        payload = decode_token(credentials.credentials)
-        return int(payload.get("sub"))
-    except (JWTError, ValueError, TypeError):
+        return get_current_user_id(credentials)
+    except (HTTPException, JWTError, ValueError, TypeError):
         return None

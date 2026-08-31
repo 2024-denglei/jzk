@@ -15,6 +15,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="admin/*" element={<AdminPage />} />
           <Route element={<AppLayout />}>
             <Route index element={<HomePage />} />
             {/* 父子路由保证 /donors ↔ /donors/:code 切换时工作台不卸载 */}
@@ -27,7 +28,6 @@ export default function App() {
             <Route path="login" element={<LoginPage />} />
             <Route path="forgot-password" element={<ForgotPasswordPage />} />
             <Route path="register" element={<RegisterPage />} />
-            <Route path="admin" element={<AdminPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

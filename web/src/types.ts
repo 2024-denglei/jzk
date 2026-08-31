@@ -82,7 +82,9 @@ export interface User {
   email: string
   phone: string | null
   nickname: string
+  status?: 'active' | 'disabled'
   created_at: string
+  last_login_at?: string | null
 }
 
 export interface FilterState {

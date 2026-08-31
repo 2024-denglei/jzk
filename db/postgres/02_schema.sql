@@ -118,8 +118,18 @@ CREATE TABLE IF NOT EXISTS app.users (
     phone           TEXT UNIQUE,
     password_hash   TEXT NOT NULL,
     nickname        TEXT NOT NULL DEFAULT '',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active', 'disabled')),
+    token_version   INTEGER NOT NULL DEFAULT 0,
+    last_login_at   TIMESTAMPTZ,
+    disabled_at     TIMESTAMPTZ,
+    disabled_reason TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_status ON app.users (status);
+CREATE INDEX IF NOT EXISTS idx_users_created ON app.users (created_at DESC);
 
 CREATE TABLE IF NOT EXISTS app.favorites (
     id              BIGSERIAL PRIMARY KEY,
@@ -153,9 +163,24 @@ CREATE TABLE IF NOT EXISTS app.chats (
     messages_json   TEXT NOT NULL DEFAULT '[]',
     candidates_json TEXT NOT NULL DEFAULT '[]',
     state_json      TEXT NOT NULL DEFAULT '{}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_user_session ON app.chats (user_id, session_id);
 CREATE INDEX IF NOT EXISTS idx_chats_user ON app.chats (user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_favorites_user ON app.favorites (user_id);
 CREATE INDEX IF NOT EXISTS idx_history_user ON app.history (user_id);
+
+CREATE TABLE IF NOT EXISTS admin.user_audit_logs (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT REFERENCES app.users(id) ON DELETE SET NULL,
+    action          TEXT NOT NULL,
+    operator_id     BIGINT REFERENCES admin.admin_users(id),
+    reason          TEXT,
+    before_data     JSONB,
+    after_data      JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_audit_user ON admin.user_audit_logs (user_id, created_at DESC);
