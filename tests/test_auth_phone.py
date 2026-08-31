@@ -4,12 +4,18 @@ import asyncio
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
+import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+import config
 from api import auth as auth_mod
 from api.auth import LoginRequest, PhoneCodeRequest, RegisterRequest, ResetPasswordRequest, SendCodeRequest
-from api.verification_codes import VerificationCodeError, VerificationCodeStore
+from api.verification_codes import (
+    VerificationCodeError,
+    VerificationCodeRateLimitError,
+    VerificationCodeStore,
+)
 
 
 class _FakeRedis:
@@ -28,11 +34,40 @@ class _FakeRedis:
     def ttl(self, key):
         return self.expiries.get(key, -2)
 
-    def eval(self, _script, _num_keys, key, code):
-        if self.values.get(key) != code:
-            return 0
-        del self.values[key]
-        return 1
+    def eval(self, _script, num_keys, *args):
+        if num_keys == 3:
+            cooldown_key, code_key, attempts_key, code, cooldown, ttl = args
+            if cooldown_key in self.values:
+                return [0, self.expiries[cooldown_key]]
+            self.set(cooldown_key, "1", ex=cooldown)
+            self.set(code_key, code, ex=ttl)
+            self.values.pop(attempts_key, None)
+            return [1, int(ttl)]
+        if num_keys == 2:
+            code_key, attempts_key, code, max_attempts, ttl = args
+            stored = self.values.get(code_key)
+            if stored is None:
+                return -1
+            if stored != code:
+                attempts = int(self.values.get(attempts_key, "0")) + 1
+                self.set(attempts_key, attempts, ex=ttl)
+                if attempts >= int(max_attempts):
+                    self.values.pop(code_key, None)
+                    self.values.pop(attempts_key, None)
+                    return -2
+                return 0
+            self.values.pop(code_key, None)
+            self.values.pop(attempts_key, None)
+            return 1
+        raise AssertionError(f"unexpected eval call: {num_keys}")
+
+
+class _NoopRateLimiter:
+    def check(self, *_args, **_kwargs):
+        return None
+
+    def reset(self, *_args, **_kwargs):
+        return None
 
 
 def test_verification_code_is_scoped_one_time_and_rate_limited(monkeypatch):
@@ -52,6 +87,19 @@ def test_verification_code_is_scoped_one_time_and_rate_limited(monkeypatch):
         assert False, "expected cooldown error"
     except VerificationCodeError as exc:
         assert "请求过于频繁" in str(exc)
+
+
+def test_verification_code_is_deleted_after_too_many_failures(monkeypatch):
+    fake = _FakeRedis()
+    store = VerificationCodeStore(fake)
+    monkeypatch.setattr("secrets.randbelow", lambda _limit: 123456)
+
+    code, _ = store.issue("login", "+8613900139000")
+    for _ in range(config.VERIFICATION_CODE_MAX_ATTEMPTS - 1):
+        assert store.verify_and_consume("login", "+8613900139000", "000000") is False
+    with pytest.raises(VerificationCodeRateLimitError, match="错误次数过多"):
+        store.verify_and_consume("login", "+8613900139000", "000000")
+    assert store.verify_and_consume("login", "+8613900139000", code) is False
 
 
 class _Cursor:
@@ -144,11 +192,12 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
     monkeypatch.setattr(auth_mod, "db_session", database.session)
     monkeypatch.setattr(auth_mod, "verification_codes", codes)
     monkeypatch.setattr(auth_mod.config, "EXPOSE_TEST_VERIFICATION_CODE", True)
+    monkeypatch.setattr(auth_mod, "rate_limiter", _NoopRateLimiter())
 
     phone = "13800138000"
 
     async def scenario():
-        sent = await auth_mod.send_code(SendCodeRequest(phone=phone, purpose="register"))
+        sent = await auth_mod.send_code(SendCodeRequest(phone=phone, purpose="register"), "test-ip")
         assert sent["test_code"] == "654321"
 
         registered = await auth_mod.register(RegisterRequest(**{
@@ -156,38 +205,39 @@ def test_register_password_and_code_login_and_password_reset(monkeypatch):
             "phone": phone,
             "password": "oldpass",
             "code": "654321",
-        }))
+        }), "test-ip")
         assert registered["user"]["email"] == "user@example.com"
         assert registered["user"]["phone"] == "+8613800138000"
 
         for identifier in ("user@example.com", phone):
-            logged_in = await auth_mod.login(LoginRequest(identifier=identifier, password="oldpass"))
+            logged_in = await auth_mod.login(LoginRequest(identifier=identifier, password="oldpass"), "test-ip")
             assert logged_in["access_token"]
 
-        await auth_mod.send_code(SendCodeRequest(phone=phone, purpose="login"))
-        code_login = await auth_mod.phone_login(PhoneCodeRequest(phone=phone, code="654321"))
+        await auth_mod.send_code(SendCodeRequest(phone=phone, purpose="login"), "test-ip")
+        code_login = await auth_mod.phone_login(PhoneCodeRequest(phone=phone, code="654321"), "test-ip")
         assert code_login["access_token"]
         try:
-            await auth_mod.phone_login(PhoneCodeRequest(phone=phone, code="654321"))
+            await auth_mod.phone_login(PhoneCodeRequest(phone=phone, code="654321"), "test-ip")
             assert False, "expected one-time code rejection"
         except HTTPException as exc:
             assert exc.status_code == 400
 
-        await auth_mod.send_code(SendCodeRequest(phone=phone, purpose="reset_password"))
+        await auth_mod.send_code(SendCodeRequest(phone=phone, purpose="reset_password"), "test-ip")
         reset = await auth_mod.reset_password(
-            ResetPasswordRequest(phone=phone, code="654321", new_password="newpass")
+            ResetPasswordRequest(phone=phone, code="654321", new_password="newpass"),
+            "test-ip",
         )
         assert reset == {"ok": True}
         try:
-            await auth_mod.login(LoginRequest(identifier=phone, password="oldpass"))
+            await auth_mod.login(LoginRequest(identifier=phone, password="oldpass"), "test-ip")
             assert False, "expected old password rejection"
         except HTTPException as exc:
             assert exc.status_code == 400
-        assert (await auth_mod.login(LoginRequest(identifier=phone, password="newpass")))["access_token"]
+        assert (await auth_mod.login(LoginRequest(identifier=phone, password="newpass"), "test-ip"))["access_token"]
 
         database.users[0]["status"] = "disabled"
         try:
-            await auth_mod.login(LoginRequest(identifier=phone, password="newpass"))
+            await auth_mod.login(LoginRequest(identifier=phone, password="newpass"), "test-ip")
             assert False, "expected disabled account rejection"
         except HTTPException as exc:
             assert exc.status_code == 403

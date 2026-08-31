@@ -7,6 +7,7 @@ import config
 def production(monkeypatch):
     monkeypatch.setattr(config, "ENVIRONMENT", "production")
     monkeypatch.setattr(config, "JWT_SECRET", "a" * 64)
+    monkeypatch.setattr(config, "RATE_LIMIT_PEPPER", "b" * 64)
     monkeypatch.setattr(config, "EXPOSE_TEST_VERIFICATION_CODE", False)
     monkeypatch.setattr(config, "ADMIN_BOOTSTRAP_USERNAME", "bootstrap-owner")
     monkeypatch.setattr(config, "ADMIN_BOOTSTRAP_PASSWORD", "a-secure-bootstrap-password")

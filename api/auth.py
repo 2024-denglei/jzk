@@ -11,6 +11,12 @@ from psycopg.errors import UniqueViolation
 
 import config
 from api.auth_utils import create_access_token, get_current_user_id, hash_password, verify_password
+from api.rate_limit import (
+    RateLimitError,
+    RateLimitUnavailable,
+    get_client_ip,
+    rate_limiter,
+)
 from api.verification_codes import VerificationCodeError, VerificationCodeRateLimitError, verification_codes
 from db.database import db_session
 
@@ -143,41 +149,78 @@ def _record_login(user_id: int):
 def _consume_code(purpose: CodePurpose, phone: str, code: str) -> None:
     try:
         valid = verification_codes.verify_and_consume(purpose, phone, code)
+    except VerificationCodeRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     except VerificationCodeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not valid:
         raise HTTPException(status_code=400, detail="验证码错误或已过期")
 
 
+def _check_rate(bucket: str, subject: str, limit: int, window_seconds: int) -> None:
+    try:
+        rate_limiter.check(bucket, subject, limit, window_seconds)
+    except RateLimitError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+    except RateLimitUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _reset_rate(bucket: str, subject: str) -> None:
+    try:
+        rate_limiter.reset(bucket, subject)
+    except RateLimitUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _check_code_verification_ip(client_ip: str) -> None:
+    _check_rate(
+        "code-verify:ip-hour",
+        client_ip,
+        config.CODE_VERIFY_IP_HOURLY_LIMIT,
+        3600,
+    )
+
+
 @router.post("/send-code")
-async def send_code(body: SendCodeRequest):
+async def send_code(body: SendCodeRequest, client_ip: str = Depends(get_client_ip)):
+    _check_rate("send-code:phone-hour", body.phone, config.CODE_PHONE_HOURLY_LIMIT, 3600)
+    _check_rate("send-code:phone-day", body.phone, config.CODE_PHONE_DAILY_LIMIT, 86400)
+    _check_rate("send-code:ip-hour", client_ip, config.CODE_IP_HOURLY_LIMIT, 3600)
+
     with db_session() as conn:
         row = conn.execute("SELECT id FROM app.users WHERE phone = %s", (body.phone,)).fetchone()
 
-    if body.purpose == "register" and row:
-        raise HTTPException(status_code=400, detail="该手机号已注册")
-    if body.purpose != "register" and not row:
-        raise HTTPException(status_code=400, detail="该手机号尚未注册")
+    # 对已注册/未注册状态返回相同外部响应，避免通过发码接口枚举账号。
+    should_issue = (body.purpose == "register" and not row) or (body.purpose != "register" and row)
+    code = None
+    expires_in = config.VERIFICATION_CODE_TTL_SECONDS
 
-    try:
-        code, expires_in = verification_codes.issue(body.purpose, body.phone)
-    except VerificationCodeRateLimitError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
-    except VerificationCodeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if should_issue:
+        try:
+            code, expires_in = verification_codes.issue(body.purpose, body.phone)
+        except VerificationCodeRateLimitError as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
+        except VerificationCodeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     response = {
         "ok": True,
         "expires_in": expires_in,
         "retry_after": config.VERIFICATION_CODE_COOLDOWN_SECONDS,
     }
-    if config.EXPOSE_TEST_VERIFICATION_CODE:
+    if config.EXPOSE_TEST_VERIFICATION_CODE and code is not None:
         response["test_code"] = code
     return response
 
 
 @router.post("/register")
-async def register(body: RegisterRequest):
+async def register(body: RegisterRequest, client_ip: str = Depends(get_client_ip)):
+    _check_code_verification_ip(client_ip)
     nickname = (body.nickname or body.email.split("@")[0]).strip()
     with db_session() as conn:
         exists = conn.execute(
@@ -207,34 +250,39 @@ async def register(body: RegisterRequest):
 
 
 @router.post("/login")
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, client_ip: str = Depends(get_client_ip)):
     identifier = body.identifier or ""
+    _check_rate("login:account", identifier, config.USER_LOGIN_LIMIT, config.USER_LOGIN_WINDOW_SECONDS)
+    _check_rate("login:ip", client_ip, config.USER_LOGIN_LIMIT, config.USER_LOGIN_WINDOW_SECONDS)
     field = "email" if "@" in identifier else "phone"
     with db_session() as conn:
         row = conn.execute(f"SELECT * FROM app.users WHERE {field} = %s", (identifier,)).fetchone()
     if not row or not verify_password(body.password, row["password_hash"]):
         raise HTTPException(status_code=400, detail="邮箱/手机号或密码错误")
     _ensure_login_allowed(row)
+    _reset_rate("login:account", identifier)
     return _token_response(_record_login(int(row["id"])) or row)
 
 
 @router.post("/phone-login")
-async def phone_login(body: PhoneCodeRequest):
+async def phone_login(body: PhoneCodeRequest, client_ip: str = Depends(get_client_ip)):
+    _check_code_verification_ip(client_ip)
     with db_session() as conn:
         row = conn.execute("SELECT * FROM app.users WHERE phone = %s", (body.phone,)).fetchone()
     if not row:
-        raise HTTPException(status_code=400, detail="该手机号尚未注册")
+        raise HTTPException(status_code=400, detail="手机号或验证码错误")
     _ensure_login_allowed(row)
     _consume_code("login", body.phone, body.code)
     return _token_response(_record_login(int(row["id"])) or row)
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetPasswordRequest):
+async def reset_password(body: ResetPasswordRequest, client_ip: str = Depends(get_client_ip)):
+    _check_code_verification_ip(client_ip)
     with db_session() as conn:
         row = conn.execute("SELECT id FROM app.users WHERE phone = %s", (body.phone,)).fetchone()
     if not row:
-        raise HTTPException(status_code=400, detail="该手机号尚未注册")
+        raise HTTPException(status_code=400, detail="手机号或验证码错误")
 
     _consume_code("reset_password", body.phone, body.code)
     with db_session() as conn:

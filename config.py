@@ -19,6 +19,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
 JWT_SECRET = os.getenv("JWT_SECRET", "jzk-fertility-match-secret-change-me")
+RATE_LIMIT_PEPPER = os.getenv("RATE_LIMIT_PEPPER", "") or JWT_SECRET
 
 # LLM 配置
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
@@ -37,7 +38,18 @@ DATABASE_ADMIN_URL = os.getenv("DATABASE_ADMIN_URL", "") or DATABASE_URL
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 VERIFICATION_CODE_TTL_SECONDS = int(os.getenv("VERIFICATION_CODE_TTL_SECONDS", "300"))
 VERIFICATION_CODE_COOLDOWN_SECONDS = int(os.getenv("VERIFICATION_CODE_COOLDOWN_SECONDS", "60"))
+VERIFICATION_CODE_MAX_ATTEMPTS = int(os.getenv("VERIFICATION_CODE_MAX_ATTEMPTS", "5"))
 EXPOSE_TEST_VERIFICATION_CODE = _env_bool("EXPOSE_TEST_VERIFICATION_CODE", True)
+
+# Redis 防爆破限制
+USER_LOGIN_LIMIT = int(os.getenv("USER_LOGIN_LIMIT", "5"))
+USER_LOGIN_WINDOW_SECONDS = int(os.getenv("USER_LOGIN_WINDOW_SECONDS", "600"))
+ADMIN_LOGIN_LIMIT = int(os.getenv("ADMIN_LOGIN_LIMIT", "5"))
+ADMIN_LOGIN_WINDOW_SECONDS = int(os.getenv("ADMIN_LOGIN_WINDOW_SECONDS", "900"))
+CODE_PHONE_HOURLY_LIMIT = int(os.getenv("CODE_PHONE_HOURLY_LIMIT", "5"))
+CODE_PHONE_DAILY_LIMIT = int(os.getenv("CODE_PHONE_DAILY_LIMIT", "10"))
+CODE_IP_HOURLY_LIMIT = int(os.getenv("CODE_IP_HOURLY_LIMIT", "20"))
+CODE_VERIFY_IP_HOURLY_LIMIT = int(os.getenv("CODE_VERIFY_IP_HOURLY_LIMIT", "30"))
 
 # 首次启动若无管理员则创建（务必在生产修改）
 ADMIN_BOOTSTRAP_USERNAME = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "admin")
@@ -113,6 +125,8 @@ def validate_security_config() -> None:
     errors: list[str] = []
     if JWT_SECRET in _INSECURE_JWT_SECRETS or len(JWT_SECRET.encode("utf-8")) < 32:
         errors.append("JWT_SECRET 必须是至少 32 字节的随机密钥，且不能使用示例值")
+    if len(RATE_LIMIT_PEPPER.encode("utf-8")) < 32:
+        errors.append("RATE_LIMIT_PEPPER 必须是至少 32 字节的随机密钥")
     if EXPOSE_TEST_VERIFICATION_CODE:
         errors.append("生产环境必须设置 EXPOSE_TEST_VERIFICATION_CODE=0")
     if ADMIN_BOOTSTRAP_USERNAME == "admin":

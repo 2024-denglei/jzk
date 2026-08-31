@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
+import config
 from api.admin_auth import authenticate_admin, create_admin_token, get_current_admin, set_admin_password
 from api.admin_permissions import (
     DONORS_AUDIT_VIEW,
@@ -17,6 +18,7 @@ from api.admin_permissions import (
     permissions_for_role,
     require_permission,
 )
+from api.rate_limit import RateLimitError, RateLimitUnavailable, get_client_ip, rate_limiter
 from core.data_loader import get_donor_display_info
 from core.runtime_cache import refresh_donor_cache, update_donor_status_cache
 from db.donor_import import import_excel_bytes
@@ -32,8 +34,8 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 class AdminLoginBody(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=1, max_length=72)
 
 
 class AdminPasswordBody(BaseModel):
@@ -106,10 +108,37 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/login")
-async def admin_login(body: AdminLoginBody):
+async def admin_login(body: AdminLoginBody, client_ip: str = Depends(get_client_ip)):
+    account = body.username.strip().lower()
+    try:
+        rate_limiter.check(
+            "admin-login:account",
+            account,
+            config.ADMIN_LOGIN_LIMIT,
+            config.ADMIN_LOGIN_WINDOW_SECONDS,
+        )
+        rate_limiter.check(
+            "admin-login:ip",
+            client_ip,
+            config.ADMIN_LOGIN_LIMIT,
+            config.ADMIN_LOGIN_WINDOW_SECONDS,
+        )
+    except RateLimitError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
+    except RateLimitUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     admin = authenticate_admin(body.username, body.password)
     if not admin:
         raise HTTPException(status_code=400, detail="用户名或密码错误")
+    try:
+        rate_limiter.reset("admin-login:account", account)
+    except RateLimitUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     token = create_admin_token(int(admin["id"]), admin["role"])
     return {
         "access_token": token,
