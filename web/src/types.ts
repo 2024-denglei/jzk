@@ -48,13 +48,8 @@ export interface DonorInfo {
   monogenic_disease?: string
   polygenic_disease?: string
   consanguinity?: string
-  semen_test?: string
-  blood_test?: string
-  chromosome_test?: string
-  microbio_test?: string
   specimen_count?: number
-  availability?: string
-  remark?: string
+  status?: string
 }
 
 export interface FieldScore {

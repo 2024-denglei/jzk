@@ -71,7 +71,7 @@ export function DonorCard({ candidate, index = 0 }: { candidate: Candidate; inde
             标本 {d.specimen_count ?? 0} 管
           </div>
           <div className="mt-1 text-[11px] text-ink-soft/40">
-            {d.availability === '可用' || !d.availability ? '可选择' : d.availability}
+            {d.status === 'disabled' ? '已停用' : '可选择'}
           </div>
         </div>
       </div>

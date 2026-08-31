@@ -21,7 +21,7 @@ def test_write_turn_and_feedback(tmp_path, monkeypatch):
     turns = (tmp_path / "turns.jsonl").read_text(encoding="utf-8").strip().splitlines()
     events = (tmp_path / "events.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert json.loads(turns[0])["session_id"] == "s1"
-    assert "semen_test" not in turns[0]
+    assert "status" not in json.loads(turns[0]).get("candidates", [{}])[0].get("attrs", {})
     assert json.loads(events[0])["event"] == "like"
 
 

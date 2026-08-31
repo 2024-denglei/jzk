@@ -17,7 +17,7 @@ def test_slim_candidates_for_sse_keeps_all_rows_but_drops_heavy_fields():
                 "personality": "开朗",
                 "occupation": "工程师",
                 "specimen_count": 3,
-                "availability": "可用",
+                "status": "active",
                 "genetic_history": "机密",
                 "weight": 70,
             },

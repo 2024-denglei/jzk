@@ -12,7 +12,7 @@ from db.donors_repo import load_donors_dataframe, row_to_match_dict
 def load_donor_data(active_only: bool = False) -> pd.DataFrame:
     """从官方库加载捐精人数据（中文列 DataFrame，供匹配使用）。"""
     df = load_donors_dataframe(active_only=active_only)
-    required_cols = ["代号", "ABO血型", "民族", "身高", "学历", "体型", "标本数量", "是否可用"]
+    required_cols = ["代号", "ABO血型", "民族", "身高", "学历", "体型", "标本数量"]
     # 空库允许启动（管理端后续导入）
     if df.empty:
         return df
@@ -67,7 +67,7 @@ CARD_DONOR_KEYS = (
     "personality",
     "occupation",
     "specimen_count",
-    "availability",
+    "status",
 )
 
 
@@ -172,12 +172,6 @@ def get_donor_display_info(row) -> dict:
         "monogenic_disease": _val(data, "单基因遗传病"),
         "polygenic_disease": _val(data, "多基因遗传病"),
         "consanguinity": _val(data, "近亲婚配"),
-        "semen_test": _val(data, "精液检测"),
-        "blood_test": _val(data, "血液检测"),
-        "chromosome_test": _val(data, "染色体检测"),
-        "microbio_test": _val(data, "微生物检测"),
         "specimen_count": int(specimen or 0),
-        "availability": _val(data, "是否可用"),
         "status": _val(data, "状态") or "active",
-        "remark": _val(data, "备注"),
     }

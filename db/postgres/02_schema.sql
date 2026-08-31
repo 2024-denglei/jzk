@@ -74,13 +74,7 @@ CREATE TABLE IF NOT EXISTS donor.donors (
     -- 系统/运营字段
     status              TEXT NOT NULL DEFAULT 'active'
                         CHECK (status IN ('active', 'disabled')),
-    availability        TEXT DEFAULT '可用',
-    specimen_count      INTEGER NOT NULL DEFAULT 0,
-    semen_test          TEXT,
-    blood_test          TEXT,
-    chromosome_test     TEXT,
-    microbio_test       TEXT,
-    remark              TEXT,
+    specimen_count      INTEGER NOT NULL DEFAULT 10,
 
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -89,7 +83,6 @@ CREATE TABLE IF NOT EXISTS donor.donors (
 );
 
 CREATE INDEX IF NOT EXISTS idx_donors_status ON donor.donors (status);
-CREATE INDEX IF NOT EXISTS idx_donors_availability ON donor.donors (availability);
 CREATE INDEX IF NOT EXISTS idx_donors_specimen ON donor.donors (specimen_count DESC);
 
 COMMENT ON TABLE donor.donors IS '捐精人档案主表';

@@ -42,7 +42,7 @@ KEYWORD_FIELDS = (
     "personal_life_hist", "partners_6m", "std_history",
     "marital_fertility", "marriage_age", "children_info",
     "genetic_history", "chromosome_disease", "monogenic_disease",
-    "polygenic_disease", "consanguinity", "availability",
+    "polygenic_disease", "consanguinity",
 )
 
 FIELD_REGISTRY: dict[str, FieldSpec] = {
@@ -71,8 +71,7 @@ for _name in KEYWORD_FIELDS:
     FIELD_REGISTRY[_name] = FieldSpec("keyword", _name)
 
 BLOCKED_FIELDS = frozenset({
-    "code", "serial_no", "status", "semen_test", "blood_test",
-    "chromosome_test", "microbio_test", "remark",
+    "code", "serial_no", "status",
 })
 
 # 给模型看的中文说明；取值来自 FIELD_REGISTRY，不在这里另维护一份枚举。
@@ -124,7 +123,6 @@ FIELD_GUIDE: dict[str, str] = {
     "monogenic_disease": "单基因遗传病",
     "polygenic_disease": "多基因遗传病",
     "consanguinity": "近亲婚配",
-    "availability": "标本是否可用",
 }
 
 

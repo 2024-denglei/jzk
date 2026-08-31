@@ -198,7 +198,7 @@ def upsert_donor(
     if not payload.get("code"):
         raise ValueError("代号不能为空")
     payload.setdefault("status", "active")
-    payload.setdefault("specimen_count", 0)
+    payload.setdefault("specimen_count", 10)
 
     cols = [c for c in DONOR_DB_COLUMNS if c in payload]
     with db_session(admin=True) as conn:

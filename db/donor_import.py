@@ -29,10 +29,8 @@ def dataframe_to_donor_payloads(df: pd.DataFrame) -> list[dict[str, Any]]:
         if not data.get("code"):
             continue
         data.setdefault("status", "active")
-        if data.get("availability") is None:
-            data["availability"] = "可用"
         if data.get("specimen_count") is None:
-            data["specimen_count"] = 0
+            data["specimen_count"] = 10
         payloads.append(data)
     return payloads
 

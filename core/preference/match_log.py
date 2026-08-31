@@ -9,7 +9,7 @@ from typing import Any
 
 import config
 
-_FORBIDDEN = ("semen_test", "blood_test", "chromosome_test", "microbio_test", "remark")
+_FORBIDDEN = ("status", "serial_no", "code")
 
 
 def _log_dir() -> Path:

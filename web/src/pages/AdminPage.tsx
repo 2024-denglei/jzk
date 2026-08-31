@@ -13,7 +13,6 @@ type AdminInfo = {
 type DonorRow = {
   code: string
   status: string
-  availability: string
   specimen_count: number
   education?: string
   ethnicity?: string
@@ -56,7 +55,7 @@ export function AdminPage() {
   const [tab, setTab] = useState<'donors' | 'audit' | 'import'>('donors')
   const [importMsg, setImportMsg] = useState('')
   const [editCode, setEditCode] = useState('')
-  const [editJson, setEditJson] = useState('{\n  "code": "",\n  "abo_blood": "A",\n  "education": "本科",\n  "height_cm": 175,\n  "specimen_count": 3,\n  "availability": "可用",\n  "status": "active"\n}')
+  const [editJson, setEditJson] = useState('{\n  "code": "",\n  "abo_blood": "A",\n  "education": "本科",\n  "height_cm": 175,\n  "specimen_count": 10,\n  "status": "active"\n}')
 
   const loadMe = useCallback(async () => {
     try {

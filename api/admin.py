@@ -81,13 +81,7 @@ class DonorUpsertBody(BaseModel):
     polygenic_disease: str | None = None
     consanguinity: str | None = None
     status: str | None = "active"
-    availability: str | None = "可用"
-    specimen_count: int | None = 0
-    semen_test: str | None = None
-    blood_test: str | None = None
-    chromosome_test: str | None = None
-    microbio_test: str | None = None
-    remark: str | None = None
+    specimen_count: int | None = 10
 
 
 class StatusBody(BaseModel):

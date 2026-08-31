@@ -58,13 +58,7 @@ HEADER_RULES: list[tuple[str, str]] = [
     ("多基因遗传病", "polygenic_disease"),
     ("近亲婚配", "consanguinity"),
     ("编号", "serial_no"),
-    ("精液检测", "semen_test"),
-    ("血液检测", "blood_test"),
-    ("染色体检测", "chromosome_test"),
-    ("微生物检测", "microbio_test"),
     ("标本数量", "specimen_count"),
-    ("是否可用", "availability"),
-    ("备注", "remark"),
 ]
 
 
@@ -164,13 +158,7 @@ DB_TO_MATCH_CN: dict[str, str] = {
     "polygenic_disease": "多基因遗传病",
     "consanguinity": "近亲婚配",
     "status": "状态",
-    "availability": "是否可用",
     "specimen_count": "标本数量",
-    "semen_test": "精液检测",
-    "blood_test": "血液检测",
-    "chromosome_test": "染色体检测",
-    "microbio_test": "微生物检测",
-    "remark": "备注",
 }
 
 DONOR_DB_COLUMNS = [
@@ -223,11 +211,5 @@ DONOR_DB_COLUMNS = [
     "polygenic_disease",
     "consanguinity",
     "status",
-    "availability",
     "specimen_count",
-    "semen_test",
-    "blood_test",
-    "chromosome_test",
-    "microbio_test",
-    "remark",
 ]
