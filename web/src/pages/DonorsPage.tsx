@@ -1,4 +1,4 @@
-import { Fragment, startTransition, useEffect, useState } from 'react'
+import { startTransition, useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../components/ChatPanel'
 import { DonorCard, DonorCardSkeleton } from '../components/DonorCard'
@@ -201,7 +201,10 @@ export function DonorsPage() {
       : items.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE)
   const listTotalPages =
     mode === 'featured' ? totalPages : Math.max(1, Math.ceil(items.length / LIST_PAGE_SIZE))
-  const paginationPages = getPaginationPages(listTotalPages)
+  const paginationPages = getPaginationPages(listTotalPages, page)
+  const showLeadingEllipsis = (paginationPages[0] ?? 2) > 2
+  const showTrailingEllipsis =
+    paginationPages.length > 0 && paginationPages[paginationPages.length - 1] < listTotalPages - 1
 
   function goToPage(targetPage: number) {
     if (targetPage === page || loading) return
@@ -448,32 +451,39 @@ export function DonorsPage() {
                   >
                     首页
                   </button>
-                  {paginationPages.map((pageNumber, index) => (
-                    <Fragment key={pageNumber}>
-                      {index > 0 && pageNumber - paginationPages[index - 1] > 1 && (
-                        <span
-                          aria-hidden="true"
-                          className="flex h-9 min-w-5 items-center justify-center text-[12px] text-ink-soft/45"
-                        >
-                          …
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        disabled={loading}
-                        aria-label={`第 ${pageNumber} 页`}
-                        aria-current={pageNumber === page ? 'page' : undefined}
-                        onClick={() => goToPage(pageNumber)}
-                        className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-35 ${
-                          pageNumber === page
-                            ? 'bg-teal-deep text-white'
-                            : 'border border-line bg-white text-ink-soft/60 hover:border-teal/30 hover:text-teal-deep'
-                        }`}
-                      >
-                        {pageNumber}
-                      </button>
-                    </Fragment>
+                  {showLeadingEllipsis && (
+                    <span
+                      aria-hidden="true"
+                      className="flex h-9 min-w-5 items-center justify-center text-[12px] text-ink-soft/45"
+                    >
+                      …
+                    </span>
+                  )}
+                  {paginationPages.map((pageNumber) => (
+                    <button
+                      key={pageNumber}
+                      type="button"
+                      disabled={loading}
+                      aria-label={`第 ${pageNumber} 页`}
+                      aria-current={pageNumber === page ? 'page' : undefined}
+                      onClick={() => goToPage(pageNumber)}
+                      className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-35 ${
+                        pageNumber === page
+                          ? 'bg-teal-deep text-white'
+                          : 'border border-line bg-white text-ink-soft/60 hover:border-teal/30 hover:text-teal-deep'
+                      }`}
+                    >
+                      {pageNumber}
+                    </button>
                   ))}
+                  {showTrailingEllipsis && (
+                    <span
+                      aria-hidden="true"
+                      className="flex h-9 min-w-5 items-center justify-center text-[12px] text-ink-soft/45"
+                    >
+                      …
+                    </span>
+                  )}
                   <button
                     type="button"
                     disabled={page >= listTotalPages || loading}
