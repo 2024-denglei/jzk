@@ -3,7 +3,7 @@
 import json
 import logging
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 
@@ -103,6 +103,11 @@ SYSTEM_PROMPT = """你是智能生育匹配系统的对话助手。你的职责�
 def create_llm_client() -> OpenAI:
     """创建 LLM 客户端。"""
     return OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
+
+
+def create_async_llm_client() -> AsyncOpenAI:
+    """创建异步 LLM 客户端，供 FastAPI 流式接口使用。"""
+    return AsyncOpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
 
 
 def parse_user_intent(

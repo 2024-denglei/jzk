@@ -26,9 +26,10 @@ def refresh_donor_cache(app) -> dict:
 
         sm = getattr(app.state, "session_manager", None)
         llm = getattr(app.state, "llm_client", None)
+        async_llm = getattr(app.state, "async_llm_client", None)
         if sm is not None:
             inject_chat_deps(sm, encoder, donor_df, llm)
-            inject_stream_deps(sm, encoder, donor_df, llm)
+            inject_stream_deps(sm, encoder, donor_df, async_llm)
     except Exception as e:
         logger.warning("刷新对话依赖时出现问题: %s", e)
 

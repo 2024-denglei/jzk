@@ -276,7 +276,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                         )
                     try:
                         t_llm1 = time.perf_counter()
-                        first = llm_client.chat.completions.create(
+                        first = await llm_client.chat.completions.create(
                             model=LLM_MODEL,
                             messages=messages,
                             tools=[SUBMIT_PROFILE_TOOL],
@@ -448,14 +448,14 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                         try:
                             t_sum = time.perf_counter()
                             first_token_ms = None
-                            stream = llm_client.chat.completions.create(
+                            stream = await llm_client.chat.completions.create(
                                 model=LLM_MODEL,
                                 messages=messages,
                                 temperature=0.3,
                                 max_tokens=600,
                                 stream=True,
                             )
-                            for chunk in stream:
+                            async for chunk in stream:
                                 if await _client_gone():
                                     yield await _abort_and_signal()
                                     return

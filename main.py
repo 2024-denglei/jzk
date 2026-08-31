@@ -16,7 +16,7 @@ import config
 from core.data_loader import load_donor_data
 from core.feature_engine import FeatureEncoder
 from dialogue.session import SessionManager
-from dialogue.nlu import create_llm_client
+from dialogue.nlu import create_async_llm_client, create_llm_client
 from api.chat import router as chat_router, inject_dependencies as inject_chat_deps
 from api.chat_stream import router as stream_router, inject_dependencies as inject_stream_deps
 from api.feedback import router as feedback_router, inject_dependencies as inject_feedback_deps
@@ -76,21 +76,24 @@ async def startup():
     session_manager = SessionManager()
 
     llm_client = None
+    async_llm_client = None
     if config.LLM_API_KEY:
         llm_client = create_llm_client()
+        async_llm_client = create_async_llm_client()
         logger.info(f"LLM 已配置: model={config.LLM_MODEL}, base_url={config.LLM_BASE_URL}")
     else:
         logger.warning("未配置 LLM_API_KEY，对话功能将使用模拟模式")
         llm_client = None
 
     inject_chat_deps(session_manager, encoder, donor_df, llm_client)
-    inject_stream_deps(session_manager, encoder, donor_df, llm_client)
+    inject_stream_deps(session_manager, encoder, donor_df, async_llm_client)
     inject_feedback_deps(session_manager)
 
     app.state.donor_df = donor_df
     app.state.encoder = encoder
     app.state.session_manager = session_manager
     app.state.llm_client = llm_client
+    app.state.async_llm_client = async_llm_client
 
     logger.info("系统启动完成！")
 
