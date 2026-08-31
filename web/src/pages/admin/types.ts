@@ -28,7 +28,7 @@ export type OperationRequestRecord = {
 }
 
 export type AdminActionCount = {
-  source: 'donor' | 'user'
+  source: 'donor' | 'user' | 'admin'
   action: string
   count: number
 }
@@ -39,13 +39,14 @@ export type AdminRecord = AdminInfo & {
   updated_at?: string
   donor_operation_count: number
   user_operation_count: number
+  admin_operation_count: number
   operation_count: number
   last_operation_at?: string | null
   action_counts?: AdminActionCount[]
 }
 
 export type AdminAuditRecord = {
-  source: 'donor' | 'user'
+  source: 'donor' | 'user' | 'admin'
   record_id: number
   action: string
   target_id?: string | null

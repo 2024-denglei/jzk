@@ -44,7 +44,7 @@ export function AdminPage() {
   const allowed = (permission: string) => hasAdminPermission(admin.permissions, permission)
   let content = allowed(ADMIN_PERMISSIONS.dashboardView) ? <DashboardView /> : <ForbiddenView />
   if (adminMatch) content = allowed(ADMIN_PERMISSIONS.adminsView) ? <AdminProfileView adminId={Number(adminMatch[1])} currentAdminId={admin.id} /> : <ForbiddenView />
-  else if (location.pathname.startsWith('/admin/admins')) content = allowed(ADMIN_PERMISSIONS.adminsView) ? <AdminsView currentAdminId={admin.id} /> : <ForbiddenView />
+  else if (location.pathname.startsWith('/admin/admins')) content = allowed(ADMIN_PERMISSIONS.adminsView) ? <AdminsView currentAdminId={admin.id} permissions={admin.permissions} /> : <ForbiddenView />
   else if (location.pathname.startsWith('/admin/requests/review')) content = allowed(ADMIN_PERMISSIONS.requestsReview) ? <RequestsView mode="review" /> : <ForbiddenView />
   else if (location.pathname.startsWith('/admin/requests/mine')) content = allowed(ADMIN_PERMISSIONS.requestsViewOwn) ? <RequestsView mode="mine" /> : <ForbiddenView />
   else if (userMatch) content = allowed(ADMIN_PERMISSIONS.usersView) ? <UserProfileView userId={Number(userMatch[1])} permissions={admin.permissions} /> : <ForbiddenView />

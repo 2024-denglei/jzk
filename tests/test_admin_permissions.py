@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from api import admin as admin_mod
 from api.admin_permissions import (
     ADMINS_VIEW,
+    ADMINS_MANAGE,
     DONORS_VIEW,
     DONORS_WRITE,
     REQUESTS_VIEW_OWN,
@@ -23,12 +24,14 @@ def test_regular_admin_can_view_business_data_and_request_but_not_write():
     assert has_permission(admin, REQUESTS_VIEW_OWN)
     assert not has_permission(admin, DONORS_WRITE)
     assert not has_permission(admin, ADMINS_VIEW)
+    assert not has_permission(admin, ADMINS_MANAGE)
 
 
 def test_super_admin_has_all_permissions():
     permissions = permissions_for_role("super_admin")
     assert DONORS_WRITE in permissions
     assert ADMINS_VIEW in permissions
+    assert ADMINS_MANAGE in permissions
 
 
 def test_permission_dependency_returns_403_for_regular_admin_write():

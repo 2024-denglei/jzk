@@ -23,14 +23,10 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: '操作申请',
-    icon: 'ri-file-list-3-line',
-    items: [{ to: '/admin/requests/mine', label: '我的申请', icon: 'ri-time-line', permission: ADMIN_PERMISSIONS.requestsViewOwn }],
-  },
-  {
     label: '管理员中心',
     icon: 'ri-admin-line',
     items: [
+      { to: '/admin/requests/mine', label: '我的申请', icon: 'ri-time-line', permission: ADMIN_PERMISSIONS.requestsViewOwn },
       { to: '/admin/admins', label: '管理员信息', icon: 'ri-shield-user-line', permission: ADMIN_PERMISSIONS.adminsView },
       { to: '/admin/requests/review', label: '操作审批', icon: 'ri-task-line', permission: ADMIN_PERMISSIONS.requestsReview },
     ],

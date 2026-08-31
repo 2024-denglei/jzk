@@ -10,6 +10,7 @@ export const ADMIN_PERMISSIONS = {
   requestsViewOwn: 'requests:view_own',
   requestsReview: 'requests:review',
   adminsView: 'admins:view',
+  adminsManage: 'admins:manage',
 } as const
 
 export function hasAdminPermission(permissions: readonly string[] | undefined, permission: string): boolean {
@@ -26,4 +27,3 @@ export function firstAllowedAdminPath(permissions: readonly string[] | undefined
   ]
   return candidates.find(([permission]) => hasAdminPermission(permissions, permission))?.[1] || '/admin/forbidden'
 }
-

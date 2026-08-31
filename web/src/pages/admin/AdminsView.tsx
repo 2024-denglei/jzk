@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { adminFetch } from './adminApi'
+import { adminFetch, postAdmin } from './adminApi'
 import { adminPageShellClass } from './adminLayout'
 import { AdminStatus, ErrorNotice, PageHeader, Pagination, StickyTableCard } from './AdminUi'
 import { adminRoleLabel, formatTime } from './adminFormat'
 import type { AdminRecord, PageData } from './types'
+import { ADMIN_PERMISSIONS, hasAdminPermission } from './adminPermissions'
+import { AdminCreateDialog, AdminStateDialog, type AdminCreateValues } from './AdminAccountDialogs'
 
-export function AdminsView({ currentAdminId }: { currentAdminId: number }) {
+export function AdminsView({ currentAdminId, permissions }: { currentAdminId: number; permissions: string[] }) {
   const navigate = useNavigate()
   const [draft, setDraft] = useState('')
   const [query, setQuery] = useState('')
@@ -15,6 +17,11 @@ export function AdminsView({ currentAdminId }: { currentAdminId: number }) {
   const [data, setData] = useState<PageData<AdminRecord>>({ items: [], total: 0, page: 1, page_size: 20 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [stateChange, setStateChange] = useState<{ admin: AdminRecord; action: 'delete' | 'restore' } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const canManage = hasAdminPermission(permissions, ADMIN_PERMISSIONS.adminsManage)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -33,11 +40,33 @@ export function AdminsView({ currentAdminId }: { currentAdminId: number }) {
 
   useEffect(() => { void load() }, [load])
 
+  async function createAdmin(values: AdminCreateValues) {
+    setBusy(true); setError(''); setMessage('')
+    try {
+      await postAdmin('/api/admin/admins', values)
+      setCreateOpen(false); setMessage('管理员账号已创建。'); await load()
+    } catch (err) { setError(err instanceof Error ? err.message : '管理员创建失败') }
+    finally { setBusy(false) }
+  }
+
+  async function changeState(reason: string) {
+    if (!stateChange) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      if (stateChange.action === 'delete') await adminFetch(`/api/admin/admins/${stateChange.admin.id}`, { method: 'DELETE', body: JSON.stringify({ reason }) })
+      else await postAdmin(`/api/admin/admins/${stateChange.admin.id}/restore`, { reason })
+      setMessage(stateChange.action === 'delete' ? '管理员已删除并停止访问。' : '管理员账号已恢复。')
+      setStateChange(null); await load()
+    } catch (err) { setError(err instanceof Error ? err.message : '管理员状态修改失败') }
+    finally { setBusy(false) }
+  }
+
   return (
     <div className={adminPageShellClass()}>
       <div className="shrink-0">
         <PageHeader title="管理员中心" description="按管理员查看账号资料、操作统计和审计记录。" />
         {error ? <ErrorNotice message={error} /> : null}
+        {message ? <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
       </div>
       <StickyTableCard
         toolbar={(
@@ -47,12 +76,13 @@ export function AdminsView({ currentAdminId }: { currentAdminId: number }) {
               <option value="">全部状态</option><option value="active">正常</option><option value="disabled">已停用</option>
             </select>
             <button className="h-9 rounded-lg bg-[#1677ff] px-4 text-xs text-white">查询</button>
+            {canManage ? <button type="button" onClick={() => setCreateOpen(true)} className="h-9 rounded-lg border border-[#9fc7ff] px-4 text-xs text-[#1677ff]">新增管理员</button> : null}
           </form>
         )}
         footer={<Pagination page={page} pageSize={data.page_size} total={data.total} onChange={setPage} />}
       >
-        <table className="w-full min-w-[920px] text-left text-xs">
-          <thead className="sticky top-0 z-10 bg-[#f7f9fc] text-[#667389]"><tr><th className="px-4 py-3 font-medium">管理员</th><th className="px-4 py-3 font-medium">登录账号</th><th className="px-4 py-3 font-medium">角色</th><th className="px-4 py-3 font-medium">状态</th><th className="px-4 py-3 font-medium">档案操作</th><th className="px-4 py-3 font-medium">用户操作</th><th className="px-4 py-3 font-medium">最近操作</th><th className="px-4 py-3 font-medium">操作</th></tr></thead>
+        <table className="w-full min-w-[1040px] text-left text-xs">
+          <thead className="sticky top-0 z-10 bg-[#f7f9fc] text-[#667389]"><tr><th className="px-4 py-3 font-medium">管理员</th><th className="px-4 py-3 font-medium">登录账号</th><th className="px-4 py-3 font-medium">角色</th><th className="px-4 py-3 font-medium">状态</th><th className="px-4 py-3 font-medium">档案操作</th><th className="px-4 py-3 font-medium">用户操作</th><th className="px-4 py-3 font-medium">管理员操作</th><th className="px-4 py-3 font-medium">最近操作</th><th className="px-4 py-3 font-medium">操作</th></tr></thead>
           <tbody className="divide-y divide-[#e5eaf1]">
             {data.items.map((item) => (
               <tr key={item.id} className="hover:bg-[#f8fbff]">
@@ -62,15 +92,18 @@ export function AdminsView({ currentAdminId }: { currentAdminId: number }) {
                 <td className="px-4 py-3"><AdminStatus active={item.is_active} /></td>
                 <td className="px-4 py-3 tabular-nums">{item.donor_operation_count}</td>
                 <td className="px-4 py-3 tabular-nums">{item.user_operation_count}</td>
+                <td className="px-4 py-3 tabular-nums">{item.admin_operation_count}</td>
                 <td className="px-4 py-3 text-[#768397]">{formatTime(item.last_operation_at)}</td>
-                <td className="px-4 py-3"><button type="button" onClick={() => navigate(`/admin/admins/${item.id}`)} className="font-medium text-[#1677ff]">查看详情</button></td>
+                <td className="whitespace-nowrap px-4 py-3"><button type="button" onClick={() => navigate(`/admin/admins/${item.id}`)} className="mr-3 font-medium text-[#1677ff]">查看详情</button>{canManage && item.id !== currentAdminId ? <button type="button" onClick={() => setStateChange({ admin: item, action: item.is_active ? 'delete' : 'restore' })} className={item.is_active ? 'text-rose-600' : 'text-emerald-600'}>{item.is_active ? '删除' : '恢复'}</button> : null}</td>
               </tr>
             ))}
-            {loading ? <tr><td colSpan={8} className="py-16 text-center text-sm text-[#8c98aa]">正在加载管理员信息…</td></tr> : null}
-            {!loading && !data.items.length ? <tr><td colSpan={8} className="py-16 text-center text-sm text-[#9aa5b5]">暂无管理员</td></tr> : null}
+            {loading ? <tr><td colSpan={9} className="py-16 text-center text-sm text-[#8c98aa]">正在加载管理员信息…</td></tr> : null}
+            {!loading && !data.items.length ? <tr><td colSpan={9} className="py-16 text-center text-sm text-[#9aa5b5]">暂无管理员</td></tr> : null}
           </tbody>
         </table>
       </StickyTableCard>
+      {createOpen ? <AdminCreateDialog busy={busy} onClose={() => setCreateOpen(false)} onConfirm={(values) => void createAdmin(values)} /> : null}
+      {stateChange ? <AdminStateDialog admin={stateChange.admin} action={stateChange.action} busy={busy} onClose={() => setStateChange(null)} onConfirm={(reason) => void changeState(reason)} /> : null}
     </div>
   )
 }

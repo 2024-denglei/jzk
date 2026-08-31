@@ -58,7 +58,12 @@ def ensure_schema() -> None:
                     run_sql_file(conn, path)
 
         # 可重复执行的小型迁移，确保已有开发库也能随应用升级。
-        for name in ("05_add_user_phone.sql", "06_add_admin_user_archives.sql", "07_add_operation_requests.sql"):
+        for name in (
+            "05_add_user_phone.sql",
+            "06_add_admin_user_archives.sql",
+            "07_add_operation_requests.sql",
+            "08_add_admin_account_audit.sql",
+        ):
             path = _SCHEMA_DIR / name
             if path.exists():
                 run_sql_file(conn, path)

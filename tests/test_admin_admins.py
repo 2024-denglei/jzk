@@ -5,9 +5,51 @@ import pytest
 from fastapi import HTTPException
 
 from api import admin_admins as admin_admins_mod
+from db import admin_admins_repo
 
 
 ADMIN = {"id": 9, "username": "admin", "display_name": "张管理员"}
+
+
+def test_super_admin_can_create_admin_account(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(admin_admins_mod, "hash_password", lambda password: f"hashed:{password}")
+    monkeypatch.setattr(admin_admins_mod, "create_admin_account", lambda **kwargs: captured.update(kwargs) or {"id": 10, "username": kwargs["username"], "is_active": True})
+    body = admin_admins_mod.AdminCreateBody(username="operator", password="Password1", display_name="运营管理员", role="donor_admin")
+
+    data = asyncio.run(admin_admins_mod.admin_create_admin(body, ADMIN))
+
+    assert data["id"] == 10
+    assert captured["password_hash"] == "hashed:Password1"
+    assert captured["operator_id"] == 9
+
+
+def test_delete_admin_rejects_self_or_last_super(monkeypatch):
+    monkeypatch.setattr(admin_admins_mod, "set_admin_account_active", lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError("不能删除")))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(admin_admins_mod.admin_delete_admin(9, admin_admins_mod.AdminStateBody(reason="账号清理"), ADMIN))
+    assert exc.value.status_code == 409
+
+
+def test_repository_never_disables_current_admin():
+    with pytest.raises(PermissionError, match="当前登录"):
+        admin_admins_repo.set_admin_account_active(9, is_active=False, operator_id=9, reason="账号清理")
+
+
+def test_repository_keeps_at_least_one_active_super_admin(monkeypatch):
+    class Connection:
+        def execute(self, *_args, **_kwargs): return None
+
+    class Session:
+        def __enter__(self): return Connection()
+        def __exit__(self, *_args): return False
+
+    monkeypatch.setattr(admin_admins_repo, "db_session", lambda admin=False: Session())
+    monkeypatch.setattr(admin_admins_repo, "fetchone", lambda *_args, **_kwargs: {"id": 1, "username": "root", "display_name": "Root", "role": "super_admin", "is_active": True})
+    monkeypatch.setattr(admin_admins_repo, "fetchall", lambda *_args, **_kwargs: [{"id": 1}])
+
+    with pytest.raises(PermissionError, match="至少保留一个"):
+        admin_admins_repo.set_admin_account_active(1, is_active=False, operator_id=2, reason="账号清理")
 
 
 def test_admin_center_list_maps_status_and_serializes_profile(monkeypatch):

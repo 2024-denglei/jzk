@@ -16,8 +16,9 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   kick: '强制用户下线',
 }
 
-export function auditActionLabel(action?: string | null, source?: 'donor' | 'user') {
+export function auditActionLabel(action?: string | null, source?: 'donor' | 'user' | 'admin') {
   if (!action) return '—'
+  if (source === 'admin') return { create: '创建管理员', disable: '删除管理员', restore: '恢复管理员' }[action] || action
   if (source === 'user' && action === 'disable') return '停用账号'
   if (source === 'user' && action === 'enable') return '恢复账号'
   return AUDIT_ACTION_LABELS[action] || action

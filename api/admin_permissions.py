@@ -20,6 +20,7 @@ DONORS_AUDIT_VIEW = "donors:audit:view"
 REQUESTS_VIEW_OWN = "requests:view_own"
 REQUESTS_REVIEW = "requests:review"
 ADMINS_VIEW = "admins:view"
+ADMINS_MANAGE = "admins:manage"
 SYSTEM_CACHE_REFRESH = "system:cache_refresh"
 
 ALL_PERMISSIONS = frozenset({
@@ -35,6 +36,7 @@ ALL_PERMISSIONS = frozenset({
     REQUESTS_VIEW_OWN,
     REQUESTS_REVIEW,
     ADMINS_VIEW,
+    ADMINS_MANAGE,
     SYSTEM_CACHE_REFRESH,
 })
 
@@ -67,4 +69,3 @@ def require_permission(permission: str) -> Callable:
         return admin
 
     return dependency
-
