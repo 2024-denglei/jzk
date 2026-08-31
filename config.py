@@ -16,6 +16,16 @@ DATABASE_URL = os.getenv(
 # 管理端可选用独立角色；未设置时回退 DATABASE_URL
 DATABASE_ADMIN_URL = os.getenv("DATABASE_ADMIN_URL", "") or DATABASE_URL
 
+# Redis 手机验证码（测试阶段会把验证码直接返回给客户端）
+REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+VERIFICATION_CODE_TTL_SECONDS = int(os.getenv("VERIFICATION_CODE_TTL_SECONDS", "300"))
+VERIFICATION_CODE_COOLDOWN_SECONDS = int(os.getenv("VERIFICATION_CODE_COOLDOWN_SECONDS", "60"))
+EXPOSE_TEST_VERIFICATION_CODE = os.getenv("EXPOSE_TEST_VERIFICATION_CODE", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+
 # 首次启动若无管理员则创建（务必在生产修改）
 ADMIN_BOOTSTRAP_USERNAME = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "admin")
 ADMIN_BOOTSTRAP_PASSWORD = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "Admin@ChangeMe1")

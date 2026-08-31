@@ -75,7 +75,9 @@ export function UserPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 md:px-6">
       <h1 className="font-display text-3xl font-bold text-ink">用户中心</h1>
-      <p className="mt-1 text-sm text-ink-soft/60">{user.email}</p>
+      <p className="mt-1 text-sm text-ink-soft/60">
+        {user.email}{user.phone ? ` · ${user.phone}` : ''}
+      </p>
 
       <div className="mt-6 flex flex-wrap gap-2">
         {tabs.map((t) => (

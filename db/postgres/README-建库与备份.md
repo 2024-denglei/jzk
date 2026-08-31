@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-交付一套 **PostgreSQL** 官方库 `jzk`，按 schema 分域：
+交付一套 **PostgreSQL** 官方库 `jzk`，并使用 Redis 保存短期手机验证码。PostgreSQL 按 schema 分域：
 
 | Schema | 用途 |
 |--------|------|
@@ -23,6 +23,7 @@ docker compose up -d
 
 ```
 DATABASE_URL=postgresql://postgres:jzk_dev_change_me@127.0.0.1:5432/jzk
+REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
 应用角色（可选拆分）：
@@ -32,7 +33,7 @@ DATABASE_URL=postgresql://jzk_app:jzk_app_dev@127.0.0.1:5432/jzk
 DATABASE_ADMIN_URL=postgresql://jzk_admin_api:jzk_admin_dev@127.0.0.1:5432/jzk
 ```
 
-首次启动应用会自动确保 schema 可用，并在无管理员时创建默认 `super_admin`（用户名/密码见环境变量 `ADMIN_BOOTSTRAP_*`）。
+首次启动应用会自动确保 schema 和已有数据库的手机号迁移可用，并在无管理员时创建默认 `super_admin`（用户名/密码见环境变量 `ADMIN_BOOTSTRAP_*`）。测试阶段设置 `EXPOSE_TEST_VERIFICATION_CODE=1`，验证码会直接返回客户端；接入真实短信后应关闭。
 
 ## 3. 政务侧新建库步骤
 
@@ -54,6 +55,7 @@ CREATE DATABASE jzk
 - `01_init_db.sql`
 - `02_schema.sql`
 - 修改 `03_roles.sql` 中的默认密码后执行（或手工 `CREATE ROLE ... PASSWORD`）
+- 已有数据库升级时执行 `05_add_user_phone.sql`
 
 4. 将连接串交给应用（建议应用使用 `jzk_app` / 管理端使用 `jzk_admin_api`；`jzk_migrator` 仅部署窗口启用）。
 

@@ -80,6 +80,7 @@ export interface Candidate {
 export interface User {
   id: number
   email: string
+  phone: string | null
   nickname: string
   created_at: string
 }

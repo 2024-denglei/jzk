@@ -115,6 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON donor.audit_logs (created_at DES
 CREATE TABLE IF NOT EXISTS app.users (
     id              BIGSERIAL PRIMARY KEY,
     email           TEXT NOT NULL UNIQUE,
+    phone           TEXT UNIQUE,
     password_hash   TEXT NOT NULL,
     nickname        TEXT NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()

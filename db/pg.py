@@ -51,9 +51,14 @@ def ensure_schema() -> None:
             ) AS ok
             """
         ).fetchone()
-        if row and row["ok"]:
-            return
-        for name in ("01_init_db.sql", "02_schema.sql", "03_roles.sql"):
+        if not (row and row["ok"]):
+            for name in ("01_init_db.sql", "02_schema.sql", "03_roles.sql"):
+                path = _SCHEMA_DIR / name
+                if path.exists():
+                    run_sql_file(conn, path)
+
+        # 可重复执行的小型迁移，确保已有开发库也能随应用升级。
+        for name in ("05_add_user_phone.sql",):
             path = _SCHEMA_DIR / name
             if path.exists():
                 run_sql_file(conn, path)

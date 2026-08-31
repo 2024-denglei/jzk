@@ -5,8 +5,9 @@ import type { User } from '../types'
 interface AuthContextValue {
   user: User | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, nickname?: string) => Promise<void>
+  login: (identifier: string, password: string) => Promise<void>
+  loginWithCode: (phone: string, code: string) => Promise<void>
+  register: (email: string, phone: string, password: string, code: string, nickname?: string) => Promise<void>
   logout: () => void
   refresh: () => Promise<void>
   updateNickname: (nickname: string) => Promise<void>
@@ -40,21 +41,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh()
   }, [refresh])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await api.post<{ access_token: string; user: User }>('/api/auth/login', { email, password })
+  const acceptLogin = useCallback((data: { access_token: string; user: User }) => {
     setToken(data.access_token)
     setUser(data.user)
   }, [])
 
-  const register = useCallback(async (email: string, password: string, nickname = '') => {
+  const login = useCallback(async (identifier: string, password: string) => {
+    const data = await api.post<{ access_token: string; user: User }>('/api/auth/login', { identifier, password })
+    acceptLogin(data)
+  }, [acceptLogin])
+
+  const loginWithCode = useCallback(async (phone: string, code: string) => {
+    const data = await api.post<{ access_token: string; user: User }>('/api/auth/phone-login', { phone, code })
+    acceptLogin(data)
+  }, [acceptLogin])
+
+  const register = useCallback(async (email: string, phone: string, password: string, code: string, nickname = '') => {
     const data = await api.post<{ access_token: string; user: User }>('/api/auth/register', {
       email,
+      phone,
       password,
+      code,
       nickname,
     })
-    setToken(data.access_token)
-    setUser(data.user)
-  }, [])
+    acceptLogin(data)
+  }, [acceptLogin])
 
   const logout = useCallback(() => {
     setToken(null)
@@ -67,8 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout, refresh, updateNickname }),
-    [user, loading, login, register, logout, refresh, updateNickname],
+    () => ({ user, loading, login, loginWithCode, register, logout, refresh, updateNickname }),
+    [user, loading, login, loginWithCode, register, logout, refresh, updateNickname],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
