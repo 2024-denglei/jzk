@@ -8,6 +8,15 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from api.admin_auth import authenticate_admin, create_admin_token, get_current_admin, set_admin_password
+from api.admin_permissions import (
+    DONORS_AUDIT_VIEW,
+    DONORS_IMPORT,
+    DONORS_VIEW,
+    DONORS_WRITE,
+    SYSTEM_CACHE_REFRESH,
+    permissions_for_role,
+    require_permission,
+)
 from core.data_loader import get_donor_display_info
 from core.runtime_cache import refresh_donor_cache, update_donor_status_cache
 from db.donor_import import import_excel_bytes
@@ -110,6 +119,7 @@ async def admin_login(body: AdminLoginBody):
             "username": admin["username"],
             "display_name": admin["display_name"],
             "role": admin["role"],
+            "permissions": permissions_for_role(admin["role"]),
         },
     }
 
@@ -121,6 +131,7 @@ async def admin_me(admin: dict = Depends(get_current_admin)):
         "username": admin["username"],
         "display_name": admin["display_name"],
         "role": admin["role"],
+        "permissions": permissions_for_role(admin["role"]),
     }
 
 
@@ -136,7 +147,7 @@ async def admin_list_donors(
     status: str | None = None,
     page: int = 1,
     page_size: int = 20,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(DONORS_VIEW)),
 ):
     rows, total = list_donors(q=q, status=status, page=page, page_size=page_size)
     return {
@@ -148,7 +159,7 @@ async def admin_list_donors(
 
 
 @router.get("/donors/{code}")
-async def admin_get_donor(code: str, admin: dict = Depends(get_current_admin)):
+async def admin_get_donor(code: str, admin: dict = Depends(require_permission(DONORS_VIEW))):
     row = get_donor_by_code(code)
     if not row:
         raise HTTPException(status_code=404, detail="未找到该捐献者")
@@ -159,7 +170,7 @@ async def admin_get_donor(code: str, admin: dict = Depends(get_current_admin)):
 async def admin_create_donor(
     body: DonorUpsertBody,
     request: Request,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(DONORS_WRITE)),
 ):
     try:
         row = upsert_donor(body.model_dump(), operator_id=int(admin["id"]), action="create")
@@ -174,7 +185,7 @@ async def admin_update_donor(
     code: str,
     body: DonorUpsertBody,
     request: Request,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(DONORS_WRITE)),
 ):
     data = body.model_dump()
     data["code"] = code
@@ -191,7 +202,7 @@ async def admin_set_status(
     code: str,
     body: StatusBody,
     request: Request,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(DONORS_WRITE)),
 ):
     try:
         row = set_donor_status(code, body.status, int(admin["id"]))
@@ -208,7 +219,7 @@ async def admin_set_status(
 async def admin_import_donors(
     request: Request,
     file: UploadFile = File(...),
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(DONORS_IMPORT)),
 ):
     content = await file.read()
     if not content:
@@ -223,7 +234,7 @@ async def admin_audit(
     page: int = 1,
     page_size: int = 50,
     donor_code: str | None = None,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(DONORS_AUDIT_VIEW)),
 ):
     rows, total = list_audit(page=page, page_size=page_size, donor_code=donor_code)
     items = []
@@ -233,5 +244,5 @@ async def admin_audit(
 
 
 @router.post("/cache/refresh")
-async def admin_refresh_cache(request: Request, admin: dict = Depends(get_current_admin)):
+async def admin_refresh_cache(request: Request, admin: dict = Depends(require_permission(SYSTEM_CACHE_REFRESH))):
     return refresh_donor_cache(request.app)

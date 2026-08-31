@@ -6,10 +6,11 @@ import { ErrorNotice, PageHeader, Pagination, StatusBadge, StickyTableCard } fro
 import { formatTime } from './adminFormat'
 import { UserControlDialog, type UserControlAction } from './UserControlDialog'
 import type { PageData, UserArchive, UserSummary } from './types'
+import { ADMIN_PERMISSIONS, hasAdminPermission } from './adminPermissions'
 
 const EMPTY_SUMMARY: UserSummary = { total: 0, active: 0, disabled: 0, today_new: 0 }
 
-export function UsersView() {
+export function UsersView({ permissions }: { permissions: string[] }) {
   const navigate = useNavigate()
   const [summary, setSummary] = useState<UserSummary>(EMPTY_SUMMARY)
   const [data, setData] = useState<PageData<UserArchive>>({ items: [], total: 0, page: 1, page_size: 20 })
@@ -21,6 +22,9 @@ export function UsersView() {
   const [error, setError] = useState('')
   const [control, setControl] = useState<{ user: UserArchive; action: UserControlAction } | null>(null)
   const [controlBusy, setControlBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const canControl = hasAdminPermission(permissions, ADMIN_PERMISSIONS.usersControl)
+  const canRequest = hasAdminPermission(permissions, ADMIN_PERMISSIONS.usersControlRequest)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -50,10 +54,13 @@ export function UsersView() {
     if (!control) return
     setControlBusy(true)
     setError('')
+    setMessage('')
     try {
-      await postAdmin(`/api/admin/users/${control.user.id}/${control.action}`, { reason })
+      if (canControl) await postAdmin(`/api/admin/users/${control.user.id}/${control.action}`, { reason })
+      else await postAdmin('/api/admin/requests', { action: `user_${control.action}`, target_id: String(control.user.id), payload: {}, reason })
+      setMessage(canControl ? '用户账号操作已完成。' : '操作申请已提交，等待超级管理员审核。')
       setControl(null)
-      await load()
+      if (canControl) await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败')
     } finally {
@@ -73,6 +80,7 @@ export function UsersView() {
       <div className="shrink-0">
         <PageHeader title="用户档案" description="统一查看用户资料、账号状态、收藏、浏览历史和 AI 会话记录。" />
         {error ? <ErrorNotice message={error} /> : null}
+        {message ? <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map((card) => (
             <div key={card.label} className="rounded-xl border border-[#dce4ee] bg-white p-4">
@@ -150,10 +158,10 @@ export function UsersView() {
                 <td className="px-4 py-3"><StatusBadge status={user.status} /></td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <button onClick={() => navigate(`/admin/users/${user.id}`)} className="mr-3 text-[#1677ff]">查看</button>
-                  <button onClick={() => setControl({ user, action: 'kick' })} className="mr-3 text-amber-600">下线</button>
-                  <button onClick={() => setControl({ user, action: user.status === 'active' ? 'disable' : 'enable' })} className={user.status === 'active' ? 'text-rose-600' : 'text-emerald-600'}>
-                    {user.status === 'active' ? '停用' : '恢复'}
-                  </button>
+                  {(canControl || canRequest) ? <button onClick={() => setControl({ user, action: 'kick' })} className="mr-3 text-amber-600">{canControl ? '下线' : '申请下线'}</button> : null}
+                  {(canControl || canRequest) ? <button onClick={() => setControl({ user, action: user.status === 'active' ? 'disable' : 'enable' })} className={user.status === 'active' ? 'text-rose-600' : 'text-emerald-600'}>
+                    {canControl ? '' : '申请'}{user.status === 'active' ? '停用' : '恢复'}
+                  </button> : null}
                 </td>
               </tr>
             ))}
@@ -168,6 +176,7 @@ export function UsersView() {
           action={control.action}
           userName={`${control.user.nickname || '用户'}（UID ${control.user.id}）`}
           busy={controlBusy}
+          requestMode={!canControl}
           onClose={() => setControl(null)}
           onConfirm={(reason) => void confirmControl(reason)}
         />

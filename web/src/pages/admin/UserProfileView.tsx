@@ -7,6 +7,7 @@ import { EmptyState, ErrorNotice, Pagination, StatusBadge } from './AdminUi'
 import { formatTime } from './adminFormat'
 import { UserControlDialog, type UserControlAction } from './UserControlDialog'
 import type { ChatDetail, ChatRecord, FavoriteRecord, HistoryRecord, PageData, UserArchive, UserAuditRecord } from './types'
+import { ADMIN_PERMISSIONS, hasAdminPermission } from './adminPermissions'
 
 type Tab = 'overview' | 'favorites' | 'history' | 'chats' | 'audit'
 
@@ -20,7 +21,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
 
 const EMPTY_PAGE = { items: [], total: 0, page: 1, page_size: 20 }
 
-export function UserProfileView({ userId }: { userId: number }) {
+export function UserProfileView({ userId, permissions }: { userId: number; permissions: string[] }) {
   const navigate = useNavigate()
   const [user, setUser] = useState<UserArchive | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
@@ -37,6 +38,8 @@ export function UserProfileView({ userId }: { userId: number }) {
   const [success, setSuccess] = useState('')
   const [control, setControl] = useState<UserControlAction | null>(null)
   const [controlBusy, setControlBusy] = useState(false)
+  const canControl = hasAdminPermission(permissions, ADMIN_PERMISSIONS.usersControl)
+  const canRequest = hasAdminPermission(permissions, ADMIN_PERMISSIONS.usersControlRequest)
 
   const loadProfile = useCallback(async () => {
     setLoading(true)
@@ -96,15 +99,18 @@ export function UserProfileView({ userId }: { userId: number }) {
     setError('')
     setSuccess('')
     try {
-      await postAdmin(`/api/admin/users/${userId}/${control}`, { reason })
-      setSuccess({
+      if (canControl) await postAdmin(`/api/admin/users/${userId}/${control}`, { reason })
+      else await postAdmin('/api/admin/requests', { action: `user_${control}`, target_id: String(userId), payload: {}, reason })
+      setSuccess(canControl ? ({
         kick: '已强制用户下线：现有登录令牌已失效，下一次请求会要求重新登录。',
         disable: '账号已停用：现有登录令牌已失效，并且恢复前无法再次登录。',
         enable: '账号已恢复：用户现在可以重新登录，停用前的旧令牌仍不可使用。',
-      }[control])
+      }[control]) : '操作申请已提交，等待超级管理员审核。')
       setControl(null)
-      await loadProfile()
-      if (tab === 'audit') await loadTab()
+      if (canControl) {
+        await loadProfile()
+        if (tab === 'audit') await loadTab()
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败')
     } finally {
@@ -137,10 +143,10 @@ export function UserProfileView({ userId }: { userId: number }) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => { setSuccess(''); setControl('kick') }} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700"><i className="ri-logout-box-r-line mr-1" />强制下线</button>
-              <button onClick={() => { setSuccess(''); setControl(user.status === 'active' ? 'disable' : 'enable') }} className={`rounded-lg px-3 py-2 text-xs text-white ${user.status === 'active' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
-                <i className={`${user.status === 'active' ? 'ri-user-unfollow-line' : 'ri-user-follow-line'} mr-1`} />{user.status === 'active' ? '停用账号' : '恢复账号'}
-              </button>
+              {(canControl || canRequest) ? <button onClick={() => { setSuccess(''); setControl('kick') }} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700"><i className="ri-logout-box-r-line mr-1" />{canControl ? '强制下线' : '申请下线'}</button> : null}
+              {(canControl || canRequest) ? <button onClick={() => { setSuccess(''); setControl(user.status === 'active' ? 'disable' : 'enable') }} className={`rounded-lg px-3 py-2 text-xs text-white ${user.status === 'active' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
+                <i className={`${user.status === 'active' ? 'ri-user-unfollow-line' : 'ri-user-follow-line'} mr-1`} />{canControl ? '' : '申请'}{user.status === 'active' ? '停用账号' : '恢复账号'}
+              </button> : null}
             </div>
           </div>
           <div className="mt-5 grid gap-3 border-t border-[#e5eaf1] pt-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -234,7 +240,7 @@ export function UserProfileView({ userId }: { userId: number }) {
         </div>
       </section>
 
-      {control ? <UserControlDialog action={control} userName={`${user.nickname || '用户'}（UID ${user.id}）`} busy={controlBusy} onClose={() => setControl(null)} onConfirm={(reason) => void confirmControl(reason)} /> : null}
+      {control ? <UserControlDialog action={control} userName={`${user.nickname || '用户'}（UID ${user.id}）`} busy={controlBusy} requestMode={!canControl} onClose={() => setControl(null)} onConfirm={(reason) => void confirmControl(reason)} /> : null}
     </div>
   )
 }

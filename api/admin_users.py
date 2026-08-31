@@ -8,7 +8,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from api.admin_auth import get_current_admin
+from api.admin_permissions import USERS_CONTROL, USERS_VIEW, require_permission
 from db.admin_users_repo import (
     control_user,
     get_user_chat,
@@ -69,7 +69,7 @@ def _page(items: list[dict[str, Any]], total: int, page: int, page_size: int):
 
 
 @router.get("/summary")
-async def admin_user_summary(admin: dict = Depends(get_current_admin)):
+async def admin_user_summary(admin: dict = Depends(require_permission(USERS_VIEW))):
     return get_user_summary()
 
 
@@ -81,7 +81,7 @@ async def admin_list_users(
     created_to: date | None = None,
     page: int = 1,
     page_size: int = 20,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
     rows, total = list_users(
         q=q,
@@ -100,7 +100,7 @@ async def admin_list_users(
 
 
 @router.get("/{user_id}")
-async def admin_get_user(user_id: int, admin: dict = Depends(get_current_admin)):
+async def admin_get_user(user_id: int, admin: dict = Depends(require_permission(USERS_VIEW))):
     row = get_user_profile(user_id)
     if not row:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -112,7 +112,7 @@ async def admin_user_favorites(
     user_id: int,
     page: int = 1,
     page_size: int = 20,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
     rows, total, page, page_size = list_user_favorites(user_id, page, page_size)
     return _page(rows, total, page, page_size)
@@ -124,7 +124,7 @@ async def admin_user_history(
     kind: Literal["browse", "search", "match"] | None = None,
     page: int = 1,
     page_size: int = 20,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
     rows, total, page, page_size = list_user_history(user_id, kind, page, page_size)
     return _page(rows, total, page, page_size)
@@ -135,7 +135,7 @@ async def admin_user_chats(
     user_id: int,
     page: int = 1,
     page_size: int = 20,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
     rows, total, page, page_size = list_user_chats(user_id, page, page_size)
     return _page(rows, total, page, page_size)
@@ -145,7 +145,7 @@ async def admin_user_chats(
 async def admin_user_chat(
     user_id: int,
     chat_id: int,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
     row = get_user_chat(user_id, chat_id, int(admin["id"]))
     if not row:
@@ -158,7 +158,7 @@ async def admin_user_audit(
     user_id: int,
     page: int = 1,
     page_size: int = 20,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
     rows, total, page, page_size = list_user_audit(user_id, page, page_size)
     return _page(rows, total, page, page_size)
@@ -176,7 +176,7 @@ async def _control(user_id: int, action: str, body: UserControlBody, admin: dict
 async def admin_kick_user(
     user_id: int,
     body: UserControlBody,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_CONTROL)),
 ):
     return await _control(user_id, "kick", body, admin)
 
@@ -185,7 +185,7 @@ async def admin_kick_user(
 async def admin_disable_user(
     user_id: int,
     body: UserControlBody,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_CONTROL)),
 ):
     return await _control(user_id, "disable", body, admin)
 
@@ -194,6 +194,6 @@ async def admin_disable_user(
 async def admin_enable_user(
     user_id: int,
     body: UserControlBody,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(USERS_CONTROL)),
 ):
     return await _control(user_id, "enable", body, admin)

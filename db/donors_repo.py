@@ -193,6 +193,8 @@ def upsert_donor(
     *,
     operator_id: int | None = None,
     action: str = "upsert",
+    expected_updated_at: str | None = None,
+    must_create: bool = False,
 ) -> dict[str, Any]:
     payload = _clean_payload(data)
     if not payload.get("code"):
@@ -202,8 +204,12 @@ def upsert_donor(
 
     cols = [c for c in DONOR_DB_COLUMNS if c in payload]
     with db_session(admin=True) as conn:
-        existing = fetchone(conn, "SELECT * FROM donor.donors WHERE code = %s", (payload["code"],))
+        existing = fetchone(conn, "SELECT * FROM donor.donors WHERE code = %s FOR UPDATE", (payload["code"],))
         if existing:
+            if must_create:
+                raise ValueError("目标档案已被创建，请重新提交申请")
+            if expected_updated_at is not None and _jsonable(existing.get("updated_at")) != expected_updated_at:
+                raise ValueError("目标数据在申请后已发生变化，请重新提交申请")
             sets = ", ".join(f"{c} = %s" for c in cols if c != "code")
             vals = [payload[c] for c in cols if c != "code"]
             vals.extend([operator_id, payload["code"]])
@@ -251,13 +257,21 @@ def upsert_donor(
         return row
 
 
-def set_donor_status(code: str, status: str, operator_id: int | None) -> dict[str, Any]:
+def set_donor_status(
+    code: str,
+    status: str,
+    operator_id: int | None,
+    *,
+    expected_updated_at: str | None = None,
+) -> dict[str, Any]:
     if status not in ("active", "disabled"):
         raise ValueError("status 必须为 active 或 disabled")
     with db_session(admin=True) as conn:
-        before = fetchone(conn, "SELECT * FROM donor.donors WHERE code = %s", (code,))
+        before = fetchone(conn, "SELECT * FROM donor.donors WHERE code = %s FOR UPDATE", (code,))
         if not before:
             raise KeyError(code)
+        if expected_updated_at is not None and _jsonable(before.get("updated_at")) != expected_updated_at:
+            raise ValueError("目标数据在申请后已发生变化，请重新提交申请")
         conn.execute(
             """
             UPDATE donor.donors

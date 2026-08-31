@@ -8,10 +8,11 @@ const ACTIONS: Record<UserControlAction, { title: string; description: string; b
   enable: { title: '恢复用户账号', description: '恢复后用户可以重新登录，已有旧凭证不会自动恢复。', button: '确认恢复' },
 }
 
-export function UserControlDialog({ action, userName, busy, onClose, onConfirm }: {
+export function UserControlDialog({ action, userName, busy, requestMode = false, onClose, onConfirm }: {
   action: UserControlAction
   userName: string
   busy: boolean
+  requestMode?: boolean
   onClose: () => void
   onConfirm: (reason: string) => void
 }) {
@@ -25,12 +26,12 @@ export function UserControlDialog({ action, userName, busy, onClose, onConfirm }
             <i className="ri-error-warning-line text-xl" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-[#17263c]">{copy.title}</h2>
-            <p className="mt-1 text-xs leading-5 text-[#6f7c90]">用户：{userName}。{copy.description}</p>
+            <h2 className="text-base font-semibold text-[#17263c]">{requestMode ? `申请${copy.title}` : copy.title}</h2>
+            <p className="mt-1 text-xs leading-5 text-[#6f7c90]">用户：{userName}。{copy.description}{requestMode ? ' 超级管理员批准后系统将自动执行。' : ''}</p>
           </div>
         </div>
         <label className="mt-5 block text-xs font-medium text-[#34445b]">
-          操作原因
+          {requestMode ? '申请理由' : '操作原因'}
           <textarea
             autoFocus
             value={reason}
@@ -46,7 +47,7 @@ export function UserControlDialog({ action, userName, busy, onClose, onConfirm }
             onClick={() => onConfirm(reason.trim())}
             className={`rounded-lg px-4 py-2 text-xs font-medium text-white disabled:opacity-45 ${action === 'disable' ? 'bg-red-600' : 'bg-[#1677ff]'}`}
           >
-            {busy ? '处理中…' : copy.button}
+            {busy ? '处理中…' : requestMode ? '提交申请' : copy.button}
           </button>
         </div>
       </div>

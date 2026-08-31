@@ -10,6 +10,8 @@ import { ImportView } from './admin/ImportView'
 import type { AdminInfo } from './admin/types'
 import { UserProfileView } from './admin/UserProfileView'
 import { UsersView } from './admin/UsersView'
+import { RequestsView } from './admin/RequestsView'
+import { ADMIN_PERMISSIONS, firstAllowedAdminPath, hasAdminPermission } from './admin/adminPermissions'
 
 export function AdminPage() {
   const location = useLocation()
@@ -35,20 +37,27 @@ export function AdminPage() {
 
   if (checking) return <div className="flex min-h-screen items-center justify-center bg-[#f3f6fa] text-sm text-[#718096]">正在验证管理员身份…</div>
   if (!admin) return <AdminLogin onSuccess={setAdmin} />
-  if (location.pathname === '/admin' || location.pathname === '/admin/') return <Navigate to="/admin/dashboard" replace />
+  if (location.pathname === '/admin' || location.pathname === '/admin/') return <Navigate to={firstAllowedAdminPath(admin.permissions)} replace />
 
   const userMatch = location.pathname.match(/^\/admin\/users\/(\d+)$/)
   const adminMatch = location.pathname.match(/^\/admin\/admins\/(\d+)$/)
-  let content = <DashboardView />
-  if (adminMatch) content = <AdminProfileView adminId={Number(adminMatch[1])} currentAdminId={admin.id} />
-  else if (location.pathname.startsWith('/admin/admins')) content = <AdminsView currentAdminId={admin.id} />
-  else if (userMatch) content = <UserProfileView userId={Number(userMatch[1])} />
-  else if (location.pathname.startsWith('/admin/users')) content = <UsersView />
-  else if (location.pathname.startsWith('/admin/donors')) content = <DonorsView />
-  else if (location.pathname.startsWith('/admin/import')) content = <ImportView />
+  const allowed = (permission: string) => hasAdminPermission(admin.permissions, permission)
+  let content = allowed(ADMIN_PERMISSIONS.dashboardView) ? <DashboardView /> : <ForbiddenView />
+  if (adminMatch) content = allowed(ADMIN_PERMISSIONS.adminsView) ? <AdminProfileView adminId={Number(adminMatch[1])} currentAdminId={admin.id} /> : <ForbiddenView />
+  else if (location.pathname.startsWith('/admin/admins')) content = allowed(ADMIN_PERMISSIONS.adminsView) ? <AdminsView currentAdminId={admin.id} /> : <ForbiddenView />
+  else if (location.pathname.startsWith('/admin/requests/review')) content = allowed(ADMIN_PERMISSIONS.requestsReview) ? <RequestsView mode="review" /> : <ForbiddenView />
+  else if (location.pathname.startsWith('/admin/requests/mine')) content = allowed(ADMIN_PERMISSIONS.requestsViewOwn) ? <RequestsView mode="mine" /> : <ForbiddenView />
+  else if (userMatch) content = allowed(ADMIN_PERMISSIONS.usersView) ? <UserProfileView userId={Number(userMatch[1])} permissions={admin.permissions} /> : <ForbiddenView />
+  else if (location.pathname.startsWith('/admin/users')) content = allowed(ADMIN_PERMISSIONS.usersView) ? <UsersView permissions={admin.permissions} /> : <ForbiddenView />
+  else if (location.pathname.startsWith('/admin/donors')) content = allowed(ADMIN_PERMISSIONS.donorsView) ? <DonorsView permissions={admin.permissions} /> : <ForbiddenView />
+  else if (location.pathname.startsWith('/admin/import')) content = allowed(ADMIN_PERMISSIONS.donorsImport) ? <ImportView /> : <ForbiddenView />
   else if (location.pathname.startsWith('/admin/audit')) content = <Navigate to="/admin/admins" replace />
 
   return <AdminShell admin={admin} onLogout={() => { localStorage.removeItem(ADMIN_TOKEN_KEY); setAdmin(null) }}>{content}</AdminShell>
+}
+
+function ForbiddenView() {
+  return <div className="flex min-h-[60vh] items-center justify-center"><div className="text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600"><i className="ri-lock-line text-xl" /></div><h1 className="mt-4 text-lg font-semibold text-[#24344b]">无权访问该页面</h1><p className="mt-2 text-xs text-[#7d899a]">当前管理员账号没有所需权限。</p></div></div>
 }
 
 function AdminLogin({ onSuccess }: { onSuccess: (admin: AdminInfo) => void }) {

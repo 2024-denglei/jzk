@@ -1,36 +1,47 @@
 import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { AdminInfo } from './types'
+import { ADMIN_PERMISSIONS, hasAdminPermission } from './adminPermissions'
 
 const NAV_SECTIONS = [
   {
     label: '总览',
     icon: 'ri-layout-grid-line',
-    items: [{ to: '/admin/dashboard', label: '工作台', icon: 'ri-dashboard-line' }],
+    items: [{ to: '/admin/dashboard', label: '工作台', icon: 'ri-dashboard-line', permission: ADMIN_PERMISSIONS.dashboardView }],
   },
   {
     label: '用户管理',
     icon: 'ri-user-settings-line',
-    items: [{ to: '/admin/users', label: '用户档案', icon: 'ri-user-3-line' }],
+    items: [{ to: '/admin/users', label: '用户档案', icon: 'ri-user-3-line', permission: ADMIN_PERMISSIONS.usersView }],
   },
   {
     label: '捐精人管理',
     icon: 'ri-folder-user-line',
     items: [
-      { to: '/admin/donors', label: '捐精人档案', icon: 'ri-archive-line' },
-      { to: '/admin/import', label: 'Excel 导入', icon: 'ri-file-upload-line' },
+      { to: '/admin/donors', label: '捐精人档案', icon: 'ri-archive-line', permission: ADMIN_PERMISSIONS.donorsView },
+      { to: '/admin/import', label: 'Excel 导入', icon: 'ri-file-upload-line', permission: ADMIN_PERMISSIONS.donorsImport },
     ],
+  },
+  {
+    label: '操作申请',
+    icon: 'ri-file-list-3-line',
+    items: [{ to: '/admin/requests/mine', label: '我的申请', icon: 'ri-time-line', permission: ADMIN_PERMISSIONS.requestsViewOwn }],
   },
   {
     label: '管理员中心',
     icon: 'ri-admin-line',
-    items: [{ to: '/admin/admins', label: '管理员信息', icon: 'ri-shield-user-line' }],
+    items: [
+      { to: '/admin/admins', label: '管理员信息', icon: 'ri-shield-user-line', permission: ADMIN_PERMISSIONS.adminsView },
+      { to: '/admin/requests/review', label: '操作审批', icon: 'ri-task-line', permission: ADMIN_PERMISSIONS.requestsReview },
+    ],
   },
 ]
 
-const NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items)
-
 export function AdminShell({ admin, children, onLogout }: { admin: AdminInfo; children: ReactNode; onLogout: () => void }) {
+  const navSections = NAV_SECTIONS
+    .map((section) => ({ ...section, items: section.items.filter((item) => hasAdminPermission(admin.permissions, item.permission)) }))
+    .filter((section) => section.items.length)
+  const navItems = navSections.flatMap((section) => section.items)
   return (
     <div className="min-h-screen bg-[#f3f6fa] text-[#132238]">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[218px] flex-col bg-[#142641] text-white lg:flex">
@@ -42,7 +53,7 @@ export function AdminShell({ admin, children, onLogout }: { admin: AdminInfo; ch
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          {NAV_SECTIONS.map((section, index) => (
+          {navSections.map((section, index) => (
             <section key={section.label} className={index ? 'mt-5' : ''}>
               <div className="flex items-center gap-2 px-2.5 pb-2 text-[13px] font-semibold text-white/88">
                 <i className={`${section.icon} text-[15px] text-[#72aefc]`} />
@@ -88,14 +99,14 @@ export function AdminShell({ admin, children, onLogout }: { admin: AdminInfo; ch
             </div>
             <div className="hidden text-right sm:block">
               <div className="text-xs font-medium">{admin.display_name || admin.username}</div>
-              <div className="text-[10px] text-[#8792a2]">系统管理员</div>
+              <div className="text-[10px] text-[#8792a2]">{admin.role === 'super_admin' ? '超级管理员' : '普通管理员'}</div>
             </div>
             <button onClick={onLogout} className="text-xs text-[#667389] hover:text-[#1677ff]">退出</button>
           </div>
         </header>
 
         <nav className="flex gap-1 overflow-x-auto border-b border-[#dbe3ee] bg-white px-2 py-1.5 lg:hidden">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

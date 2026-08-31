@@ -6,13 +6,18 @@ import { createDonorForm, donorFormToPayload, type DonorFormValues } from './don
 import { adminPageShellClass } from './adminLayout'
 import { ErrorNotice, PageHeader, Pagination, StatusBadge, StickyTableCard } from './AdminUi'
 import type { DonorRow, PageData } from './types'
+import type { OperationRequestAction } from './types'
+import { ADMIN_PERMISSIONS, hasAdminPermission } from './adminPermissions'
+import { OperationRequestDialog } from './OperationRequestDialog'
 
 type EditorState = {
   originalCode: string
   values: DonorFormValues
 }
 
-export function DonorsView() {
+type PendingRequest = { action: OperationRequestAction; targetId: string; payload: Record<string, unknown>; title: string; description: string; closeEditor?: boolean }
+
+export function DonorsView({ permissions }: { permissions: string[] }) {
   const [searchParams] = useSearchParams()
   const initial = searchParams.get('code') || ''
   const [draft, setDraft] = useState(initial)
@@ -25,6 +30,11 @@ export function DonorsView() {
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [saving, setSaving] = useState(false)
   const [pendingCodes, setPendingCodes] = useState<Set<string>>(new Set())
+  const [pendingRequest, setPendingRequest] = useState<PendingRequest | null>(null)
+  const [requestBusy, setRequestBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const canWrite = hasAdminPermission(permissions, ADMIN_PERMISSIONS.donorsWrite)
+  const canRequest = hasAdminPermission(permissions, ADMIN_PERMISSIONS.donorsWriteRequest)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -46,6 +56,10 @@ export function DonorsView() {
   async function toggle(row: DonorRow) {
     if (pendingCodes.has(row.code)) return
     const nextStatus = row.status === 'active' ? 'disabled' : 'active'
+    if (!canWrite) {
+      if (canRequest) setPendingRequest({ action: 'donor_status', targetId: row.code, payload: { status: nextStatus }, title: `申请${nextStatus === 'disabled' ? '停用' : '启用'}档案`, description: `目标档案：${row.code}。` })
+      return
+    }
     setError('')
     setPendingCodes((current) => new Set(current).add(row.code))
     setData((current) => ({
@@ -71,13 +85,17 @@ export function DonorsView() {
 
   async function save() {
     if (!editor) return
-    setSaving(true)
     setError('')
+    const body = donorFormToPayload(editor.values)
+    const code = editor.originalCode || String(body.code || '')
+    if (!code) { setError('需要填写捐精人代号'); return }
+    body.code = code
+    if (!canWrite) {
+      if (canRequest) setPendingRequest({ action: editor.originalCode ? 'donor_update' : 'donor_create', targetId: code, payload: body, title: editor.originalCode ? `申请修改 ${code}` : `申请新增 ${code}`, description: '本次填写的档案内容将作为审批执行数据。', closeEditor: true })
+      return
+    }
+    setSaving(true)
     try {
-      const body = donorFormToPayload(editor.values)
-      const code = editor.originalCode || String(body.code || '')
-      if (!code) throw new Error('需要填写捐精人代号')
-      body.code = code
       await adminFetch(editor.originalCode ? `/api/admin/donors/${encodeURIComponent(code)}` : '/api/admin/donors', {
         method: editor.originalCode ? 'PUT' : 'POST',
         body: JSON.stringify(body),
@@ -95,11 +113,24 @@ export function DonorsView() {
     setEditor({ originalCode: row?.code || '', values: createDonorForm(row) })
   }
 
+  async function submitRequest(reason: string) {
+    if (!pendingRequest) return
+    setRequestBusy(true); setError(''); setMessage('')
+    try {
+      await postAdmin('/api/admin/requests', { action: pendingRequest.action, target_id: pendingRequest.targetId, payload: pendingRequest.payload, reason })
+      setMessage('操作申请已提交，超级管理员批准后系统会自动执行。')
+      if (pendingRequest.closeEditor) setEditor(null)
+      setPendingRequest(null)
+    } catch (err) { setError(err instanceof Error ? err.message : '申请提交失败') }
+    finally { setRequestBusy(false) }
+  }
+
   return (
     <div className={adminPageShellClass()}>
       <div className="shrink-0">
         <PageHeader title="捐精人档案" description="维护捐精人基础资料、标本库存和启停状态。" />
         {error ? <ErrorNotice message={error} /> : null}
+        {message ? <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
       </div>
       <StickyTableCard
         toolbar={(
@@ -111,7 +142,7 @@ export function DonorsView() {
               <option value="disabled">已停用</option>
             </select>
             <button className="h-9 rounded-lg bg-[#1677ff] px-4 text-xs text-white">查询</button>
-            <button type="button" onClick={() => openEditor()} className="h-9 rounded-lg border border-[#9fc7ff] px-4 text-xs text-[#1677ff]">新建档案</button>
+            {(canWrite || canRequest) ? <button type="button" onClick={() => openEditor()} className="h-9 rounded-lg border border-[#9fc7ff] px-4 text-xs text-[#1677ff]">{canWrite ? '新建档案' : '申请新增'}</button> : null}
           </form>
         )}
         footer={<Pagination page={page} pageSize={data.page_size} total={data.total} onChange={setPage} />}
@@ -133,9 +164,9 @@ export function DonorsView() {
                   <td className="px-4 py-3">{row.specimen_count}</td>
                   <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
                   <td className="px-4 py-3">
-                    <button type="button" onClick={() => openEditor(row)} className="mr-3 text-[#1677ff]">编辑</button>
+                    {(canWrite || canRequest) ? <button type="button" onClick={() => openEditor(row)} className="mr-3 text-[#1677ff]">{canWrite ? '编辑' : '申请修改'}</button> : null}
                     <button type="button" disabled={pending} onClick={() => void toggle(row)} className={`${row.status === 'active' ? 'text-rose-600' : 'text-emerald-600'} disabled:text-[#9aa5b5]`}>
-                      {pending ? '处理中…' : row.status === 'active' ? '停用' : '启用'}
+                      {pending ? '处理中…' : `${canWrite ? '' : '申请'}${row.status === 'active' ? '停用' : '启用'}`}
                     </button>
                   </td>
                 </tr>
@@ -154,8 +185,10 @@ export function DonorsView() {
           onChange={(key, value) => setEditor((current) => current ? { ...current, values: { ...current.values, [key]: value } } : null)}
           onClose={() => { if (!saving) setEditor(null) }}
           onSave={() => void save()}
+          submitLabel={canWrite ? '保存档案' : '提交修改申请'}
         />
       ) : null}
+      {pendingRequest ? <OperationRequestDialog title={pendingRequest.title} description={pendingRequest.description} busy={requestBusy} onClose={() => setPendingRequest(null)} onConfirm={(reason) => void submitRequest(reason)} /> : null}
     </div>
   )
 }

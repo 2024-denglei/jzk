@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.admin_auth import get_current_admin
+from api.admin_permissions import ADMINS_VIEW, require_permission
 from db.admin_admins_repo import admin_exists, get_admin_profile, list_admin_audit, list_admins
 
 router = APIRouter(prefix="/api/admin/admins", tags=["admin-admins"])
@@ -28,7 +28,7 @@ async def admin_list_admins(
     status: Literal["active", "disabled"] | None = None,
     page: int = 1,
     page_size: int = 20,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(ADMINS_VIEW)),
 ):
     rows, total, page, page_size = list_admins(
         q=q,
@@ -40,7 +40,7 @@ async def admin_list_admins(
 
 
 @router.get("/{admin_id}")
-async def admin_get_admin(admin_id: int, admin: dict = Depends(get_current_admin)):
+async def admin_get_admin(admin_id: int, admin: dict = Depends(require_permission(ADMINS_VIEW))):
     row = get_admin_profile(admin_id)
     if not row:
         raise HTTPException(status_code=404, detail="管理员不存在")
@@ -53,7 +53,7 @@ async def admin_get_admin_audit(
     source: Literal["donor", "user"] | None = None,
     page: int = 1,
     page_size: int = 30,
-    admin: dict = Depends(get_current_admin),
+    admin: dict = Depends(require_permission(ADMINS_VIEW)),
 ):
     if not admin_exists(admin_id):
         raise HTTPException(status_code=404, detail="管理员不存在")

@@ -217,17 +217,26 @@ def get_user_chat(user_id: int, chat_id: int, operator_id: int) -> dict[str, Any
     return row
 
 
-def control_user(user_id: int, action: str, operator_id: int, reason: str) -> dict[str, Any]:
+def control_user(
+    user_id: int,
+    action: str,
+    operator_id: int,
+    reason: str,
+    *,
+    expected_updated_at: str | None = None,
+) -> dict[str, Any]:
     if action not in {"kick", "disable", "enable"}:
         raise ValueError("不支持的账号操作")
     with db_session(admin=True) as conn:
         before = fetchone(
             conn,
-            "SELECT id, status, token_version, disabled_at, disabled_reason FROM app.users WHERE id = %s FOR UPDATE",
+            "SELECT id, status, token_version, disabled_at, disabled_reason, updated_at FROM app.users WHERE id = %s FOR UPDATE",
             (user_id,),
         )
         if not before:
             raise KeyError(user_id)
+        if expected_updated_at is not None and _jsonable(before.get("updated_at")) != expected_updated_at:
+            raise ValueError("目标数据在申请后已发生变化，请重新提交申请")
         if action == "kick":
             conn.execute(
                 "UPDATE app.users SET token_version = token_version + 1, updated_at = now() WHERE id = %s",
@@ -254,7 +263,7 @@ def control_user(user_id: int, action: str, operator_id: int, reason: str) -> di
             )
         after = fetchone(
             conn,
-            "SELECT id, status, token_version, disabled_at, disabled_reason FROM app.users WHERE id = %s",
+            "SELECT id, status, token_version, disabled_at, disabled_reason, updated_at FROM app.users WHERE id = %s",
             (user_id,),
         )
         conn.execute(

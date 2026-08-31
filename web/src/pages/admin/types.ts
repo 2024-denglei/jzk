@@ -3,6 +3,28 @@ export type AdminInfo = {
   username: string
   display_name: string
   role: string
+  permissions: string[]
+}
+
+export type OperationRequestAction = 'donor_create' | 'donor_update' | 'donor_status' | 'user_kick' | 'user_disable' | 'user_enable'
+
+export type OperationRequestRecord = {
+  id: number
+  requester_id: number
+  requester_name?: string
+  reviewer_id?: number | null
+  reviewer_name?: string | null
+  action: OperationRequestAction
+  target_type: 'donor' | 'user'
+  target_id: string
+  payload: Record<string, unknown>
+  before_snapshot?: Record<string, unknown> | null
+  reason: string
+  status: 'pending' | 'processing' | 'approved' | 'rejected' | 'cancelled' | 'failed'
+  review_comment?: string | null
+  execution_error?: string | null
+  created_at: string
+  reviewed_at?: string | null
 }
 
 export type AdminActionCount = {

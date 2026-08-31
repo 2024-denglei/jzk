@@ -8,9 +8,10 @@ type Props = {
   onChange: (key: string, value: string) => void
   onClose: () => void
   onSave: () => void
+  submitLabel?: string
 }
 
-export function DonorEditor({ originalCode, values, busy, onChange, onClose, onSave }: Props) {
+export function DonorEditor({ originalCode, values, busy, onChange, onClose, onSave, submitLabel = '保存档案' }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[#0b1729]/45" role="dialog" aria-modal="true" aria-label={originalCode ? `编辑 ${originalCode}` : '新建捐精人档案'}>
       <div className="flex h-full w-full max-w-3xl flex-col bg-white shadow-2xl">
@@ -51,7 +52,7 @@ export function DonorEditor({ originalCode, values, busy, onChange, onClose, onS
           <div className="flex items-center justify-end gap-2 border-t border-[#e2e8f0] bg-white px-5 py-3 sm:px-6">
             <button type="button" disabled={busy} onClick={onClose} className="rounded-lg border border-[#d8e0eb] px-4 py-2 text-xs text-[#5d6b80] disabled:opacity-50">取消</button>
             <button type="submit" disabled={busy || !values.code.trim()} className="min-w-24 rounded-lg bg-[#1677ff] px-4 py-2 text-xs font-medium text-white disabled:opacity-50">
-              {busy ? '正在保存…' : '保存档案'}
+              {busy ? '正在处理…' : submitLabel}
             </button>
           </div>
         </form>
