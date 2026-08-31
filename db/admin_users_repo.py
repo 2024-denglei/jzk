@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import Any
 
 from db.pg import db_session, fetchall, fetchone
+from dialogue.agent_trace import read_session_traces
 
 
 def _jsonable(value: Any) -> Any:
@@ -212,6 +213,7 @@ def get_user_chat(user_id: int, chat_id: int, operator_id: int) -> dict[str, Any
     row["messages"] = _loads(row.pop("messages_json", None), [])
     row["candidates"] = _loads(row.pop("candidates_json", None), [])
     row["state"] = _loads(row.pop("state_json", None), {})
+    row["turns"] = read_session_traces(str(row.get("session_id") or ""), user_id=user_id)
     return row
 
 

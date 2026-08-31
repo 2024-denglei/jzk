@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { adminFetch, postAdmin } from './adminApi'
+import { ChatTraceView } from './ChatTraceView'
 import { EmptyState, ErrorNotice, Pagination, StatusBadge } from './AdminUi'
 import { formatTime } from './adminFormat'
 import { UserControlDialog, type UserControlAction } from './UserControlDialog'
@@ -186,18 +187,20 @@ export function UserProfileView({ userId }: { userId: number }) {
         ) : null}
 
         {!tabLoading && tab === 'chats' ? (
-          <div className="grid min-h-[520px] lg:grid-cols-[300px_minmax(0,1fr)]">
-            <div className="border-r border-[#e4eaf1]">
+          <div className="grid min-h-[620px] lg:grid-cols-[330px_minmax(0,1fr)]">
+            <div className="border-r border-[#e4eaf1] bg-white">
               {chats.items.length ? chats.items.map((chat) => (
                 <button key={chat.id} onClick={() => void openChat(chat.id)} className={`block w-full border-b border-[#e8edf3] px-4 py-3 text-left transition hover:bg-[#f7faff] ${chatDetail?.id === chat.id ? 'bg-[#eef6ff]' : ''}`}>
-                  <div className="truncate text-xs font-medium text-[#26364e]">{chat.title || '未命名会话'}</div>
-                  <div className="mt-1 flex justify-between text-[10px] text-[#8c98a9]"><span>{chat.message_count} 条消息</span><span>{formatTime(chat.updated_at)}</span></div>
+                  <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#1677ff]"><i className="ri-fingerprint-line" />Session ID</div>
+                  <div className="break-all font-mono text-[11px] font-medium leading-4 text-[#26364e]">{chat.session_id}</div>
+                  <div className="mt-2 truncate text-[10px] text-[#68768a]">{chat.title || '未命名会话'}</div>
+                  <div className="mt-1 flex justify-between text-[10px] text-[#9aa5b5]"><span>{chat.message_count} 条消息</span><span>{formatTime(chat.updated_at)}</span></div>
                 </button>
               )) : <EmptyState text="暂无 AI 会话" />}
               {chats.total > chats.page_size ? <Pagination page={page} pageSize={chats.page_size} total={chats.total} onChange={setPage} /> : null}
             </div>
             <div className="min-w-0 bg-[#f8fafc]">
-              {chatDetail ? <ChatTranscript chat={chatDetail} /> : <div className="flex h-full min-h-[420px] items-center justify-center text-sm text-[#9aa5b5]">从左侧选择一条会话查看内容</div>}
+              {chatDetail ? <ChatTraceView chat={chatDetail} /> : <div className="flex h-full min-h-[520px] items-center justify-center text-sm text-[#9aa5b5]">从左侧选择一个 Session 查看完整 Trace</div>}
             </div>
           </div>
         ) : null}
@@ -233,10 +236,6 @@ function HistoryItem({ item }: { item: HistoryRecord }) {
   const labels = { browse: '浏览档案', search: '条件搜索', match: '智能匹配' }
   const payload = item.payload ? JSON.stringify(item.payload, null, 2) : ''
   return <div className="px-5 py-4"><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="rounded bg-[#edf5ff] px-2 py-1 text-[11px] text-[#1677ff]">{labels[item.kind]}</span><span className="text-xs font-medium text-[#34445b]">{item.donor_code || '无指定捐献者'}</span></div><span className="text-[11px] text-[#929dab]">{formatTime(item.created_at)}</span></div>{payload ? <pre className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap rounded-lg bg-[#f7f9fc] p-3 text-[11px] leading-5 text-[#657287]">{payload}</pre> : null}</div>
-}
-
-function ChatTranscript({ chat }: { chat: ChatDetail }) {
-  return <div className="flex h-full min-h-[520px] flex-col"><div className="border-b border-[#e2e8f0] bg-white px-5 py-3"><div className="text-sm font-medium">{chat.title}</div><div className="mt-1 text-[10px] text-[#8d98a8]">会话 {chat.session_id} · 更新于 {formatTime(chat.updated_at)}</div></div><div className="flex-1 space-y-4 overflow-y-auto p-5">{chat.messages.map((message, index) => { const user = message.role === 'user'; return <div key={`${message.role}-${index}`} className={`flex ${user ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[82%] rounded-xl px-4 py-3 text-xs leading-6 shadow-sm ${user ? 'bg-[#1677ff] text-white' : 'border border-[#e1e7ef] bg-white text-[#34445b]'}`}>{message.content || '（空消息）'}</div></div> })}{chat.messages.length === 0 ? <EmptyState text="该会话没有已保存的消息" /> : null}</div></div>
 }
 
 function auditLabel(action: UserAuditRecord['action']) {

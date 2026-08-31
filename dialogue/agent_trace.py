@@ -248,3 +248,43 @@ def write_trace(record: dict[str, Any]) -> None:
         )
     except Exception:
         logger.exception("写入 agent_trace 失败")
+
+
+def read_session_traces(session_id: str, user_id: int | None = None) -> list[dict[str, Any]]:
+    """读取单个会话的全部 turn trace，并校验会话与用户归属。"""
+    if not session_id:
+        return []
+
+    session_dir = os.path.join(_default_trace_dir(), "sessions", _safe_name(session_id))
+    if not os.path.isdir(session_dir):
+        return []
+
+    records: list[dict[str, Any]] = []
+    try:
+        filenames = sorted(name for name in os.listdir(session_dir) if name.endswith(".json"))
+    except OSError:
+        logger.exception("读取 session trace 目录失败: %s", session_dir)
+        return []
+
+    for filename in filenames:
+        path = os.path.join(session_dir, filename)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                record = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            logger.warning("跳过无效 session trace: %s", path)
+            continue
+
+        if not isinstance(record, dict) or str(record.get("session_id") or "") != str(session_id):
+            continue
+        trace_user_id = record.get("user_id")
+        if user_id is not None and trace_user_id is not None and str(trace_user_id) != str(user_id):
+            continue
+        records.append(record)
+
+    records.sort(key=lambda item: (
+        str(item.get("started_at") or ""),
+        str(item.get("finished_at") or ""),
+        str(item.get("trace_id") or ""),
+    ))
+    return records
