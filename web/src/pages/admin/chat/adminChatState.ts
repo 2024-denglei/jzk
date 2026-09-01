@@ -2,6 +2,34 @@ import type { ChatBranchSummary } from '../../../types'
 
 export type BranchTreeRow = { branch: ChatBranchSummary; depth: number }
 
+export type HorizontalBranchNode = {
+  branch: ChatBranchSummary
+  depth: number
+  x: number
+  y: number
+}
+
+export type HorizontalBranchEdge = {
+  parentId: string
+  childId: string
+  fromX: number
+  fromY: number
+  toX: number
+  toY: number
+}
+
+export type HorizontalBranchLayout = {
+  nodes: HorizontalBranchNode[]
+  edges: HorizontalBranchEdge[]
+  width: number
+  height: number
+}
+
+const BRANCH_NODE_WIDTH = 170
+const BRANCH_NODE_HEIGHT = 52
+const BRANCH_DEPTH_GAP = 220
+const BRANCH_ROW_GAP = 76
+
 export type AgentTranscriptRole = 'system' | 'user' | 'assistant' | 'tool'
 
 export type AgentToolCall = {
@@ -96,6 +124,63 @@ export function flattenBranchTree(branches: ChatBranchSummary[]): BranchTreeRow[
     if (!visited.has(branch.id)) rows.push({ branch, depth: 0 })
   }
   return rows
+}
+
+export function layoutHorizontalBranchTree(branches: ChatBranchSummary[]): HorizontalBranchLayout {
+  const byId = new Map(branches.map((branch) => [branch.id, branch]))
+  const children = new Map<string | null, ChatBranchSummary[]>()
+  for (const branch of branches) {
+    const parentId = branch.parent_branch_id && byId.has(branch.parent_branch_id)
+      ? branch.parent_branch_id
+      : null
+    const siblings = children.get(parentId) || []
+    siblings.push(branch)
+    children.set(parentId, siblings)
+  }
+
+  const nodes: HorizontalBranchNode[] = []
+  const visited = new Set<string>()
+  let nextLeaf = 0
+  let maxDepth = 0
+
+  function visit(branch: ChatBranchSummary, depth: number): number {
+    if (visited.has(branch.id)) return nextLeaf * BRANCH_ROW_GAP
+    visited.add(branch.id)
+    maxDepth = Math.max(maxDepth, depth)
+    const branchChildren = (children.get(branch.id) || []).filter((child) => !visited.has(child.id))
+    const childYs = branchChildren.map((child) => visit(child, depth + 1))
+    const y = childYs.length
+      ? childYs.reduce((total, value) => total + value, 0) / childYs.length
+      : nextLeaf++ * BRANCH_ROW_GAP
+    nodes.push({ branch, depth, x: 18 + depth * BRANCH_DEPTH_GAP, y: 18 + y })
+    return y
+  }
+
+  for (const root of children.get(null) || []) visit(root, 0)
+  for (const branch of branches) {
+    if (!visited.has(branch.id)) visit(branch, 0)
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.branch.id, node]))
+  const edges = nodes.flatMap((node) => {
+    const parent = node.branch.parent_branch_id ? nodeById.get(node.branch.parent_branch_id) : null
+    if (!parent) return []
+    return [{
+      parentId: parent.branch.id,
+      childId: node.branch.id,
+      fromX: parent.x + BRANCH_NODE_WIDTH,
+      fromY: parent.y + BRANCH_NODE_HEIGHT / 2,
+      toX: node.x,
+      toY: node.y + BRANCH_NODE_HEIGHT / 2,
+    }]
+  })
+  const leafRows = Math.max(1, nextLeaf)
+  return {
+    nodes,
+    edges,
+    width: Math.max(420, 18 + (maxDepth + 1) * BRANCH_DEPTH_GAP),
+    height: Math.max(112, 36 + (leafRows - 1) * BRANCH_ROW_GAP + BRANCH_NODE_HEIGHT),
+  }
 }
 
 export function branchOriginLabel(branch: ChatBranchSummary): string {

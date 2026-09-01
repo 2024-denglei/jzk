@@ -885,7 +885,7 @@ CHAT_MATCH_SNAPSHOT_MAX_CANDIDATES
 
 **验收：** 回溯后两个分支都可重复加载；刷新保持当前查看分支；两个浏览器窗口并发发送不丢消息。
 
-### 阶段 7：管理端三栏工作区（P1）
+### 阶段 7：管理端 Session / 分支工作区（P1）
 
 **主要文件：**
 
@@ -898,7 +898,8 @@ CHAT_MATCH_SNAPSHOT_MAX_CANDIDATES
 - 新增：管理权限、审计、分支和 Trace UI 测试
 
 - [x] 管理端列表直接读取 chat 计数列，不解析消息正文。
-- [x] 实现分支树、当前路径和消息 Inspector。
+- [x] 实现左侧 Session 列表、右上横向分支树和右下完整 Agent 对话。
+- [x] System、User、Assistant、Tool Call、Tool Result 均以默认展开的可折叠区块展示。
 - [x] 显式展示回溯、编辑、重新生成和并发分叉事件。
 - [x] 按 AI 消息懒加载 MatchRun 与 GenerationStep。
 - [x] 分离列表、路径、匹配和 Trace 的 loading/error 状态。

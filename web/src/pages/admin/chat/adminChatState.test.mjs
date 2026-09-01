@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { agentTranscriptEvents, branchOriginLabel, flattenBranchTree } from './adminChatState.ts'
+import { agentTranscriptEvents, branchOriginLabel, flattenBranchTree, layoutHorizontalBranchTree } from './adminChatState.ts'
 
 const makeBranch = (id, parent, reason) => ({
   id, parent_branch_id: parent, fork_reason: reason, name: id,
@@ -43,4 +43,22 @@ test('Agent 转录只按数据库真实 agent_message 步骤组装', () => {
   assert.equal(events[1].toolCalls[0].name, 'submit_preference_profile')
   assert.equal(events[2].resultSetId, 'snapshot-1')
   assert.equal(events[2].count, 12)
+})
+
+test('横向分支树按深度向右展开并让父节点位于子节点中间', () => {
+  const root = makeBranch('root', null, 'root')
+  const one = makeBranch('one', 'root', 'rewind_continue')
+  const two = makeBranch('two', 'root', 'rewind_continue')
+  const nested = makeBranch('nested', 'one', 'rewind_continue')
+  const layout = layoutHorizontalBranchTree([root, one, two, nested])
+  const byId = new Map(layout.nodes.map((node) => [node.branch.id, node]))
+
+  assert.equal(byId.get('root').depth, 0)
+  assert.equal(byId.get('one').depth, 1)
+  assert.equal(byId.get('nested').depth, 2)
+  assert.ok(byId.get('root').x < byId.get('one').x)
+  assert.ok(byId.get('one').x < byId.get('nested').x)
+  assert.equal(layout.edges.length, 3)
+  assert.ok(byId.get('root').y > Math.min(byId.get('one').y, byId.get('two').y))
+  assert.ok(layout.width >= 678)
 })
