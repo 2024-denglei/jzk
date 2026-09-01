@@ -48,3 +48,21 @@ def test_unknown_environment_is_rejected(monkeypatch):
     monkeypatch.setattr(config, "ENVIRONMENT", "prod")
     with pytest.raises(config.SecurityConfigError, match="ENVIRONMENT"):
         config.validate_security_config()
+
+
+def test_chat_v2_config_accepts_safe_defaults():
+    config.validate_chat_v2_config()
+
+
+def test_chat_v2_config_rejects_heartbeat_not_shorter_than_lease(monkeypatch):
+    monkeypatch.setattr(config, "CHAT_GENERATION_LEASE_SECONDS", 30)
+    monkeypatch.setattr(config, "CHAT_GENERATION_HEARTBEAT_SECONDS", 30)
+    with pytest.raises(config.SecurityConfigError, match="HEARTBEAT_SECONDS"):
+        config.validate_chat_v2_config()
+
+
+def test_chat_v2_config_rejects_default_page_above_max(monkeypatch):
+    monkeypatch.setattr(config, "CHAT_MESSAGE_PAGE_SIZE_DEFAULT", 101)
+    monkeypatch.setattr(config, "CHAT_MESSAGE_PAGE_SIZE_MAX", 100)
+    with pytest.raises(config.SecurityConfigError, match="CHAT_MESSAGE_PAGE_SIZE_DEFAULT"):
+        config.validate_chat_v2_config()

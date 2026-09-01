@@ -73,6 +73,7 @@ def execute_match(
     refs = list(result.ranked_refs or [])
     if (
         owner_user_id is not None
+        and total > 0
         and not result.skipped
         and len(refs) == total
         and (config.MATCH_SNAPSHOT_ENABLED or config.MATCH_RESULT_PAGING_ENABLED)

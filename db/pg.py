@@ -128,6 +128,8 @@ def ensure_schema() -> None:
             "08_add_admin_account_audit.sql",
             "09_add_admin_token_version.sql",
             "10_add_match_runs.sql",
+            "11_add_branching_chat_storage.sql",
+            "12_add_match_run_items.sql",
         ):
             path = _SCHEMA_DIR / name
             if path.exists():

@@ -182,6 +182,7 @@ def test_zero_hits_returns_bottlenecks(monkeypatch):
     assert res.status_code == 200
     data = res.json()
     assert data["candidates"] == []
+    assert data["result_set_id"] is None
     assert data["bottlenecks"][0]["field"] == "abo_blood"
 
 
