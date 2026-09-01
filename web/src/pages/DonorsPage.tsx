@@ -9,8 +9,9 @@ import { api, ApiError } from '../lib/api'
 import { getPaginationPages, normalizeJumpPage } from '../lib/pagination'
 import { cacheMatchPage, createMatchPageState } from '../lib/matchPagination'
 import type { MatchPageState } from '../lib/matchPagination'
-import type { Candidate, FilterState, MatchResultDescriptor } from '../types'
+import type { Candidate, FilterState, FrozenMatchPage, MatchResultDescriptor } from '../types'
 import { DEFAULT_PRIORITY, EMPTY_FILTERS } from '../types'
+import { frozenPageToMatchResult } from '../features/chat/chatApi'
 
 const MODE_META = {
   featured: { label: '推荐浏览', title: '全部捐献者', blurb: '按标本数量优先展示' },
@@ -151,10 +152,9 @@ export function DonorsPage() {
   const seedFromNav = (location.state as { askAbout?: string } | null)?.askAbout || null
   const showingDetail = Boolean(detailCode)
   const chatIdParam = searchParams.get('chatId')
-  const [resumeChatId, setResumeChatId] = useState<number | null>(() => {
-    const n = chatIdParam ? Number(chatIdParam) : NaN
-    return Number.isFinite(n) ? n : null
-  })
+  const parsedChatId = chatIdParam ? Number(chatIdParam) : NaN
+  const resumeChatId = Number.isFinite(parsedChatId) ? parsedChatId : null
+  const resumeBranchId = searchParams.get('branchId')
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('jzk_filter_collapsed') === '1')
   const [filters, setFilters] = useState<FilterState>({ ...EMPTY_FILTERS })
@@ -359,12 +359,19 @@ export function DonorsPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await api.get<{
-        result_set_id: string
-        total: number
-        items: Candidate[]
-        next_cursor?: string | null
-      }>(`/api/match/results/${encodeURIComponent(matchPages.resultSetId)}?page=${targetPage}&limit=${MATCH_PAGE_SIZE}`)
+      const data = matchPages.sourceMessageId
+        ? frozenPageToMatchResult(
+            await api.get<FrozenMatchPage>(
+              `/api/messages/${encodeURIComponent(matchPages.sourceMessageId)}/match-results?page=${targetPage}&limit=${MATCH_PAGE_SIZE}`,
+            ),
+            matchPages.sourceMessageId,
+          )
+        : await api.get<{
+            result_set_id: string
+            total: number
+            items: Candidate[]
+            next_cursor?: string | null
+          }>(`/api/match/results/${encodeURIComponent(matchPages.resultSetId)}?page=${targetPage}&limit=${MATCH_PAGE_SIZE}`)
       if (requestId !== matchRequestSeq.current) return
       const nextState = cacheMatchPage(matchPages, targetPage, data.items, data.next_cursor)
       setMatchPages(nextState)
@@ -414,13 +421,14 @@ export function DonorsPage() {
     seedMessage,
     onSeedConsumed: () => setSeedMessage(null),
     resumeChatId,
-    onResumeConsumed: () => {
-      setResumeChatId(null)
-      if (searchParams.has('chatId')) {
-        const next = new URLSearchParams(searchParams)
-        next.delete('chatId')
-        setSearchParams(next, { replace: true })
-      }
+    resumeBranchId,
+    onConversationChange: (chatId: number | null, branchId: string | null) => {
+      const next = new URLSearchParams(searchParams)
+      if (chatId === null) next.delete('chatId')
+      else next.set('chatId', String(chatId))
+      if (branchId === null) next.delete('branchId')
+      else next.set('branchId', branchId)
+      setSearchParams(next, { replace: true })
     },
     onCandidates: (cands: Candidate[], result?: MatchResultDescriptor) => {
       matchRequestSeq.current += 1
@@ -444,18 +452,6 @@ export function DonorsPage() {
         setMobileChat(false)
       })
       if (showingDetail) navigate('/donors')
-    },
-    onSessionPersist: (payload: {
-      session_id: string
-      messages: { role: string; content: string }[]
-      candidates: Candidate[]
-    }) => {
-      if (!user) return
-      void api.post('/api/user/chats', {
-        session_id: payload.session_id,
-        messages: payload.messages,
-        candidates: payload.candidates,
-      })
     },
   }
 

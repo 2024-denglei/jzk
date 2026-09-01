@@ -1,4 +1,4 @@
-import { authFetch, expireUserSession, extractApiError } from '../../lib/api.ts'
+import { ApiError, authFetch, expireUserSession, extractApiError } from '../../lib/api.ts'
 import type { GenerationStatus } from '../../types'
 import { chatApi } from './chatApi.ts'
 import { isTerminalGeneration } from './chatState.ts'
@@ -109,31 +109,34 @@ export async function followGeneration(
   let terminal: GenerationStatus | null = null
 
   while (!options.signal.aborted) {
-    const query = after ? `?after=${encodeURIComponent(after)}` : ''
-    const response = await authFetch(
-      `/api/generations/${encodeURIComponent(generationId)}/events${query}`,
-      { headers: { Accept: 'text/event-stream' }, signal: options.signal },
-    )
-    if (response.status === 401) {
-      expireUserSession('登录已失效，请重新登录')
-    }
-    if (!response.ok) {
-      const body: unknown = await response.json().catch(() => ({}))
-      throw extractApiError(body, response.status)
-    }
-    await consumeResponse(response, (event) => {
-      if (event.id) after = event.id
-      const status = String(event.data.status || event.event) as GenerationStatus
-      if (isTerminalGeneration(status)) terminal = status
-      options.onEvent(event)
-    }, options.signal)
-    if (terminal) return terminal
-    if (options.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+    try {
+      const query = after ? `?after=${encodeURIComponent(after)}` : ''
+      const response = await authFetch(
+        `/api/generations/${encodeURIComponent(generationId)}/events${query}`,
+        { headers: { Accept: 'text/event-stream' }, signal: options.signal },
+      )
+      if (response.status === 401) expireUserSession('登录已失效，请重新登录')
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => ({}))
+        throw extractApiError(body, response.status)
+      }
+      await consumeResponse(response, (event) => {
+        if (event.id) after = event.id
+        const status = String(event.data.status || event.event) as GenerationStatus
+        if (isTerminalGeneration(status)) terminal = status
+        options.onEvent(event)
+      }, options.signal)
+      if (terminal) return terminal
+      if (options.signal.aborted) throw new DOMException('Aborted', 'AbortError')
 
-    const current = await chatApi.generation(generationId)
-    if (isTerminalGeneration(current.status)) {
-      options.onEvent({ id: after, event: current.status, data: { status: current.status } })
-      return current.status
+      const current = await chatApi.generation(generationId)
+      if (isTerminalGeneration(current.status)) {
+        options.onEvent({ id: after, event: current.status, data: { status: current.status } })
+        return current.status
+      }
+    } catch (error) {
+      if (options.signal.aborted || (error instanceof Error && error.name === 'AbortError')) throw error
+      if (error instanceof ApiError && [400, 401, 403, 404].includes(error.status)) throw error
     }
     attempt += 1
     options.onReconnect?.(attempt)

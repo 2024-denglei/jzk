@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
-import type { FilterState } from '../types'
+import type { ChatV2Summary, FilterState } from '../types'
+import { chatApi } from '../features/chat/chatApi'
 
 type Tab = 'account' | 'favorites' | 'history' | 'chats' | 'prefs'
 
@@ -18,7 +19,9 @@ export function UserPage() {
   const [history, setHistory] = useState<
     { id: number; kind: string; donor_code: string | null; created_at: string; payload?: unknown }[]
   >([])
-  const [chats, setChats] = useState<{ id: number; session_id: string; title: string; updated_at: string }[]>([])
+  const [chats, setChats] = useState<ChatV2Summary[]>([])
+  const [chatCursor, setChatCursor] = useState<string | null>(null)
+  const [chatHasMore, setChatHasMore] = useState(false)
   const [prefs, setPrefs] = useState<{ filters: Partial<FilterState>; priority: string[] }>({
     filters: {},
     priority: [],
@@ -38,8 +41,10 @@ export function UserPage() {
         const data = await api.get<{ items: typeof history }>('/api/user/history')
         setHistory(data.items)
       } else if (tab === 'chats') {
-        const data = await api.get<{ items: typeof chats }>('/api/user/chats')
+        const data = await chatApi.list()
         setChats(data.items)
+        setChatCursor(data.next_cursor)
+        setChatHasMore(data.has_more)
       } else if (tab === 'prefs') {
         const data = await api.get<typeof prefs>('/api/user/preferences')
         setPrefs(data)
@@ -63,6 +68,20 @@ export function UserPage() {
     setNewPw('')
     await logout()
     navigate('/login')
+  }
+
+  async function loadMoreChats() {
+    if (!chatCursor) return
+    const data = await chatApi.list(chatCursor)
+    setChats((current) => [...current, ...data.items])
+    setChatCursor(data.next_cursor)
+    setChatHasMore(data.has_more)
+  }
+
+  async function deleteChat(chat: ChatV2Summary) {
+    if (!window.confirm(`确定永久删除会话“${chat.title}”吗？所有分支和消息会立即删除，且不可恢复。`)) return
+    await chatApi.remove(chat.id, crypto.randomUUID())
+    setChats((current) => current.filter((item) => item.id !== chat.id))
   }
 
   const tabs: { id: Tab; label: string }[] = [
@@ -205,21 +224,30 @@ export function UserPage() {
           <div>
             <h2 className="mb-4 text-lg font-semibold">对话记录</h2>
             {chats.length === 0 ? (
-              <p className="text-sm text-ink-soft/50">暂无对话。在查找页使用智能对话后会自动同步。</p>
+              <p className="text-sm text-ink-soft/50">暂无对话。在查找页开始智能对话后会自动保存。</p>
             ) : (
               <ul className="space-y-2">
                 {chats.map((c) => (
                   <li key={c.id} className="rounded-xl bg-sand px-4 py-3">
                     <div className="font-medium text-ink">{c.title}</div>
-                    <div className="mt-1 flex items-center justify-between text-xs text-ink-soft/50">
+                    <div className="mt-1 text-xs text-ink-soft/50">{c.branch_count} 条分支 · {c.message_count} 条消息</div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-ink-soft/50">
                       <span>{c.updated_at}</span>
-                      <Link to={`/donors?chatId=${c.id}`} className="text-teal-deep">
+                      <div className="flex items-center gap-3">
+                      <button type="button" onClick={() => void deleteChat(c)} className="text-rose-600">永久删除</button>
+                      <Link to={`/donors?chatId=${c.id}${c.active_branch_id ? `&branchId=${encodeURIComponent(c.active_branch_id)}` : ''}`} className="text-teal-deep">
                         继续对话
                       </Link>
+                      </div>
                     </div>
                   </li>
                 ))}
               </ul>
+            )}
+            {chatHasMore && (
+              <button type="button" onClick={() => void loadMoreChats()} className="mt-4 text-sm font-medium text-teal-deep">
+                加载更多对话
+              </button>
             )}
           </div>
         )}

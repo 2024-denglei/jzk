@@ -65,7 +65,10 @@ export const chatApi = {
   },
 }
 
-export function frozenPageToMatchResult(page: FrozenMatchPage): MatchResultDescriptor {
+export function frozenPageToMatchResult(
+  page: FrozenMatchPage,
+  sourceMessageId?: string,
+): MatchResultDescriptor {
   const items: Candidate[] = page.items.map((item) => ({
     donor_info: item.donor_info,
     score: item.score,
@@ -81,5 +84,6 @@ export function frozenPageToMatchResult(page: FrozenMatchPage): MatchResultDescr
     total: page.total,
     items,
     next_cursor: page.has_more ? String(page.page + 1) : null,
+    source_message_id: sourceMessageId,
   }
 }

@@ -13,3 +13,30 @@ test('SSE 解析器支持拆包、多行 data 和事件 ID', () => {
   assert.deepEqual(events[0], { id: '10-1', event: 'token', data: { text: '你' } })
   assert.deepEqual(events[1], { id: '10-2', event: 'meta', data: { text: 'first\nsecond' } })
 })
+
+test('生成事件请求短暂断网后自动重连到终态', async () => {
+  globalThis.window = {
+    setTimeout: globalThis.setTimeout,
+    clearTimeout: globalThis.clearTimeout,
+    dispatchEvent() {},
+  }
+  let attempts = 0
+  globalThis.fetch = async () => {
+    attempts += 1
+    if (attempts === 1) throw new TypeError('temporary network error')
+    return new Response('event: completed\ndata: {"status":"completed"}\n\n', {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  }
+  const { followGeneration } = await import('./generationStream.ts')
+  const reconnects = []
+  const status = await followGeneration('generation-1', {
+    signal: new AbortController().signal,
+    onEvent() {},
+    onReconnect: (attempt) => reconnects.push(attempt),
+  })
+  assert.equal(status, 'completed')
+  assert.equal(attempts, 2)
+  assert.deepEqual(reconnects, [1])
+})

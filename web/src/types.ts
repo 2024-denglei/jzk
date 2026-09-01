@@ -83,6 +83,8 @@ export interface MatchResultDescriptor {
   total: number
   items: Candidate[]
   next_cursor?: string | null
+  /** V2 对话快照必须继续通过消息所有权接口分页。 */
+  source_message_id?: string
 }
 
 export interface User {

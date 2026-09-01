@@ -5,6 +5,7 @@ export type MatchPageState = {
   total: number
   pages: Record<number, Candidate[]>
   cursors: Record<number, string | null>
+  sourceMessageId?: string
 }
 
 export function createMatchPageState(result: MatchResultDescriptor): MatchPageState {
@@ -15,6 +16,7 @@ export function createMatchPageState(result: MatchResultDescriptor): MatchPageSt
     total: result.total,
     pages: { 1: result.items },
     cursors,
+    sourceMessageId: result.source_message_id,
   }
 }
 
