@@ -317,3 +317,28 @@ def test_apply_match_api_response_200_updates_session():
     assert cands[0]["donor_info"]["code"] == "T"
     assert session.preference_profile["attributes"]["abo_blood"]["values"] == ["O"]
     assert session.candidates[0]["donor_info"]["code"] == "T"
+
+
+def test_apply_match_api_response_stores_result_reference():
+    from dialogue.agent_tools import apply_match_api_response
+    from dialogue.session import SessionContext
+
+    session = SessionContext(owner_user_id=1)
+    raw = {
+        "schema_version": "1.0",
+        "attributes": {"abo_blood": {"constraint": "must", "weight": 1, "values": ["O"]}},
+    }
+    apply_match_api_response(
+        session,
+        raw,
+        200,
+        {
+            "ok": True, "skipped": False, "match_level": "full", "total": 4303,
+            "candidates": [{"donor_info": {"code": "T"}, "score": 1.0}],
+            "result_set_id": "11111111-1111-1111-1111-111111111111",
+            "next_cursor": "signed-cursor", "prefer_hits": [], "bottlenecks": [],
+        },
+    )
+    assert session.match_result_id == "11111111-1111-1111-1111-111111111111"
+    assert session.match_total == 4303
+    assert session.match_next_cursor == "signed-cursor"

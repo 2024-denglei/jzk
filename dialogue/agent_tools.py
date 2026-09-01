@@ -526,12 +526,15 @@ def apply_match_api_response(session, raw_profile: dict, status: int, data: dict
         for k, v in (dumped.get("attributes") or {}).items()
     }
     candidates = data.get("candidates") or []
-    filtered_count = data.get("filtered_count")
+    filtered_count = data.get("total", data.get("filtered_count"))
     try:
         total_count = max(len(candidates), int(filtered_count))
     except (TypeError, ValueError):
         total_count = len(candidates)
     session.candidates = candidates
+    session.match_result_id = data.get("result_set_id") or None
+    session.match_total = total_count
+    session.match_next_cursor = data.get("next_cursor") or None
     session.state = DialogueState.PRESENTING if candidates else DialogueState.COLLECTING
     session.pending_relaxations = [b.get("field") for b in (data.get("bottlenecks") or []) if isinstance(b, dict)]
     top = []
@@ -554,6 +557,8 @@ def apply_match_api_response(session, raw_profile: dict, status: int, data: dict
         "bottlenecks": data.get("bottlenecks") or [],
         "top_preview": top,
         "prefer_hits": prefer_hits,
+        "result_set_id": session.match_result_id,
+        "next_cursor": session.match_next_cursor,
         "note": _match_success_note(prefer_hits),
     }
     if data.get("skipped"):

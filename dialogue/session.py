@@ -32,6 +32,9 @@ class SessionContext:
         self.constraints: dict[str, str] = {}  # 每个特征字段 → "must" | "prefer"
         self.history: list[dict[str, str]] = []
         self.candidates: list[dict] = []
+        self.match_result_id: str | None = None
+        self.match_total: int = 0
+        self.match_next_cursor: str | None = None
         self.feedback_log: list[dict] = []
         self.pending_relaxations: list[str] = []  # 上轮诊断的瓶颈字段，供用户全局肯定时使用
         self.preference_profile: dict | None = None
@@ -53,6 +56,9 @@ class SessionContext:
             "constraints": dict(self.constraints),
             "history": [dict(m) for m in self.history],
             "candidates": list(self.candidates),
+            "match_result_id": self.match_result_id,
+            "match_total": self.match_total,
+            "match_next_cursor": self.match_next_cursor,
             "pending_relaxations": list(self.pending_relaxations),
             "preference_profile": dict(self.preference_profile) if self.preference_profile else None,
         }
@@ -71,6 +77,9 @@ class SessionContext:
         self.constraints = dict(checkpoint.get("constraints") or {})
         self.history = [dict(m) for m in (checkpoint.get("history") or [])]
         self.candidates = list(checkpoint.get("candidates") or [])
+        self.match_result_id = checkpoint.get("match_result_id") or None
+        self.match_total = int(checkpoint.get("match_total") or 0)
+        self.match_next_cursor = checkpoint.get("match_next_cursor") or None
         self.pending_relaxations = list(checkpoint.get("pending_relaxations") or [])
         raw_profile = checkpoint.get("preference_profile")
         self.preference_profile = dict(raw_profile) if raw_profile else None
@@ -103,6 +112,9 @@ class SessionContext:
         constraints: dict | None = None,
         candidates: list | None = None,
         preference_profile: dict | None = None,
+        match_result_id: str | None = None,
+        match_total: int | None = None,
+        match_next_cursor: str | None = None,
     ) -> None:
         """截断到指定历史并恢复条件。"""
         self.history = [
@@ -118,6 +130,9 @@ class SessionContext:
             self.candidates = list(candidates)
         if preference_profile is not None:
             self.replace_profile(preference_profile)
+        self.match_result_id = match_result_id
+        self.match_total = int(match_total or 0)
+        self.match_next_cursor = match_next_cursor
         self._active_checkpoint = None
         if self.history:
             self.state = DialogueState.PRESENTING if self.candidates else DialogueState.COLLECTING
@@ -180,6 +195,9 @@ class SessionContext:
             "pending_relaxations": self.pending_relaxations,
             "preference_profile": self.preference_profile,
             "history": self.history[-40:],
+            "match_result_id": self.match_result_id,
+            "match_total": self.match_total,
+            "match_next_cursor": self.match_next_cursor,
         }
 
     def load_state(self, state: dict | None):
@@ -191,6 +209,9 @@ class SessionContext:
         self.pending_relaxations = list(state.get("pending_relaxations") or [])
         raw_profile = state.get("preference_profile")
         self.preference_profile = dict(raw_profile) if raw_profile else None
+        self.match_result_id = state.get("match_result_id") or None
+        self.match_total = int(state.get("match_total") or 0)
+        self.match_next_cursor = state.get("match_next_cursor") or None
         hist = state.get("history")
         if isinstance(hist, list):
             self.history = [
@@ -216,6 +237,9 @@ class SessionContext:
             "preference_profile": self.preference_profile or {},
             "history": self.history,
             "candidates_count": len(self.candidates),
+            "match_result_id": self.match_result_id,
+            "match_total": self.match_total,
+            "match_next_cursor": self.match_next_cursor,
             "feedback_count": len(self.feedback_log),
         }
 
@@ -229,6 +253,9 @@ class SessionContext:
             "constraints": self.constraints,
             "history": self.history,
             "candidates": self.candidates,
+            "match_result_id": self.match_result_id,
+            "match_total": self.match_total,
+            "match_next_cursor": self.match_next_cursor,
             "feedback_log": self.feedback_log,
             "pending_relaxations": self.pending_relaxations,
             "preference_profile": self.preference_profile,
@@ -252,6 +279,9 @@ class SessionContext:
         session.constraints = dict(data.get("constraints") or {})
         session.history = list(data.get("history") or [])
         session.candidates = list(data.get("candidates") or [])
+        session.match_result_id = data.get("match_result_id") or None
+        session.match_total = int(data.get("match_total") or 0)
+        session.match_next_cursor = data.get("match_next_cursor") or None
         session.feedback_log = list(data.get("feedback_log") or [])
         session.pending_relaxations = list(data.get("pending_relaxations") or [])
         raw_profile = data.get("preference_profile")

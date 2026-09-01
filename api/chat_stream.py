@@ -80,6 +80,9 @@ class RewindChatRequest(BaseModel):
     preference_profile: dict | None = None
     messages: list[dict] | None = Field(default=None, max_length=100)
     candidates: list | None = Field(default=None, max_length=1000)
+    match_result_id: str | None = Field(default=None, max_length=64)
+    match_total: int = Field(default=0, ge=0)
+    match_next_cursor: str | None = Field(default=None, max_length=2048)
 
 
 @router.post("/api/chat/abort")
@@ -129,6 +132,9 @@ async def chat_rewind(body: RewindChatRequest, user_id: int = Depends(get_curren
         constraints=body.constraints or {},
         candidates=body.candidates,
         preference_profile=body.preference_profile,
+        match_result_id=body.match_result_id,
+        match_total=body.match_total,
+        match_next_cursor=body.match_next_cursor,
     )
     session_manager.put_session(session)
     ui_messages = body.messages
@@ -162,7 +168,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
         tool_failure_payload,
     )
     from api.match import invoke_match_endpoint
-    from config import CHAT_MATCH_TOP_K, LLM_MODEL, TRACE_ENABLED
+    from config import LLM_MODEL, MATCH_RESULT_PAGE_SIZE_DEFAULT, TRACE_ENABLED
     from dialogue.agent_trace import AgentTrace
 
     session_manager = _deps.get("session_manager")
@@ -256,6 +262,8 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
             candidates: list = []
             candidate_total = 0
             prefer_hits: list = []
+            match_result_id: str | None = None
+            match_next_cursor: str | None = None
             final_reply = ""
 
             if await _client_gone():
@@ -406,10 +414,12 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                         else:
                             yield _sse("token", {"text": "\n\n正在匹配候选人…"})
                             auth = request.headers.get("authorization") or request.headers.get("Authorization") or ""
-                            top_k = max(CHAT_MATCH_TOP_K, 1)
                             t_match = time.perf_counter()
                             status, match_data = await invoke_match_endpoint(
-                                request.app, auth, args, top_k=top_k
+                                request.app,
+                                auth,
+                                args,
+                                page_size=MATCH_RESULT_PAGE_SIZE_DEFAULT,
                             )
                             match_invoke_ms = (time.perf_counter() - t_match) * 1000
                             t_apply = time.perf_counter()
@@ -418,6 +428,8 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                             )
                             prefer_hits = list((match_payload or {}).get("prefer_hits") or [])
                             candidate_total = int((match_payload or {}).get("count") or len(candidates))
+                            match_result_id = (match_payload or {}).get("result_set_id")
+                            match_next_cursor = (match_payload or {}).get("next_cursor")
                             apply_ms = (time.perf_counter() - t_apply) * 1000
                             tool_content = json.dumps(match_payload, ensure_ascii=False)
                             if trace:
@@ -540,6 +552,8 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                         "items": slim_items,
                         "prefer_hits": prefer_hits,
                         "total": candidate_total or len(candidates),
+                        "result_set_id": match_result_id,
+                        "next_cursor": match_next_cursor,
                     },
                 )
                 if trace:
@@ -559,6 +573,9 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                     "parsed_features": session.parsed_features,
                     "constraints": session.constraints,
                     "preference_profile": session.preference_profile or {},
+                    "match_result_id": session.match_result_id,
+                    "match_total": session.match_total,
+                    "match_next_cursor": session.match_next_cursor,
                     "features_before": features_before,
                     "constraints_before": constraints_before,
                 },
@@ -572,6 +589,8 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                 candidates,
                 prefer_hits,
                 candidate_total=candidate_total or len(candidates),
+                match_result_id=match_result_id,
+                match_next_cursor=match_next_cursor,
             )
             _maybe_persist(user_id, session, ui_messages, candidates)
             if trace:
@@ -634,6 +653,8 @@ def _history_to_ui_messages(
     last_candidates,
     prefer_hits=None,
     candidate_total: int | None = None,
+    match_result_id: str | None = None,
+    match_next_cursor: str | None = None,
 ) -> list[dict]:
     out = []
     for m in session.history:
@@ -646,6 +667,8 @@ def _history_to_ui_messages(
     if last_candidates and out and out[-1]["role"] == "bot":
         out[-1]["candidates"] = last_candidates
         out[-1]["candidates_total"] = candidate_total or len(last_candidates)
+        out[-1]["match_result_id"] = match_result_id or session.match_result_id
+        out[-1]["match_next_cursor"] = match_next_cursor or session.match_next_cursor
         if prefer_hits:
             out[-1]["prefer_hits"] = prefer_hits
     return out

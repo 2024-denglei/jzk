@@ -31,11 +31,16 @@ def upsert_user_chat(
         }
         cands = m.get("candidates")
         if isinstance(cands, list) and cands:
-            item["candidates"] = cands
+            item["candidates"] = cands[:20]
+        for key in (
+            "candidates_total", "prefer_hits", "match_result_id", "match_next_cursor"
+        ):
+            if m.get(key) is not None:
+                item[key] = m.get(key)
         slim_messages.append(item)
 
     msgs = json.dumps(slim_messages, ensure_ascii=False)
-    cands_json = json.dumps(list(candidates or []), ensure_ascii=False)
+    cands_json = json.dumps(list(candidates or [])[:20], ensure_ascii=False)
     state_json = json.dumps(state or {}, ensure_ascii=False)
 
     with db_session() as conn:

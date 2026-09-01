@@ -99,3 +99,31 @@ def test_feedback_only_accepts_candidate_from_session(monkeypatch):
     )
     assert response.success is True
     assert session.feedback_log[-1]["candidate_id"] == "A001"
+
+
+def test_feedback_accepts_candidate_beyond_preview_via_strict_snapshot(monkeypatch):
+    manager = SessionManager()
+    session = manager.put_session(SessionContext(owner_user_id=1, session_id="paged"))
+    session.candidates = [{"donor_info": {"code": "A001"}}]
+    session.match_result_id = "11111111-1111-1111-1111-111111111111"
+    monkeypatch.setitem(feedback_api._deps, "session_manager", manager)
+    monkeypatch.setattr(
+        feedback_api, "get_donor_by_code",
+        lambda code: {"id": 501, "code": code, "status": "active"},
+    )
+    monkeypatch.setattr(
+        feedback_api, "match_run_contains",
+        lambda result_id, user_id, donor_id: (
+            result_id == session.match_result_id and user_id == 1 and donor_id == 501
+        ),
+    )
+    monkeypatch.setattr(feedback_api, "record_feedback", lambda *_args: None)
+    response = asyncio.run(
+        feedback_api.submit_feedback(
+            feedback_api.FeedbackRequest(
+                session_id="paged", candidate_id="Z501", feedback="like"
+            ),
+            user_id=1,
+        )
+    )
+    assert response.success is True

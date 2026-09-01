@@ -295,11 +295,17 @@ async def resume_chat(
         "title": row["title"],
         "messages": messages,
         "candidates": candidates,
+        "match_result_id": session.match_result_id,
+        "match_total": session.match_total,
+        "match_next_cursor": session.match_next_cursor,
         "state": {
             "parsed_features": session.parsed_features,
             "constraints": session.constraints,
             "dialogue_state": session.state.value,
             "pending_relaxations": session.pending_relaxations,
+            "match_result_id": session.match_result_id,
+            "match_total": session.match_total,
+            "match_next_cursor": session.match_next_cursor,
         },
         "updated_at": _ts(row["updated_at"]),
     }

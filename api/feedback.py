@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from api.auth_utils import get_current_user_id
 from core.preference.match_log import append_feedback_event
+from db.donors_repo import get_donor_by_code
+from db.match_runs_repo import match_run_contains
 
 router = APIRouter()
 
@@ -52,17 +54,30 @@ async def submit_feedback(
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在或已过期")
 
-    candidate_ids: set[str] = set()
-    for candidate in session.candidates:
-        if not isinstance(candidate, dict):
-            continue
-        donor_info = candidate.get("donor_info")
-        if isinstance(donor_info, dict) and donor_info.get("code") is not None:
-            candidate_ids.add(str(donor_info["code"]))
-        for key in ("candidate_id", "code", "id"):
-            if candidate.get(key) is not None:
-                candidate_ids.add(str(candidate[key]))
-    if request.candidate_id not in candidate_ids:
+    belongs = False
+    if session.match_result_id:
+        donor = get_donor_by_code(request.candidate_id)
+        belongs = bool(
+            donor
+            and donor.get("status") == "active"
+            and match_run_contains(
+                session.match_result_id, user_id, int(donor["id"])
+            )
+        )
+    else:
+        # 兼容迁移前创建、尚无严格快照的会话。
+        candidate_ids: set[str] = set()
+        for candidate in session.candidates:
+            if not isinstance(candidate, dict):
+                continue
+            donor_info = candidate.get("donor_info")
+            if isinstance(donor_info, dict) and donor_info.get("code") is not None:
+                candidate_ids.add(str(donor_info["code"]))
+            for key in ("candidate_id", "code", "id"):
+                if candidate.get(key) is not None:
+                    candidate_ids.add(str(candidate[key]))
+        belongs = request.candidate_id in candidate_ids
+    if not belongs:
         raise HTTPException(status_code=404, detail="候选人不属于该会话")
 
     session.add_feedback(request.candidate_id, request.feedback, request.reason)
