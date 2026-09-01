@@ -75,6 +75,14 @@ export interface Candidate {
   match_level: string
   field_match: Record<string, { match: boolean; user?: string; actual?: string }>
   field_scores?: FieldScore[]
+  rank?: number
+}
+
+export interface MatchResultDescriptor {
+  result_set_id: string
+  total: number
+  items: Candidate[]
+  next_cursor?: string | null
 }
 
 export interface User {
@@ -115,12 +123,14 @@ export interface ChatSnapshot {
 export interface ChatMessage {
   role: 'user' | 'bot' | 'system'
   content: string
-  /** 聊天侧预览用（通常最多 20 条），完整列表放 match_bag_id 对应缓存 */
+  /** 聊天侧与中间栏的当前页预览（通常最多 20 条） */
   candidates?: Candidate[]
-  /** 完整匹配结果在 ChatPanel 本地缓存中的 key */
+  /** 迁移前历史消息的本地缓存 key，仅用于兼容读取 */
   match_bag_id?: string
   /** 本轮匹配总数（可大于 candidates 预览长度） */
   candidates_total?: number
+  match_result_id?: string
+  match_next_cursor?: string | null
   prefer_hits?: PreferHit[]
   /** 用户消息：发送前条件；助手消息：本轮结束后条件 */
   snapshot?: ChatSnapshot

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../components/ChatPanel'
 import { DonorCard, DonorCardSkeleton } from '../components/DonorCard'
@@ -7,7 +7,9 @@ import { FilterPanel } from '../components/FilterPanel'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
 import { getPaginationPages } from '../lib/pagination'
-import type { Candidate, FilterState } from '../types'
+import { cacheMatchPage, createMatchPageState } from '../lib/matchPagination'
+import type { MatchPageState } from '../lib/matchPagination'
+import type { Candidate, FilterState, MatchResultDescriptor } from '../types'
 import { DEFAULT_PRIORITY, EMPTY_FILTERS } from '../types'
 
 const MODE_META = {
@@ -18,6 +20,7 @@ const MODE_META = {
 
 /** 中间栏每页卡片数，避免一次挂载上千张 DonorCard */
 const LIST_PAGE_SIZE = 12
+const MATCH_PAGE_SIZE = 20
 
 export function DonorsPage() {
   const { user, loading: authLoading } = useAuth()
@@ -50,6 +53,8 @@ export function DonorsPage() {
   const [listKey, setListKey] = useState(0)
   const [mobileFilter, setMobileFilter] = useState(false)
   const [mobileChat, setMobileChat] = useState(false)
+  const [matchPages, setMatchPages] = useState<MatchPageState | null>(null)
+  const matchRequestSeq = useRef(0)
 
   useEffect(() => {
     localStorage.setItem('jzk_filter_collapsed', collapsed ? '1' : '0')
@@ -80,6 +85,15 @@ export function DonorsPage() {
   }, [user])
 
   useEffect(() => {
+    if (authLoading || user || !matchPages) return
+    matchRequestSeq.current += 1
+    setMatchPages(null)
+    if (mode === 'chat') void loadFeatured(1)
+    // loadFeatured is intentionally invoked only on the authenticated -> guest transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user, matchPages, mode])
+
+  useEffect(() => {
     if (!syncToast) return
     const t = setTimeout(() => setSyncToast(''), 2600)
     return () => clearTimeout(t)
@@ -92,6 +106,7 @@ export function DonorsPage() {
   }
 
   async function loadFeatured(p = 1) {
+    matchRequestSeq.current += 1
     setError('')
     setLoading(true)
     try {
@@ -106,6 +121,7 @@ export function DonorsPage() {
       setTotalPages(data.total_pages)
       setTotal(data.total)
       setHint(MODE_META.featured.blurb)
+      setMatchPages(null)
       flashList('featured')
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载失败')
@@ -119,6 +135,7 @@ export function DonorsPage() {
   }, [])
 
   async function doSearch() {
+    matchRequestSeq.current += 1
     const hasAny = Object.values(filters).some((v) => (Array.isArray(v) ? v.length > 0 : !!v))
     if (!hasAny) {
       setError('请至少选择一个筛选条件')
@@ -165,6 +182,7 @@ export function DonorsPage() {
             ? '部分条件已放宽'
             : '按相似度排序'
       setHint(level + (data.relaxed_hint ? ` · ${data.relaxed_hint}` : ''))
+      setMatchPages(null)
       flashList('search', '已根据筛选条件更新结果')
       setMobileFilter(false)
       if (user) {
@@ -196,20 +214,63 @@ export function DonorsPage() {
 
   const meta = MODE_META[mode]
   const pagedItems =
-    mode === 'featured'
+    mode === 'featured' || mode === 'chat'
       ? items
       : items.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE)
   const listTotalPages =
-    mode === 'featured' ? totalPages : Math.max(1, Math.ceil(items.length / LIST_PAGE_SIZE))
+    mode === 'featured'
+      ? totalPages
+      : mode === 'chat' && matchPages
+        ? Math.max(1, Math.ceil(matchPages.total / MATCH_PAGE_SIZE))
+        : Math.max(1, Math.ceil(items.length / LIST_PAGE_SIZE))
   const paginationPages = getPaginationPages(listTotalPages, page)
   const showLeadingEllipsis = (paginationPages[0] ?? 2) > 2
   const showTrailingEllipsis =
     paginationPages.length > 0 && paginationPages[paginationPages.length - 1] < listTotalPages - 1
 
+  async function loadMatchPage(targetPage: number) {
+    if (!matchPages || targetPage < 1 || targetPage > listTotalPages) return
+    const cached = matchPages.pages[targetPage]
+    if (cached) {
+      setItems(cached)
+      setPage(targetPage)
+      setHint(`共 ${matchPages.total} 位，当前显示第 ${(targetPage - 1) * MATCH_PAGE_SIZE + 1}～${Math.min(targetPage * MATCH_PAGE_SIZE, matchPages.total)} 位`)
+      return
+    }
+    const cursor = matchPages.cursors[targetPage]
+    if (!cursor) return
+    const requestId = ++matchRequestSeq.current
+    setLoading(true)
+    setError('')
+    try {
+      const data = await api.get<{
+        result_set_id: string
+        total: number
+        items: Candidate[]
+        next_cursor?: string | null
+      }>(`/api/match/results/${encodeURIComponent(matchPages.resultSetId)}?cursor=${encodeURIComponent(cursor)}&limit=${MATCH_PAGE_SIZE}`)
+      if (requestId !== matchRequestSeq.current) return
+      const nextState = cacheMatchPage(matchPages, targetPage, data.items, data.next_cursor)
+      setMatchPages(nextState)
+      setItems(data.items)
+      setTotal(data.total)
+      setPage(targetPage)
+      setHint(`共 ${data.total} 位，当前显示第 ${(targetPage - 1) * MATCH_PAGE_SIZE + 1}～${Math.min(targetPage * MATCH_PAGE_SIZE, data.total)} 位`)
+    } catch (e) {
+      if (requestId === matchRequestSeq.current) {
+        setError(e instanceof Error ? e.message : '加载匹配结果失败')
+      }
+    } finally {
+      if (requestId === matchRequestSeq.current) setLoading(false)
+    }
+  }
+
   function goToPage(targetPage: number) {
     if (targetPage === page || loading) return
     if (mode === 'featured') {
       void loadFeatured(targetPage)
+    } else if (mode === 'chat' && matchPages) {
+      void loadMatchPage(targetPage)
     } else {
       setPage(targetPage)
     }
@@ -243,13 +304,22 @@ export function DonorsPage() {
         setSearchParams(next, { replace: true })
       }
     },
-    onCandidates: (cands: Candidate[]) => {
+    onCandidates: (cands: Candidate[], result?: MatchResultDescriptor) => {
+      matchRequestSeq.current += 1
       startTransition(() => {
-        setItems(cands)
-        setTotal(cands.length)
+        const nextItems = result?.items || cands
+        setItems(nextItems)
+        setTotal(result?.total ?? cands.length)
         setPage(1)
-        setTotalPages(Math.max(1, Math.ceil(cands.length / LIST_PAGE_SIZE)))
-        setHint(MODE_META.chat.blurb)
+        setTotalPages(
+          Math.max(1, Math.ceil((result?.total ?? cands.length) / (result ? MATCH_PAGE_SIZE : LIST_PAGE_SIZE))),
+        )
+        setMatchPages(result ? createMatchPageState(result) : null)
+        setHint(
+          result
+            ? `共 ${result.total} 位，当前显示第 1～${Math.min(result.items.length, result.total)} 位`
+            : MODE_META.chat.blurb,
+        )
         setLoading(false)
         flashList('chat', '已根据对话更新中间结果')
         setMobileChat(false)
@@ -419,13 +489,40 @@ export function DonorsPage() {
                     <DonorCard
                       key={c.donor_info.code}
                       candidate={c}
-                      index={(page - 1) * LIST_PAGE_SIZE + i}
+                      index={(page - 1) * (mode === 'chat' && matchPages ? MATCH_PAGE_SIZE : LIST_PAGE_SIZE) + i}
                     />
                   ))}
                 </div>
               )}
 
-              {listTotalPages > 1 && (
+              {listTotalPages > 1 && mode === 'chat' && matchPages && (
+                <nav
+                  aria-label="匹配结果分页"
+                  className="mt-6 flex items-center justify-center gap-3"
+                >
+                  <button
+                    type="button"
+                    disabled={page <= 1 || loading}
+                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
+                    onClick={() => goToPage(page - 1)}
+                  >
+                    上一页
+                  </button>
+                  <span className="min-w-24 text-center text-[12px] tabular-nums text-ink-soft/60">
+                    第 {page} / {listTotalPages} 页
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= listTotalPages || loading || (!matchPages.pages[page + 1] && !matchPages.cursors[page + 1])}
+                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
+                    onClick={() => goToPage(page + 1)}
+                  >
+                    {loading ? '加载中…' : '下一页'}
+                  </button>
+                </nav>
+              )}
+
+              {listTotalPages > 1 && mode !== 'chat' && (
                 <nav
                   aria-label="列表分页"
                   className="mt-6 flex flex-wrap items-center justify-center gap-1.5"

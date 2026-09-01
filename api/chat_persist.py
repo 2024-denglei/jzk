@@ -45,10 +45,12 @@ def upsert_user_chat(
 
     with db_session() as conn:
         existing = conn.execute(
-            "SELECT id FROM app.chats WHERE user_id = %s AND session_id = %s",
+            "SELECT id, state_json FROM app.chats WHERE user_id = %s AND session_id = %s",
             (user_id, session_id),
         ).fetchone()
         if existing:
+            if not state:
+                state_json = existing.get("state_json") or "{}"
             conn.execute(
                 """
                 UPDATE app.chats
