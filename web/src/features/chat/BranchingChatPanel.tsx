@@ -387,8 +387,8 @@ export function BranchingChatPanel({
     <header className="shrink-0 border-b border-line/60 bg-white px-3 py-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-semibold text-ink">{tree?.chat.title || '匹配顾问'}</div>
-          <div className="mt-0.5 truncate text-[11px] text-ink-soft/45">{selectedBranch ? `${selectedBranch.name} · ${tree?.chat.branch_count || 1} 条分支` : '对话会保存为可回溯分支'}</div>
+          <div className="truncate text-[13px] font-semibold text-ink">AI 匹配顾问</div>
+          <div className="mt-0.5 truncate text-[11px] text-ink-soft/45">{tree ? `对话已保存 · ${tree.chat.branch_count || 1} 条分支` : '描述条件，获取智能匹配建议'}</div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button type="button" title="新对话" onClick={startNewChat} className="rounded-md p-1.5 text-ink-soft/50 hover:bg-mist/60"><i className="ri-add-line" /></button>
@@ -399,9 +399,6 @@ export function BranchingChatPanel({
           {drawer && onClose && <button type="button" onClick={onClose} className="rounded-md p-1 text-ink-soft/45"><i className="ri-close-line text-lg" /></button>}
         </div>
       </div>
-      {tree && tree.branches.length > 1 && <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5">
-        {tree.branches.filter((branch) => !branch.is_archived).map((branch) => <button key={branch.id} type="button" onClick={() => void loadConversation(tree.chat.id, branch.id)} className={`max-w-40 shrink-0 truncate rounded-full px-2.5 py-1 text-[10px] ${branch.id === selectedBranch?.id ? 'bg-teal-deep text-white' : 'bg-sand text-ink-soft/60'}`}>{branch.name}</button>)}
-      </div>}
     </header>
 
     {historyOpen && user && <section className="max-h-52 shrink-0 overflow-y-auto border-b border-line/50 bg-sand/50 px-2 py-2">
