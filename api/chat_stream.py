@@ -162,7 +162,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
         tool_failure_payload,
     )
     from api.match import invoke_match_endpoint
-    from config import LLM_MODEL, MATCH_TOP_K, TRACE_ENABLED
+    from config import CHAT_MATCH_TOP_K, LLM_MODEL, TRACE_ENABLED
     from dialogue.agent_trace import AgentTrace
 
     session_manager = _deps.get("session_manager")
@@ -254,6 +254,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                 )
 
             candidates: list = []
+            candidate_total = 0
             prefer_hits: list = []
             final_reply = ""
 
@@ -405,7 +406,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                         else:
                             yield _sse("token", {"text": "\n\n正在匹配候选人…"})
                             auth = request.headers.get("authorization") or request.headers.get("Authorization") or ""
-                            top_k = MATCH_TOP_K if MATCH_TOP_K > 0 else 0
+                            top_k = max(CHAT_MATCH_TOP_K, 1)
                             t_match = time.perf_counter()
                             status, match_data = await invoke_match_endpoint(
                                 request.app, auth, args, top_k=top_k
@@ -416,6 +417,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                                 session, args, status, match_data
                             )
                             prefer_hits = list((match_payload or {}).get("prefer_hits") or [])
+                            candidate_total = int((match_payload or {}).get("count") or len(candidates))
                             apply_ms = (time.perf_counter() - t_apply) * 1000
                             tool_content = json.dumps(match_payload, ensure_ascii=False)
                             if trace:
@@ -486,7 +488,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                                 )
                         except Exception as e:
                             logger.exception("总结流式失败")
-                            n = len(candidates)
+                            n = candidate_total or len(candidates)
                             final_reply = (
                                 f"已根据您的条件匹配到 {n} 位候选人，请查看下方卡片。"
                                 if n
@@ -497,12 +499,13 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                                 trace.add("summarize_fallback", error=str(e), reply=final_reply)
                         if trace:
                             trace.log_llm_response("summarize", content=final_reply)
-                        if candidates and str(len(candidates)) not in (final_reply or ""):
-                            extra = f"\n\n（本轮实际匹配 {len(candidates)} 位，详见下方卡片）"
+                        actual_count = candidate_total or len(candidates)
+                        if candidates and str(actual_count) not in (final_reply or ""):
+                            extra = f"\n\n（本轮实际匹配 {actual_count} 位，下方展示排名靠前的候选人）"
                             final_reply = (final_reply or "").rstrip() + extra
                             yield _sse("token", {"text": extra})
                             if trace:
-                                trace.add("reply_count_corrected", candidates_count=len(candidates))
+                                trace.add("reply_count_corrected", candidates_count=actual_count)
                         break
 
                     if round_i >= max_rounds - 1:
@@ -536,7 +539,7 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
                     {
                         "items": slim_items,
                         "prefer_hits": prefer_hits,
-                        "total": len(candidates),
+                        "total": candidate_total or len(candidates),
                     },
                 )
                 if trace:
@@ -564,7 +567,12 @@ async def chat_stream(body: StreamChatRequest, request: Request, user_id: int = 
 
             # 登录用户：服务端持久化
             t_persist = time.perf_counter()
-            ui_messages = _history_to_ui_messages(session, candidates, prefer_hits)
+            ui_messages = _history_to_ui_messages(
+                session,
+                candidates,
+                prefer_hits,
+                candidate_total=candidate_total or len(candidates),
+            )
             _maybe_persist(user_id, session, ui_messages, candidates)
             if trace:
                 trace.mark("persist", (time.perf_counter() - t_persist) * 1000)
@@ -621,7 +629,12 @@ def _maybe_persist(user_id, session, ui_messages, candidates):
         logger.exception("持久化对话失败")
 
 
-def _history_to_ui_messages(session, last_candidates, prefer_hits=None) -> list[dict]:
+def _history_to_ui_messages(
+    session,
+    last_candidates,
+    prefer_hits=None,
+    candidate_total: int | None = None,
+) -> list[dict]:
     out = []
     for m in session.history:
         role = m.get("role")
@@ -632,6 +645,7 @@ def _history_to_ui_messages(session, last_candidates, prefer_hits=None) -> list[
         out.append(item)
     if last_candidates and out and out[-1]["role"] == "bot":
         out[-1]["candidates"] = last_candidates
+        out[-1]["candidates_total"] = candidate_total or len(last_candidates)
         if prefer_hits:
             out[-1]["prefer_hits"] = prefer_hits
     return out

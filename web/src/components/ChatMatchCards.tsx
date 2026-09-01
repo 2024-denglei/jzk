@@ -154,7 +154,8 @@ export function ChatMatchCards({ candidates, preferHits, totalOverride, onViewIn
       </ul>
       {truncated ? (
         <div className="border-t border-line/50 px-3 py-2 text-[11px] text-ink-soft/50">
-          侧栏仅预览前 {CHAT_PREVIEW} 位，点「在中间查看」分页浏览全部 {total} 位
+          侧栏预览前 {CHAT_PREVIEW} 位，点「在中间查看」浏览已返回的前 {candidates.length} 位
+          {total > candidates.length ? `（共 ${total} 位符合条件）` : ''}
         </div>
       ) : null}
     </div>

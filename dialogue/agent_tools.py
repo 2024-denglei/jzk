@@ -526,6 +526,11 @@ def apply_match_api_response(session, raw_profile: dict, status: int, data: dict
         for k, v in (dumped.get("attributes") or {}).items()
     }
     candidates = data.get("candidates") or []
+    filtered_count = data.get("filtered_count")
+    try:
+        total_count = max(len(candidates), int(filtered_count))
+    except (TypeError, ValueError):
+        total_count = len(candidates)
     session.candidates = candidates
     session.state = DialogueState.PRESENTING if candidates else DialogueState.COLLECTING
     session.pending_relaxations = [b.get("field") for b in (data.get("bottlenecks") or []) if isinstance(b, dict)]
@@ -542,7 +547,7 @@ def apply_match_api_response(session, raw_profile: dict, status: int, data: dict
     prefer_hits = list(data.get("prefer_hits") or [])
     payload = {
         "ok": True,
-        "count": len(candidates),
+        "count": total_count,
         "match_level": data.get("match_level"),
         "filtered_count": data.get("filtered_count"),
         "feature_summary": build_profile_summary(profile),

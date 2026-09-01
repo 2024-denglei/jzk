@@ -87,13 +87,13 @@ export function ChatPanel({
 
   messagesRef.current = messages
 
-  function bagCandidates(full: Candidate[], preferHits?: PreferHit[]) {
+  function bagCandidates(full: Candidate[], preferHits?: PreferHit[], totalOverride?: number) {
     const bagId = `bag_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     matchBagsRef.current[bagId] = full
     return {
       match_bag_id: bagId,
       candidates: full.slice(0, CHAT_STATE_PREVIEW),
-      candidates_total: full.length,
+      candidates_total: totalOverride ?? full.length,
       prefer_hits: preferHits?.length ? preferHits : undefined,
     }
   }
@@ -176,7 +176,8 @@ export function ChatPanel({
           [...msgs].reverse().find((m) => m.candidates && m.candidates.length)?.candidates ||
           []
         if (full.length) {
-          const bag = bagCandidates(full)
+          const previousTotal = [...msgs].reverse().find((m) => m.candidates_total)?.candidates_total
+          const bag = bagCandidates(full, undefined, previousTotal)
           for (let i = msgs.length - 1; i >= 0; i--) {
             if (msgs[i].role === 'bot' && msgs[i].candidates?.length) {
               msgs[i] = { ...msgs[i], ...bag }
@@ -280,7 +281,8 @@ export function ChatPanel({
         [...msgs].reverse().find((m) => m.candidates && m.candidates.length)?.candidates ||
         []
       if (full.length) {
-        const bag = bagCandidates(full)
+        const previousTotal = [...msgs].reverse().find((m) => m.candidates_total)?.candidates_total
+        const bag = bagCandidates(full, undefined, previousTotal)
         for (let i = msgs.length - 1; i >= 0; i--) {
           if (msgs[i].role === 'bot' && msgs[i].candidates?.length) {
             msgs[i] = { ...msgs[i], ...bag }
@@ -401,6 +403,7 @@ export function ChatPanel({
 
     let botText = ''
     let candidates: Candidate[] = []
+    let candidateTotal = 0
     let preferHits: PreferHit[] = []
     let bagMeta: ReturnType<typeof bagCandidates> | null = null
     let currentSession = sessionId
@@ -446,8 +449,9 @@ export function ChatPanel({
               setMessages([...nextMessages, { role: 'bot', content: botText }])
             } else if (evt === 'candidates' && Array.isArray(data.items)) {
               candidates = data.items
+              candidateTotal = Number(data.total) || candidates.length
               preferHits = Array.isArray(data.prefer_hits) ? data.prefer_hits : []
-              bagMeta = bagCandidates(candidates, preferHits)
+              bagMeta = bagCandidates(candidates, preferHits, candidateTotal)
               setMessages([
                 ...nextMessages,
                 {
@@ -506,7 +510,7 @@ export function ChatPanel({
         return
       }
 
-      const bag = bagMeta || (candidates.length ? bagCandidates(candidates, preferHits) : null)
+      const bag = bagMeta || (candidates.length ? bagCandidates(candidates, preferHits, candidateTotal) : null)
       const botMsg: ChatMessage = {
         role: 'bot',
         content: botText || '已完成回复。',

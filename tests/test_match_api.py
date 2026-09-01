@@ -300,7 +300,7 @@ def test_apply_match_api_response_200_updates_session():
             "ok": True,
             "skipped": False,
             "match_level": "full",
-            "filtered_count": 1,
+            "filtered_count": 4303,
             "bottlenecks": [],
             "candidates": [{"donor_info": {"code": "T", "height": 180}, "score": 1.0}],
             "prefer_hits": [
@@ -309,7 +309,7 @@ def test_apply_match_api_response_200_updates_session():
         },
     )
     assert payload["ok"] is True
-    assert payload["count"] == 1
+    assert payload["count"] == 4303
     assert payload["prefer_hits"] == [
         {"field": "hometown", "label": "籍贯", "hits": 2, "of": 3},
     ]
