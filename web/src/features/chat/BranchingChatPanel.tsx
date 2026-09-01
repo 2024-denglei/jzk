@@ -4,7 +4,7 @@ import { ChatMatchCards } from '../../components/ChatMatchCards'
 import { useAuth } from '../../context/AuthContext'
 import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } from '../../lib/speech'
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
-import { buildTurnCommand, type PendingChatAction } from './chatActions'
+import { buildBranchWorkspacePath, buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
 import { candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
 import { followGeneration, type GenerationEvent } from './generationStream'
@@ -23,6 +23,7 @@ type Props = {
   onSeedConsumed?: () => void
   resumeChatId?: number | null
   resumeBranchId?: string | null
+  resumeForkFromMessageId?: string | null
   onConversationChange?: (chatId: number | null, branchId: string | null) => void
   drawer?: boolean
   onClose?: () => void
@@ -53,7 +54,7 @@ function isAbortError(error: unknown) {
 
 export function BranchingChatPanel({
   onCandidates, seedMessage, onSeedConsumed, resumeChatId, resumeBranchId,
-  onConversationChange, drawer = false, onClose, className = '',
+  resumeForkFromMessageId, onConversationChange, drawer = false, onClose, className = '',
 }: Props) {
   const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
@@ -80,9 +81,11 @@ export function BranchingChatPanel({
   const recognitionRef = useRef<ReturnType<typeof createSpeechRecognizer>>(null)
   const generationAbortRef = useRef<AbortController | null>(null)
   const loadedLocationRef = useRef('')
+  const initializedForkRef = useRef('')
   const ttsOnRef = useRef(ttsOn)
   const changeLocationRef = useRef(onConversationChange)
   const loadRef = useRef<((chatId: number, branchId?: string | null, notify?: boolean) => Promise<void>) | null>(null)
+  const loadOlderRef = useRef<(() => Promise<void>) | null>(null)
 
   changeLocationRef.current = onConversationChange
   ttsOnRef.current = ttsOn
@@ -214,7 +217,7 @@ export function BranchingChatPanel({
       onReconnect: (attempt) => setNotice(`连接中断，正在第 ${attempt} 次重连…`),
     }).then(async (status) => {
       if (controller.signal.aborted) return
-      setNotice(status === 'stopped' ? '生成已停止' : status === 'failed' ? '生成失败，可重试' : '')
+      setNotice(status === 'stopped' ? '生成已停止' : status === 'failed' ? '生成失败，请编辑上一条消息后重新发送' : '')
       if (status === 'completed' && ttsOnRef.current && streamedText) speakText(streamedText)
       await loadRef.current?.(currentChatId, branchId, false)
     }).catch((cause) => {
@@ -227,6 +230,31 @@ export function BranchingChatPanel({
     })
     return () => controller.abort()
   }, [generatingMessage?.generation_id, generatingMessage?.id, currentChatId, selectedBranch?.id])
+
+  useEffect(() => {
+    if (!resumeForkFromMessageId || !currentChatId || !selectedBranch) return
+    const key = `${currentChatId}:${selectedBranch.id}:${resumeForkFromMessageId}`
+    if (initializedForkRef.current === key) return
+    const source = messages.find((message) => message.id === resumeForkFromMessageId)
+    if (!source) {
+      if (selectedPath?.hasMore && selectedPath.nextBefore && !loadingConversation) {
+        void loadOlderRef.current?.()
+      } else if (!selectedPath?.hasMore && !loadingConversation) {
+        setError('指定的分支点不在当前线路中')
+      }
+      return
+    }
+    initializedForkRef.current = key
+    setPendingAction({
+      action: 'rewind_continue',
+      parentMessageId: source.id,
+      label: `新分支将从“${source.content.slice(0, 24) || '此消息'}”继续`,
+    })
+    setInput('')
+    setBranchesOpen(true)
+    setNotice('这是一个独立分支窗口。请输入新消息，原窗口和原线路不会改变。')
+    window.requestAnimationFrame(() => inputRef.current?.focus())
+  }, [resumeForkFromMessageId, currentChatId, selectedBranch, selectedPath, loadingConversation, messages])
 
   async function loadHistory(reset = true) {
     if (!user || historyLoading) return
@@ -265,6 +293,7 @@ export function BranchingChatPanel({
       setError(cause instanceof Error ? cause.message : '无法加载更早消息')
     } finally { setLoadingConversation(false) }
   }
+  loadOlderRef.current = loadOlderMessages
 
   async function stopGeneration(generationId: string) {
     try {
@@ -273,7 +302,7 @@ export function BranchingChatPanel({
     } catch (cause) { setError(cause instanceof Error ? cause.message : '停止生成失败') }
   }
 
-  async function send(textOverride?: string, regenerate?: ChatMessageNode) {
+  async function send(textOverride?: string) {
     if (!user) {
       navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`)
       return
@@ -282,8 +311,8 @@ export function BranchingChatPanel({
       if (generatingMessage?.generation_id) await stopGeneration(generatingMessage.generation_id)
       return
     }
-    const text = regenerate ? '' : (textOverride ?? input).trim()
-    if (!regenerate && !text) return
+    const text = (textOverride ?? input).trim()
+    if (!text) return
     setSending(true)
     setError('')
     setInput('')
@@ -293,11 +322,13 @@ export function BranchingChatPanel({
         selectedBranchId: selectedBranch?.id,
         branchHeadMessageId: selectedBranch?.head_message_id,
         pending: pendingAction,
-        regenerate,
         content: text,
         requestId: crypto.randomUUID(),
       }))
       created = true
+      if (pendingAction?.action === 'rewind_continue' && resumeForkFromMessageId) {
+        initializedForkRef.current = `${result.chat_id}:${result.branch_id}:${resumeForkFromMessageId}`
+      }
       setPendingAction(null)
       await loadConversation(result.chat_id, result.branch_id)
     } catch (cause) {
@@ -306,27 +337,33 @@ export function BranchingChatPanel({
     } finally { if (!created) setSending(false) }
   }
 
+  function openBranchWorkspace(branchId: string, forkFromMessageId?: string) {
+    if (!currentChatId) return
+    const path = buildBranchWorkspacePath(location.search, currentChatId, branchId, forkFromMessageId)
+    const opened = window.open(new URL(path, window.location.origin).toString(), '_blank')
+    if (opened) opened.opener = null
+    else navigate(path)
+  }
+
   function prepareRewind(message: ChatMessageNode) {
-    setPendingAction({ action: 'rewind_continue', parentMessageId: message.id,
-      label: `待创建：从“${message.content.slice(0, 24) || '此消息'}”继续，发送新消息后创建分支` })
-    setInput('')
-    setBranchesOpen(true)
-    setNotice('已选择回溯点。请输入新消息并发送，原分支会完整保留。')
-    window.requestAnimationFrame(() => inputRef.current?.focus())
+    if (!selectedBranch) return
+    openBranchWorkspace(selectedBranch.id, message.id)
   }
 
   function prepareEdit(message: ChatMessageNode) {
     setPendingAction({ action: 'edit_resend', parentMessageId: message.parent_message_id,
-      derivedFromMessageId: message.id, label: '待创建：发送编辑后的消息后创建新分支，原路径完整保留' })
+      derivedFromMessageId: message.id, label: '正在编辑当前线路；发送后将替换这条消息及其后续内容' })
     setInput(message.content)
-    setBranchesOpen(true)
-    setNotice('请修改消息并发送，发送成功后新分支会显示在树中。')
+    setNotice('请修改消息并发送。当前线路后续内容将被新回复替换，不会创建分支。')
     window.requestAnimationFrame(() => inputRef.current?.focus())
   }
 
   function cancelPendingAction() {
     setPendingAction(null)
     setNotice('')
+    if (resumeForkFromMessageId && currentChatId && selectedBranch) {
+      changeLocationRef.current?.(currentChatId, selectedBranch.id)
+    }
   }
 
   async function renameBranch(branch: ChatBranchSummary) {
@@ -416,14 +453,14 @@ export function BranchingChatPanel({
       <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-ink-soft/40">完整分支树</div>
       {tree.branches.map((branch) => <div key={branch.id} style={{ paddingLeft: `${branchDepth(branch, tree.branches) * 14}px` }} className="group/branch flex items-center gap-1">
         <span className="text-ink-soft/30">└</span>
-        <button type="button" onClick={() => void loadConversation(tree.chat.id, branch.id)} className={`min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left ${branch.id === selectedBranch?.id ? 'bg-mist text-teal-deep' : 'hover:bg-sand'}`}>
+        <button type="button" title="在独立窗口打开分支" onClick={() => openBranchWorkspace(branch.id)} className={`min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left ${branch.id === selectedBranch?.id ? 'bg-mist text-teal-deep' : 'hover:bg-sand'}`}>
           <div className="flex items-center gap-1"><span className="truncate text-[11px] font-medium">{branch.name}</span>{branch.is_active && <span className="text-[8px]">活跃</span>}{branch.is_archived && <span className="text-[8px]">已归档</span>}</div>
           <div className="text-[9px] text-ink-soft/40">{FORK_LABEL[branch.fork_reason]} · {branch.message_count} 条消息</div>
         </button>
         <button type="button" title="重命名分支" onClick={() => void renameBranch(branch)} className="p-1 text-ink-soft/30 opacity-0 group-hover/branch:opacity-100"><i className="ri-edit-line text-xs" /></button>
         {!branch.is_active && <button type="button" title={branch.is_archived ? '恢复分支' : '归档分支'} onClick={() => void toggleBranchArchive(branch)} className="p-1 text-ink-soft/30 opacity-0 group-hover/branch:opacity-100"><i className={`${branch.is_archived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'} text-xs`} /></button>}
       </div>)}
-      {pendingAction && <div className="mt-1 flex items-center gap-1 rounded-lg border border-dashed border-teal/30 bg-mist/40 px-2 py-1.5 text-teal-deep">
+      {pendingAction?.action === 'rewind_continue' && <div className="mt-1 flex items-center gap-1 rounded-lg border border-dashed border-teal/30 bg-mist/40 px-2 py-1.5 text-teal-deep">
         <span className="text-ink-soft/30">└</span>
         <div className="min-w-0"><div className="truncate text-[11px] font-medium">待创建分支</div><div className="text-[9px] opacity-65">发送下方消息后写入分支树</div></div>
       </div>}
@@ -441,17 +478,18 @@ export function BranchingChatPanel({
             {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'generating' ? '生成中' : message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
           </div></div>
           {!sending && message.role !== 'system' && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
-            {message.state_recoverable && index < visibleMessages.length - 1 && <button type="button" title="从此处分支" aria-label="从此处分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
-            {message.role === 'user' && <button type="button" onClick={() => prepareEdit(message)} className="hover:text-teal-deep">编辑重发</button>}
-            {message.role === 'assistant' && message.status !== 'generating' && <button type="button" title={message.status === 'failed' ? '重试' : '重新生成'} aria-label={message.status === 'failed' ? '重试' : '重新生成'} onClick={() => void send(undefined, message)} className={MESSAGE_ICON_ACTION}><i className="ri-restart-line" /></button>}
+            {message.state_recoverable && index < visibleMessages.length - 1 && <button type="button" title="在新窗口创建分支" aria-label="在新窗口创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
+            {message.role === 'user' && <button type="button" title="编辑当前消息" aria-label="编辑当前消息" onClick={() => prepareEdit(message)} className={MESSAGE_ICON_ACTION}><i className="ri-edit-line" /></button>}
             {message.match_run && <button type="button" title={`完整排名（${message.match_run.total}）`} aria-label={`完整排名，共 ${message.match_run.total} 位`} onClick={() => void loadMatch(message)} className={MESSAGE_ICON_ACTION}><i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin' : 'ri-list-ordered-2'} /></button>}
           </div>}
           {match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
         </article>
       })}
       {pendingAction && <div className="rounded-xl border border-dashed border-teal/25 bg-white/75 px-3 py-2 text-center text-[10px] text-ink-soft/55">
-        <i className="ri-git-branch-line mr-1 text-teal-deep" />
-        已定位到分支点，原路径后续 {messagePreview.hiddenCount} 条消息已收起但仍完整保留
+        <i className={`${pendingAction.action === 'edit_resend' ? 'ri-edit-line' : 'ri-git-branch-line'} mr-1 text-teal-deep`} />
+        {pendingAction.action === 'edit_resend'
+          ? `当前线路后续 ${messagePreview.hiddenCount} 条消息将在发送后被替换`
+          : `已定位到分支点，原路径后续 ${messagePreview.hiddenCount} 条消息会完整保留`}
       </div>}
       <div ref={bottomRef} />
     </main>
@@ -460,10 +498,10 @@ export function BranchingChatPanel({
       {(error || notice) && <div className={`mb-2 rounded-lg px-2 py-1.5 text-[10px] ${error ? 'bg-rose-50 text-rose-700' : 'bg-mist text-teal-deep'}`}>{error || notice}</div>}
       {pendingAction && <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-teal/20 bg-mist/50 px-2.5 py-2 text-[10px] text-teal-deep"><span>{pendingAction.label}</span><button type="button" onClick={cancelPendingAction}>取消</button></div>}
       <div className="flex items-end gap-2 rounded-xl border border-line/80 bg-sand/50 px-2 py-1.5 focus-within:border-teal/40">
-        <textarea ref={inputRef} value={input} disabled={selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction ? '输入消息，发送后创建新分支…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
+        <textarea ref={inputRef} value={input} disabled={selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction?.action === 'rewind_continue' ? '输入新分支的第一条消息…' : pendingAction?.action === 'edit_resend' ? '修改这条消息…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
         <button type="button" title={ttsOn ? '关闭语音播报' : '开启语音播报'} onClick={() => { if (ttsOn) stopSpeaking(); setTtsOn((value) => !value) }} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg ${ttsOn ? 'bg-mist text-teal-deep' : 'text-ink-soft/45'}`}><i className={ttsOn ? 'ri-volume-up-line' : 'ri-volume-mute-line'} /></button>
         <button type="button" title="语音输入" disabled={sending} onClick={toggleVoice} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg disabled:opacity-40 ${recording ? 'bg-red-100 text-red-500' : 'bg-mist text-ink-soft/70'}`}><i className={recording ? 'ri-mic-fill' : 'ri-mic-line'} /></button>
-        <button type="button" disabled={!sending && !input.trim()} onClick={() => void send()} title={sending ? '停止生成' : pendingAction ? '发送并创建分支' : '发送'} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-white disabled:opacity-40 ${sending ? 'bg-red-500' : 'bg-teal-deep'}`}><i className={sending ? 'ri-stop-fill' : 'ri-arrow-up-line'} /></button>
+        <button type="button" disabled={!sending && !input.trim()} onClick={() => void send()} title={sending ? '停止生成' : pendingAction?.action === 'rewind_continue' ? '发送并创建分支' : pendingAction?.action === 'edit_resend' ? '保存编辑并发送' : '发送'} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-white disabled:opacity-40 ${sending ? 'bg-red-500' : 'bg-teal-deep'}`}><i className={sending ? 'ri-stop-fill' : 'ri-arrow-up-line'} /></button>
       </div>
     </footer>
   </aside>

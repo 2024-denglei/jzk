@@ -199,6 +199,19 @@ def test_v2_flags_fail_closed(v2_client, monkeypatch):
     ).status_code == 503
 
 
+def test_regenerate_action_is_no_longer_part_of_public_api(v2_client):
+    client, _current, _users = v2_client
+    response = client.post(
+        "/api/chats/turns",
+        json={
+            "action": "regenerate",
+            "derived_from_message_id": str(uuid4()),
+            "client_request_id": str(uuid4()),
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_rollback_blocks_new_turns_but_keeps_stop_and_delete_available(v2_client, monkeypatch):
     client, _current, _users = v2_client
     created = client.post(

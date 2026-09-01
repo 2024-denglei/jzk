@@ -1,4 +1,4 @@
-"""分支化长期对话命令：不可变追加、分叉和幂等生成任务创建。"""
+"""分支化长期对话命令：追加、显式分叉、当前线路编辑和幂等生成。"""
 
 from __future__ import annotations
 
@@ -202,7 +202,11 @@ def _create_turn(
                 )
                 source_message = parent_message
             elif command.action == TurnAction.EDIT_RESEND:
-                fork_reason = ForkReason.EDIT_RESEND
+                if chats_repo.branch_has_active_generation(conn, selected_branch_id):
+                    raise ConversationCommandError(
+                        ChatErrorCode.BRANCH_GENERATION_ACTIVE,
+                        "当前分支已有正在运行的生成任务",
+                    )
                 source_message = _require_message(
                     conn,
                     chat_id=chat_id,
@@ -229,28 +233,11 @@ def _create_turn(
                     if fork_parent_id
                     else None
                 )
-            else:  # regenerate
-                fork_reason = ForkReason.REGENERATE
-                source_message = _require_message(
-                    conn,
-                    chat_id=chat_id,
-                    message_id=command.derived_from_message_id,
-                    branch_head_id=selected_head,
-                )
-                if source_message["role"] != MessageRole.ASSISTANT.value:
-                    raise ConversationCommandError(
-                        ChatErrorCode.INVALID_TURN_COMMAND,
-                        "只能重新生成 AI 消息",
-                    )
-                fork_parent_id = UUID(str(source_message["parent_message_id"]))
-                parent_message = chats_repo.get_message(conn, chat_id, fork_parent_id)
-                if parent_message is None or parent_message["role"] != MessageRole.USER.value:
-                    raise ConversationCommandError(
-                        ChatErrorCode.INVALID_TURN_COMMAND,
-                        "原 AI 消息没有有效用户父消息",
-                    )
 
-            needs_branch = command.action != TurnAction.APPEND or fork_reason == ForkReason.CONCURRENT_SEND
+            needs_branch = (
+                command.action == TurnAction.REWIND_CONTINUE
+                or fork_reason == ForkReason.CONCURRENT_SEND
+            )
             if needs_branch:
                 if int(chat["branch_count"]) >= config.CHAT_BRANCH_MAX_PER_CHAT:
                     raise ConversationCommandError(
@@ -287,43 +274,35 @@ def _create_turn(
         state_after, state_recoverable = _state_after(parent_message)
         parent_depth = int(parent_message["depth"]) if parent_message is not None else -1
 
-        if command.action == TurnAction.REGENERATE:
-            assert parent_message is not None
-            user_message_id = UUID(str(parent_message["id"]))
-            assistant_parent_id = user_message_id
-            assistant_depth = int(parent_message["depth"]) + 1
-            message_delta = 1
-        else:
-            user_message_id = uuid4()
-            chats_repo.insert_message(
-                conn,
-                message_id=user_message_id,
-                chat_id=chat_id,
-                branch_id=branch_id,
-                parent_message_id=(
-                    UUID(str(parent_message["id"])) if parent_message is not None else None
-                ),
-                derived_from_message_id=(
-                    command.derived_from_message_id
-                    if command.action == TurnAction.EDIT_RESEND
-                    else None
-                ),
-                role=MessageRole.USER,
-                status=MessageStatus.COMPLETED,
-                content=command.content.strip(),
-                state_schema_version=STATE_SCHEMA_VERSION,
-                state_after=state_after,
-                state_recoverable=state_recoverable,
-                depth=parent_depth + 1,
-                client_request_id=command.client_request_id,
-            )
-            assistant_parent_id = user_message_id
-            assistant_depth = parent_depth + 2
-            message_delta = 2
+        user_message_id = uuid4()
+        chats_repo.insert_message(
+            conn,
+            message_id=user_message_id,
+            chat_id=chat_id,
+            branch_id=branch_id,
+            parent_message_id=(
+                UUID(str(parent_message["id"])) if parent_message is not None else None
+            ),
+            derived_from_message_id=None,
+            role=MessageRole.USER,
+            status=MessageStatus.COMPLETED,
+            content=command.content.strip(),
+            state_schema_version=STATE_SCHEMA_VERSION,
+            state_after=state_after,
+            state_recoverable=state_recoverable,
+            depth=parent_depth + 1,
+            client_request_id=command.client_request_id,
+        )
+        assistant_parent_id = user_message_id
+        assistant_depth = parent_depth + 2
+        message_delta = 2
 
         chat = chats_repo.lock_chat(conn, user_id, chat_id)
         assert chat is not None
-        if int(chat["message_count"]) + message_delta > config.CHAT_MESSAGE_MAX_PER_CHAT:
+        if (
+            command.action != TurnAction.EDIT_RESEND
+            and int(chat["message_count"]) + message_delta > config.CHAT_MESSAGE_MAX_PER_CHAT
+        ):
             raise ConversationCommandError(
                 ChatErrorCode.CHAT_MESSAGE_LIMIT_REACHED,
                 "会话消息数量已达上限",
@@ -336,11 +315,7 @@ def _create_turn(
             chat_id=chat_id,
             branch_id=branch_id,
             parent_message_id=assistant_parent_id,
-            derived_from_message_id=(
-                command.derived_from_message_id
-                if command.action == TurnAction.REGENERATE
-                else None
-            ),
+            derived_from_message_id=None,
             role=MessageRole.ASSISTANT,
             status=MessageStatus.GENERATING,
             content="",
@@ -378,6 +353,12 @@ def _create_turn(
             message_delta=message_delta,
             branch_delta=branch_delta,
         )
+        if command.action == TurnAction.EDIT_RESEND:
+            chats_repo.prune_unreachable_messages(
+                conn,
+                chat_id=chat_id,
+                request_id=command.client_request_id,
+            )
 
     return TurnCreationResult(
         chat_id=chat_id,

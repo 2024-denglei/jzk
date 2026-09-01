@@ -134,6 +134,7 @@ def ensure_schema() -> None:
             "14_enforce_chat_match_snapshot.sql",
             "15_harden_generation_runs.sql",
             "16_drop_legacy_chat_storage.sql",
+            "17_allow_current_line_message_edits.sql",
         ):
             path = _SCHEMA_DIR / name
             if path.exists():

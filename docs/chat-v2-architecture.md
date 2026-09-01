@@ -3,8 +3,10 @@
 ## 权威数据关系
 
 `app.chats` 只保存会话级摘要和活跃分支；`app.chat_branches` 保存分支拓扑；
-`app.chat_messages` 保存不可变消息父链和每个节点之后的可恢复状态。回溯、编辑重发、重新生成
-和并发旧头发送都会创建新分支，不覆盖原路径。
+`app.chat_messages` 保存终态不可修改的消息父链和每个节点之后的可恢复状态。只有用户明确回溯
+继续或并发旧头发送才创建可见分支。编辑用户消息会原子切换当前分支 head，并删除不再被任何
+显式分支引用的旧消息、生成记录和排名快照；如果旧路径仍被其他显式分支引用，则该分支保持不变。
+客户端和管理端都不展示编辑版本历史，“重新生成 AI 回复”命令已经移除。
 
 AI 消息通过 `chat_messages.match_run_id` 关联 `app.match_runs`。完整排名、当时允许展示的供体资料
 和匹配解释按 rank 存在 `app.match_run_items`，因此加载任意历史 AI 消息都能复现完整冻结快照，
@@ -12,7 +14,7 @@ AI 消息通过 `chat_messages.match_run_id` 关联 `app.match_runs`。完整排
 
 生成由 `app.ai_generation_runs` 持久排队，Generation Worker 领取、续租、重试并更新 AI 消息；
 每一步 Trace 写入 `app.ai_generation_steps`。Redis Stream 只用于 token/event 实时推送和断线续传，
-Outbox 负责会话硬删除后的 Stream 清理。
+Outbox 负责会话硬删除或当前线路编辑后的 Stream 与孤立排名快照清理。
 
 ## 客户端加载
 
@@ -24,11 +26,14 @@ Outbox 负责会话硬删除后的 Stream 清理。
 
 查看其他分支不会改变 `active_branch_id`；只有在该路径发送新 Turn 后才更新活跃分支。整个会话
 必须带 `confirm_irreversible=true` 和幂等 `request_id` 才能立即硬删除，删除后不可恢复。
+创建分支和打开已有分支都使用带 `chatId/branchId/forkFrom` 的独立工作区 URL；原浏览器窗口
+继续停留在原线路，分支窗口提交第一条消息后才原子写入分支树。
 
 ## 管理端加载
 
 管理端使用 `/api/admin/users/{user_id}/conversations` 下的同构接口和同一查询服务加载列表、
-分支树与消息路径。它可从根到叶看到分叉原因、来源消息和派生消息；完整排名按消息懒加载，
+分支树与消息路径。它可从根到叶看到显式分叉原因和每条当前线路；用户编辑只呈现修改后的
+当前内容，不形成伪分支。完整排名按消息懒加载，
 数据库 Trace 按 generation 懒加载。每次敏感读取写入管理审计，审计只保存资源定位和分页参数，
 不复制消息、排名或 Trace 正文。
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildTurnCommand } from './chatActions.ts'
+import { buildBranchWorkspacePath, buildTurnCommand } from './chatActions.ts'
 
 test('追加、回溯和编辑重发保留正确的父节点语义', () => {
   const base = { selectedBranchId: 'branch-1', branchHeadMessageId: 'head-1', content: ' 新消息 ', requestId: 'request-1' }
@@ -18,12 +18,11 @@ test('追加、回溯和编辑重发保留正确的父节点语义', () => {
   assert.equal(edited.derived_from_message_id, 'old-1')
 })
 
-test('重新生成不发送新正文并关联原 AI 消息', () => {
-  const command = buildTurnCommand({
-    selectedBranchId: 'branch-1', branchHeadMessageId: 'assistant-old', content: '不得发送',
-    requestId: 'request-2', regenerate: { id: 'assistant-old' },
-  })
-  assert.equal(command.action, 'regenerate')
-  assert.equal(command.content, '')
-  assert.equal(command.derived_from_message_id, 'assistant-old')
+test('显式分支工作区使用独立 URL 并保留无关查询参数', () => {
+  const path = buildBranchWorkspacePath('?page=3&forkFrom=old', 12, 'branch-2', 'message-8')
+  assert.equal(path, '/donors?page=3&forkFrom=message-8&chatId=12&branchId=branch-2')
+  assert.equal(
+    buildBranchWorkspacePath(path.split('?')[1], 12, 'branch-3'),
+    '/donors?page=3&chatId=12&branchId=branch-3',
+  )
 })

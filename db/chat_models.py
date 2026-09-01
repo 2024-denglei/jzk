@@ -35,7 +35,6 @@ class TurnAction(StrEnum):
     APPEND = "append"
     REWIND_CONTINUE = "rewind_continue"
     EDIT_RESEND = "edit_resend"
-    REGENERATE = "regenerate"
 
 
 class ForkReason(StrEnum):
@@ -148,14 +147,8 @@ class TurnCommand(BaseModel):
     @model_validator(mode="after")
     def validate_action(self) -> "TurnCommand":
         content = self.content.strip()
-        if self.action == TurnAction.REGENERATE:
-            if self.derived_from_message_id is None:
-                raise ValueError("重新生成必须指定 derived_from_message_id")
-            if content:
-                raise ValueError("重新生成不能提交新的用户消息正文")
-        else:
-            if not content:
-                raise ValueError("消息正文不能为空")
+        if not content:
+            raise ValueError("消息正文不能为空")
         if self.action == TurnAction.EDIT_RESEND and self.derived_from_message_id is None:
             raise ValueError("编辑重发必须指定 derived_from_message_id")
         if self.action in {TurnAction.APPEND, TurnAction.REWIND_CONTINUE} and self.derived_from_message_id:

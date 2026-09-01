@@ -35,7 +35,7 @@ def test_dialogue_state_snapshot_is_immutable_and_excludes_history():
         snapshot.dialogue_state = "presenting"
 
 
-def test_turn_command_requires_content_except_for_regeneration():
+def test_turn_command_requires_content_for_every_supported_action():
     command = TurnCommand(
         action=TurnAction.APPEND,
         content="硕士，身高 175 以上",
@@ -46,24 +46,19 @@ def test_turn_command_requires_content_except_for_regeneration():
     with pytest.raises(ValidationError, match="消息正文不能为空"):
         TurnCommand(action=TurnAction.APPEND, content="  ", client_request_id=uuid4())
 
-    source_id = uuid4()
-    regenerate = TurnCommand(
-        action=TurnAction.REGENERATE,
-        derived_from_message_id=source_id,
-        client_request_id=uuid4(),
-    )
-    assert regenerate.derived_from_message_id == source_id
 
-
-def test_edit_and_regenerate_require_source_message():
+def test_edit_requires_source_message_and_regenerate_is_not_supported():
     with pytest.raises(ValidationError, match="编辑重发必须指定"):
         TurnCommand(
             action=TurnAction.EDIT_RESEND,
             content="改成必须 O 型",
             client_request_id=uuid4(),
         )
-    with pytest.raises(ValidationError, match="重新生成必须指定"):
-        TurnCommand(action=TurnAction.REGENERATE, client_request_id=uuid4())
+    with pytest.raises(ValidationError, match="Input should be"):
+        TurnCommand.model_validate({
+            "action": "regenerate",
+            "client_request_id": str(uuid4()),
+        })
 
 
 def test_terminal_message_and_generation_statuses_cannot_reopen():

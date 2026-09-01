@@ -1,7 +1,7 @@
-import type { ChatMessageNode, ChatTurnAction, ChatTurnCommand } from '../../types'
+import type { ChatTurnAction, ChatTurnCommand } from '../../types'
 
 export type PendingChatAction = {
-  action: Exclude<ChatTurnAction, 'append' | 'regenerate'>
+  action: Exclude<ChatTurnAction, 'append'>
   parentMessageId?: string | null
   derivedFromMessageId?: string | null
   label: string
@@ -11,17 +11,30 @@ export function buildTurnCommand(input: {
   selectedBranchId?: string | null
   branchHeadMessageId?: string | null
   pending?: PendingChatAction | null
-  regenerate?: ChatMessageNode
   content: string
   requestId: string
 }): ChatTurnCommand {
-  const action: ChatTurnAction = input.regenerate ? 'regenerate' : input.pending?.action || 'append'
+  const action: ChatTurnAction = input.pending?.action || 'append'
   return {
     branch_id: input.selectedBranchId || null,
     parent_message_id: input.pending?.parentMessageId ?? input.branchHeadMessageId ?? null,
     action,
-    derived_from_message_id: input.regenerate?.id || input.pending?.derivedFromMessageId || null,
-    content: action === 'regenerate' ? '' : input.content.trim(),
+    derived_from_message_id: input.pending?.derivedFromMessageId || null,
+    content: input.content.trim(),
     client_request_id: input.requestId,
   }
+}
+
+export function buildBranchWorkspacePath(
+  currentSearch: string,
+  chatId: number,
+  branchId: string,
+  forkFromMessageId?: string,
+): string {
+  const query = new URLSearchParams(currentSearch)
+  query.set('chatId', String(chatId))
+  query.set('branchId', branchId)
+  if (forkFromMessageId) query.set('forkFrom', forkFromMessageId)
+  else query.delete('forkFrom')
+  return `/donors?${query.toString()}`
 }

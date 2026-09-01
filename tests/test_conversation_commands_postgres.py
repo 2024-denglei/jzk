@@ -74,7 +74,7 @@ def _finish_generation(result, content="AI 回复"):
         )
 
 
-def test_all_turn_actions_preserve_old_paths_and_share_query_semantics(v2_user):
+def test_edit_rewrites_current_line_while_explicit_branch_preserves_its_path(v2_user):
     root = create_turn(
         v2_user,
         TurnCommand(content="第一条需求", client_request_id=uuid4()),
@@ -112,27 +112,6 @@ def test_all_turn_actions_preserve_old_paths_and_share_query_semantics(v2_user):
     assert same.generation_id == other_root.generation_id
     _finish_generation(other_root, "第三条回复")
 
-    edit = create_turn(
-        v2_user,
-        TurnCommand(
-            branch_id=root.branch_id,
-            action=TurnAction.EDIT_RESEND,
-            derived_from_message_id=root.user_message_id,
-            content="编辑后的第一条需求",
-            client_request_id=uuid4(),
-        ),
-        chat_id=root.chat_id,
-    )
-    regenerate = create_turn(
-        v2_user,
-        TurnCommand(
-            branch_id=root.branch_id,
-            action=TurnAction.REGENERATE,
-            derived_from_message_id=root.assistant_message_id,
-            client_request_id=uuid4(),
-        ),
-        chat_id=root.chat_id,
-    )
     rewind = create_turn(
         v2_user,
         TurnCommand(
@@ -144,43 +123,77 @@ def test_all_turn_actions_preserve_old_paths_and_share_query_semantics(v2_user):
         ),
         chat_id=root.chat_id,
     )
-    concurrent = create_turn(
+    _finish_generation(rewind, "显式分支回复")
+
+    edit = create_turn(
         v2_user,
         TurnCommand(
             branch_id=root.branch_id,
-            parent_message_id=root.assistant_message_id,
-            content="旧窗口继续发送",
+            action=TurnAction.EDIT_RESEND,
+            derived_from_message_id=root.user_message_id,
+            content="编辑后的第一条需求",
             client_request_id=uuid4(),
         ),
         chat_id=root.chat_id,
     )
 
-    assert edit.branch_created and edit.fork_reason == TurnAction.EDIT_RESEND.value
-    assert regenerate.branch_created and regenerate.fork_reason == TurnAction.REGENERATE.value
+    assert not edit.branch_created
+    assert edit.branch_id == root.branch_id
+    assert edit.fork_reason.value == "root"
     assert rewind.branch_created and rewind.fork_reason == TurnAction.REWIND_CONTINUE.value
-    assert concurrent.branch_created and concurrent.fork_reason.value == "concurrent_send"
 
     user_view = ConversationQueryService().get_conversation(v2_user, root.chat_id)
     admin_view = ConversationQueryService(admin=True).get_conversation(v2_user, root.chat_id)
     assert admin_view.model_dump() == user_view.model_dump()
-    assert user_view.chat.branch_count == 5
+    assert user_view.chat.branch_count == 2
     assert {branch.id for branch in user_view.branches} == {
         root.branch_id,
-        edit.branch_id,
-        regenerate.branch_id,
         rewind.branch_id,
-        concurrent.branch_id,
     }
 
     root_path = ConversationQueryService().get_message_path(
         v2_user, root.chat_id, root.branch_id, limit=20
     )
-    edit_path = ConversationQueryService().get_message_path(
-        v2_user, root.chat_id, edit.branch_id, limit=20
+    rewind_path = ConversationQueryService().get_message_path(
+        v2_user, root.chat_id, rewind.branch_id, limit=20
     )
-    assert len(root_path.items) == 6
-    assert [item.content for item in edit_path.items[:1]] == ["编辑后的第一条需求"]
-    assert root_path.items[0].content == "第一条需求"
+    assert [item.content for item in root_path.items] == ["编辑后的第一条需求", ""]
+    assert [item.content for item in rewind_path.items] == [
+        "第一条需求", "第一条回复", "从第一条回复处继续", "显式分支回复",
+    ]
+    assert user_view.chat.message_count == 6
+
+
+def test_edit_without_other_branch_hard_deletes_replaced_line(v2_user):
+    root = create_turn(v2_user, TurnCommand(content="旧需求", client_request_id=uuid4()))
+    _finish_generation(root, "旧回复")
+
+    edit = create_turn(
+        v2_user,
+        TurnCommand(
+            branch_id=root.branch_id,
+            action=TurnAction.EDIT_RESEND,
+            derived_from_message_id=root.user_message_id,
+            content="新需求",
+            client_request_id=uuid4(),
+        ),
+        chat_id=root.chat_id,
+    )
+
+    assert edit.branch_id == root.branch_id and not edit.branch_created
+    assert TEST_DATABASE_URL
+    with psycopg.connect(TEST_DATABASE_URL, row_factory=dict_row) as conn:
+        messages = conn.execute(
+            "SELECT id, content FROM app.chat_messages WHERE chat_id = %s ORDER BY depth",
+            (root.chat_id,),
+        ).fetchall()
+        assert [row["content"] for row in messages] == ["新需求", ""]
+        assert {row["id"] for row in messages}.isdisjoint({
+            root.user_message_id, root.assistant_message_id,
+        })
+        assert conn.execute(
+            "SELECT 1 FROM app.ai_generation_runs WHERE id = %s", (root.generation_id,)
+        ).fetchone() is None
 
 
 def test_database_rejects_terminal_message_mutation_and_single_node_delete(v2_user):

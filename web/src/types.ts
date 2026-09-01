@@ -138,7 +138,7 @@ export interface ChatMessage {
   snapshot?: ChatSnapshot
 }
 
-export type ChatTurnAction = 'append' | 'rewind_continue' | 'edit_resend' | 'regenerate'
+export type ChatTurnAction = 'append' | 'rewind_continue' | 'edit_resend'
 export type ChatForkReason =
   | 'root'
   | 'rewind_continue'

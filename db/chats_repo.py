@@ -286,6 +286,111 @@ def update_chat_after_turn(
     )
 
 
+def prune_unreachable_messages(
+    conn,
+    *,
+    chat_id: int,
+    request_id: UUID,
+) -> int:
+    """删除不再被任何显式分支引用的消息、生成记录和匹配快照。"""
+    doomed = fetchall(
+        conn,
+        """
+        WITH RECURSIVE retained AS (
+          SELECT message.id, message.parent_message_id, message.derived_from_message_id
+          FROM app.chat_messages message
+          JOIN (
+            SELECT head_message_id AS id FROM app.chat_branches
+            WHERE chat_id = %s AND head_message_id IS NOT NULL
+            UNION
+            SELECT forked_from_message_id FROM app.chat_branches
+            WHERE chat_id = %s AND forked_from_message_id IS NOT NULL
+            UNION
+            SELECT derived_from_message_id FROM app.chat_branches
+            WHERE chat_id = %s AND derived_from_message_id IS NOT NULL
+          ) root ON root.id = message.id
+          WHERE message.chat_id = %s
+        UNION
+          SELECT related.id, related.parent_message_id, related.derived_from_message_id
+          FROM retained child
+          JOIN LATERAL (
+            VALUES (child.parent_message_id), (child.derived_from_message_id)
+          ) reference(id) ON reference.id IS NOT NULL
+          JOIN app.chat_messages related
+            ON related.chat_id = %s AND related.id = reference.id
+        )
+        SELECT message.id, message.match_run_id
+        FROM app.chat_messages message
+        WHERE message.chat_id = %s
+          AND NOT EXISTS (SELECT 1 FROM retained WHERE retained.id = message.id)
+        """,
+        (chat_id, chat_id, chat_id, chat_id, chat_id, chat_id),
+    )
+    if not doomed:
+        return 0
+
+    message_ids = [row["id"] for row in doomed]
+    match_run_ids = [str(row["match_run_id"]) for row in doomed if row.get("match_run_id")]
+    generations = fetchall(
+        conn,
+        """
+        DELETE FROM app.ai_generation_runs
+        WHERE chat_id = %s
+          AND (user_message_id = ANY(%s) OR assistant_message_id = ANY(%s))
+        RETURNING id
+        """,
+        (chat_id, message_ids, message_ids),
+    )
+    generation_ids = [str(row["id"]) for row in generations]
+
+    # 触发器只为当前事务中的“分支头已切换后清理”开放单节点删除。
+    conn.execute("SELECT set_config('app.allow_message_prune', 'on', true)")
+    conn.execute(
+        "DELETE FROM app.chat_messages WHERE chat_id = %s AND id = ANY(%s)",
+        (chat_id, message_ids),
+    )
+    conn.execute(
+        """
+        UPDATE app.chats
+        SET message_count = (
+              SELECT COUNT(*) FROM app.chat_messages WHERE chat_id = %s
+            ),
+            updated_at = now()
+        WHERE id = %s
+        """,
+        (chat_id, chat_id),
+    )
+    if generation_ids:
+        conn.execute(
+            """
+            INSERT INTO app.outbox_events
+                (topic, aggregate_type, aggregate_id, dedupe_key, payload_json)
+            VALUES ('generation_event_cleanup', 'chat_edit', %s, %s, %s)
+            ON CONFLICT (dedupe_key) DO NOTHING
+            """,
+            (
+                str(chat_id),
+                f"generation_event_cleanup:edit:{request_id}",
+                Jsonb({"generation_ids": generation_ids}),
+            ),
+        )
+    if match_run_ids:
+        conn.execute(
+            """
+            INSERT INTO app.outbox_events
+                (topic, aggregate_type, aggregate_id, dedupe_key, payload_json)
+            VALUES ('orphan_match_run_cleanup', 'chat_edit', %s, %s, %s)
+            ON CONFLICT (dedupe_key) DO NOTHING
+            """,
+            (
+                str(chat_id),
+                f"orphan_match_run_cleanup:edit:{request_id}",
+                Jsonb({"match_run_ids": match_run_ids}),
+            ),
+        )
+    return len(doomed)
+
+
 def rename_chat(user_id: int, chat_id: int, title: str) -> bool:
     with db_session() as conn:
         cur = conn.execute(
