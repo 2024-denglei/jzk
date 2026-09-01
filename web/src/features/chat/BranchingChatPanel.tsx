@@ -15,6 +15,7 @@ const FORK_LABEL: Record<ChatBranchSummary['fork_reason'], string> = {
   root: '主线', rewind_continue: '回溯后继续', edit_resend: '编辑重发',
   regenerate: '重新生成', concurrent_send: '并发分支',
 }
+const MESSAGE_ICON_ACTION = 'inline-flex h-7 w-7 items-center justify-center rounded-md text-[14px] text-ink-soft/45 transition hover:bg-mist hover:text-teal-deep focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal/40'
 
 type Props = {
   onCandidates: (items: Candidate[], result?: MatchResultDescriptor) => void
@@ -439,11 +440,11 @@ export function BranchingChatPanel({
             {message.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: fmtMd(message.content || (message.status === 'generating' ? '…' : '')) }} /> : message.content}
             {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'generating' ? '生成中' : message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
           </div></div>
-          {!sending && message.role !== 'system' && <div className={`mt-1 flex gap-2 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
-            {message.state_recoverable && index < visibleMessages.length - 1 && <button type="button" onClick={() => prepareRewind(message)} className="hover:text-teal-deep">从此处分支</button>}
+          {!sending && message.role !== 'system' && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
+            {message.state_recoverable && index < visibleMessages.length - 1 && <button type="button" title="从此处分支" aria-label="从此处分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
             {message.role === 'user' && <button type="button" onClick={() => prepareEdit(message)} className="hover:text-teal-deep">编辑重发</button>}
-            {message.role === 'assistant' && message.status !== 'generating' && <button type="button" onClick={() => void send(undefined, message)} className="hover:text-teal-deep">{message.status === 'failed' ? '重试' : '重新生成'}</button>}
-            {message.match_run && <button type="button" onClick={() => void loadMatch(message)} className="hover:text-teal-deep">{matchLoadingId === message.id ? '加载排名…' : `完整排名（${message.match_run.total}）`}</button>}
+            {message.role === 'assistant' && message.status !== 'generating' && <button type="button" title={message.status === 'failed' ? '重试' : '重新生成'} aria-label={message.status === 'failed' ? '重试' : '重新生成'} onClick={() => void send(undefined, message)} className={MESSAGE_ICON_ACTION}><i className="ri-restart-line" /></button>}
+            {message.match_run && <button type="button" title={`完整排名（${message.match_run.total}）`} aria-label={`完整排名，共 ${message.match_run.total} 位`} onClick={() => void loadMatch(message)} className={MESSAGE_ICON_ACTION}><i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin' : 'ri-list-ordered-2'} /></button>}
           </div>}
           {match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
         </article>
