@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node --test src/lib/api.test.mjs src/lib/pagination.test.mjs src/lib/matchPagination.test.mjs src/features/chat/chatActions.test.mjs src/features/chat/chatState.test.mjs src/features/chat/generationStream.test.mjs src/pages/admin/adminAccountForm.test.mjs src/pages/admin/adminFormat.test.mjs src/pages/admin/adminLayout.test.mjs src/pages/admin/adminPermissions.test.mjs src/pages/admin/donorForm.test.mjs src/pages/admin/chatTrace.test.mjs",
+    "test": "node --test src/lib/api.test.mjs src/lib/pagination.test.mjs src/lib/matchPagination.test.mjs src/features/chat/chatActions.test.mjs src/features/chat/chatState.test.mjs src/features/chat/generationStream.test.mjs src/pages/admin/adminAccountForm.test.mjs src/pages/admin/adminFormat.test.mjs src/pages/admin/adminLayout.test.mjs src/pages/admin/adminPermissions.test.mjs src/pages/admin/donorForm.test.mjs src/pages/admin/chat/adminChatState.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

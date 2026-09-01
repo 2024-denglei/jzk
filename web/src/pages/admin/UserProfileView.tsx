@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { adminFetch, postAdmin } from './adminApi'
 import { adminPageShellClass } from './adminLayout'
-import { ChatTraceView } from './ChatTraceView'
+import { AdminConversationWorkspace } from './chat/AdminConversationWorkspace'
 import { EmptyState, ErrorNotice, Pagination, StatusBadge } from './AdminUi'
 import { formatTime } from './adminFormat'
 import { UserControlDialog, type UserControlAction } from './UserControlDialog'
-import type { ChatDetail, ChatRecord, FavoriteRecord, HistoryRecord, PageData, UserArchive, UserAuditRecord } from './types'
+import type { FavoriteRecord, HistoryRecord, PageData, UserArchive, UserAuditRecord } from './types'
 import { ADMIN_PERMISSIONS, hasAdminPermission } from './adminPermissions'
 
 type Tab = 'overview' | 'favorites' | 'history' | 'chats' | 'audit'
@@ -29,8 +29,6 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
   const [favorites, setFavorites] = useState<PageData<FavoriteRecord>>(EMPTY_PAGE)
   const [history, setHistory] = useState<PageData<HistoryRecord>>(EMPTY_PAGE)
   const [historyKind, setHistoryKind] = useState('')
-  const [chats, setChats] = useState<PageData<ChatRecord>>(EMPTY_PAGE)
-  const [chatDetail, setChatDetail] = useState<ChatDetail | null>(null)
   const [audits, setAudits] = useState<PageData<UserAuditRecord>>(EMPTY_PAGE)
   const [loading, setLoading] = useState(true)
   const [tabLoading, setTabLoading] = useState(false)
@@ -58,7 +56,7 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
   }, [loadProfile])
 
   const loadTab = useCallback(async () => {
-    if (tab === 'overview') return
+    if (tab === 'overview' || tab === 'chats') return
     setTabLoading(true)
     setError('')
     try {
@@ -68,7 +66,6 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
         const kind = historyKind ? `&kind=${historyKind}` : ''
         setHistory(await adminFetch(`${base}/history?page=${page}&page_size=20${kind}`))
       }
-      if (tab === 'chats') setChats(await adminFetch(`${base}/chats?page=${page}&page_size=20`))
       if (tab === 'audit') setAudits(await adminFetch(`${base}/audit?page=${page}&page_size=20`))
     } catch (err) {
       setError(err instanceof Error ? err.message : '记录加载失败')
@@ -80,18 +77,6 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
   useEffect(() => {
     void loadTab()
   }, [loadTab])
-
-  async function openChat(chatId: number) {
-    setTabLoading(true)
-    setError('')
-    try {
-      setChatDetail(await adminFetch<ChatDetail>(`/api/admin/users/${userId}/chats/${chatId}`))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '会话加载失败')
-    } finally {
-      setTabLoading(false)
-    }
-  }
 
   async function confirmControl(reason: string) {
     if (!control) return
@@ -161,7 +146,7 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
       <section className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#dce4ee] bg-white">
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-[#e2e8f0] px-4 pt-2">
           {TABS.map((item) => (
-            <button key={item.key} onClick={() => { setTab(item.key); setPage(1); setChatDetail(null) }} className={`relative shrink-0 px-4 py-3 text-xs font-medium ${tab === item.key ? 'text-[#1677ff]' : 'text-[#68768a] hover:text-[#2b3c55]'}`}>
+            <button key={item.key} onClick={() => { setTab(item.key); setPage(1) }} className={`relative shrink-0 px-4 py-3 text-xs font-medium ${tab === item.key ? 'text-[#1677ff]' : 'text-[#68768a] hover:text-[#2b3c55]'}`}>
               {item.label}
               {tab === item.key ? <span className="absolute inset-x-3 bottom-0 h-0.5 bg-[#1677ff]" /> : null}
             </button>
@@ -205,23 +190,8 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
           ) : null}
 
           {!tabLoading && tab === 'chats' ? (
-            <div className="grid h-full min-h-0 lg:grid-cols-[330px_minmax(0,1fr)]">
-              <div className="flex min-h-0 flex-col border-r border-[#e4eaf1] bg-white">
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  {chats.items.length ? chats.items.map((chat) => (
-                    <button key={chat.id} onClick={() => void openChat(chat.id)} className={`block w-full border-b border-[#e8edf3] px-4 py-3 text-left transition hover:bg-[#f7faff] ${chatDetail?.id === chat.id ? 'bg-[#eef6ff]' : ''}`}>
-                      <div className="mb-1 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#1677ff]"><i className="ri-fingerprint-line" />Session ID</div>
-                      <div className="break-all font-mono text-[11px] font-medium leading-4 text-[#26364e]">{chat.session_id}</div>
-                      <div className="mt-2 truncate text-[10px] text-[#68768a]">{chat.title || '未命名会话'}</div>
-                      <div className="mt-1 flex justify-between text-[10px] text-[#9aa5b5]"><span>{chat.message_count} 条消息</span><span>{formatTime(chat.updated_at)}</span></div>
-                    </button>
-                  )) : <EmptyState text="暂无 AI 会话" />}
-                </div>
-                {chats.total > chats.page_size ? <div className="shrink-0"><Pagination page={page} pageSize={chats.page_size} total={chats.total} onChange={setPage} /></div> : null}
-              </div>
-              <div className="min-h-0 min-w-0 overflow-hidden bg-[#f8fafc]">
-                {chatDetail ? <ChatTraceView chat={chatDetail} /> : <div className="flex h-full items-center justify-center text-sm text-[#9aa5b5]">从左侧选择一个 Session 查看完整 Trace</div>}
-              </div>
+            <div className="h-full min-h-0 overflow-x-auto">
+              <AdminConversationWorkspace userId={userId} />
             </div>
           ) : null}
 
@@ -260,5 +230,13 @@ function HistoryItem({ item }: { item: HistoryRecord }) {
 }
 
 function auditLabel(action: UserAuditRecord['action']) {
-  return { view_chat: '查看 AI 会话', kick: '强制下线', disable: '停用账号', enable: '恢复账号' }[action] || action
+  return {
+    view_chat: '查看旧版 AI 会话',
+    view_chat_list: '查看会话列表',
+    view_chat_tree: '查看分支树',
+    view_chat_path: '查看消息路径',
+    view_chat_match: '查看完整排名快照',
+    view_chat_trace: '查看生成 Trace',
+    kick: '强制下线', disable: '停用账号', enable: '恢复账号',
+  }[action] || action
 }

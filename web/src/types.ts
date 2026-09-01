@@ -271,6 +271,10 @@ export interface FrozenMatchPage {
     currently_selectable: boolean
   }>
   has_more: boolean
+  model_version: string
+  dataset_version: string
+  snapshot_schema_version: number
+  snapshot_source: 'native' | 'legacy_backfill'
 }
 
 export const DEFAULT_PRIORITY = [

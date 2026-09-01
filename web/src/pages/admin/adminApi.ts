@@ -68,7 +68,11 @@ export async function adminFetch<T>(path: string, init: RequestInit = {}, retry 
       setAdminToken(null)
       window.dispatchEvent(new Event('admin-unauthorized'))
     }
-    throw new Error((data as { detail?: string }).detail || response.statusText || '请求失败')
+    const detail = (data as { detail?: unknown }).detail
+    const message = detail && typeof detail === 'object'
+      ? (detail as { message?: unknown }).message
+      : detail
+    throw new Error(typeof message === 'string' ? message : response.statusText || '请求失败')
   }
   return data as T
 }

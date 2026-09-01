@@ -111,67 +111,9 @@ export type HistoryRecord = {
   created_at: string
 }
 
-export type ChatRecord = {
-  id: number
-  session_id: string
-  title: string
-  message_count: number
-  created_at: string
-  updated_at: string
-}
-
-export type ChatMessage = {
-  role?: string
-  content?: string
-  candidates?: unknown[]
-  tool_calls?: unknown[]
-  [key: string]: unknown
-}
-
-export type ChatTraceStep = {
-  type: string
-  ts?: string
-  phase?: string
-  stage?: string
-  model?: string
-  name?: string
-  tool_call_id?: string | null
-  elapsed_ms?: number
-  content?: string | null
-  messages?: ChatMessage[]
-  tool_calls?: unknown[] | null
-  arguments?: unknown
-  result?: unknown
-  [key: string]: unknown
-}
-
-export type ChatTurnTrace = {
-  trace_id: string
-  session_id: string
-  user_id?: number | null
-  model?: string | null
-  started_at: string
-  finished_at?: string
-  user_message?: string
-  steps: ChatTraceStep[]
-  final_reply?: string | null
-  candidates_count?: number
-  parsed_features?: Record<string, unknown> | null
-  constraints?: Record<string, unknown> | null
-  error?: string | null
-  timings?: Record<string, number>
-}
-
-export type ChatDetail = ChatRecord & {
-  messages: ChatMessage[]
-  candidates: unknown[]
-  state: Record<string, unknown>
-  turns: ChatTurnTrace[]
-}
-
 export type UserAuditRecord = {
   id: number
-  action: 'view_chat' | 'kick' | 'disable' | 'enable'
+  action: 'view_chat' | 'view_chat_list' | 'view_chat_tree' | 'view_chat_path' | 'view_chat_match' | 'view_chat_trace' | 'kick' | 'disable' | 'enable'
   reason?: string | null
   operator_id?: number | null
   operator_name?: string | null

@@ -111,7 +111,7 @@ def test_admin_chat_returns_404_when_not_owned_by_user(monkeypatch):
     assert exc.value.status_code == 404
 
 
-def test_chat_repository_attaches_traces_by_session_and_user(monkeypatch):
+def test_legacy_admin_chat_no_longer_reads_local_trace_files(monkeypatch):
     class Conn:
         def execute(self, _sql, _params=()):
             return None
@@ -134,15 +134,6 @@ def test_chat_repository_attaches_traces_by_session_and_user(monkeypatch):
             "state_json": "{}",
         },
     )
-    called = {}
-
-    def fake_traces(session_id, user_id):
-        called.update(session_id=session_id, user_id=user_id)
-        return [{"trace_id": "trace-1", "steps": []}]
-
-    monkeypatch.setattr(admin_users_repo, "read_session_traces", fake_traces)
-
     row = admin_users_repo.get_user_chat(7, 88, 9)
 
-    assert called == {"session_id": "session-unique-id", "user_id": 7}
-    assert row["turns"][0]["trace_id"] == "trace-1"
+    assert row["turns"] == []

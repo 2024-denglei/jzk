@@ -13,6 +13,11 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   import: '导入档案',
   upsert: '保存档案',
   view_chat: '查看 AI 会话',
+  view_chat_list: '查看会话列表',
+  view_chat_tree: '查看会话分支树',
+  view_chat_path: '查看会话消息路径',
+  view_chat_match: '查看完整排名快照',
+  view_chat_trace: '查看生成 Trace',
   kick: '强制用户下线',
 }
 
