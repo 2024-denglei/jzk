@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { agentTranscriptEvents, branchOriginLabel, finalAgentContextEvents, flattenBranchTree, latestAssistantMessage, layoutHorizontalBranchTree } from './adminChatState.ts'
+import { agentTranscriptEvents, branchOriginLabel, finalAgentContextEvents, flattenBranchTree, latestSystemContextEvent, layoutHorizontalBranchTree, turnExecutionEvents } from './adminChatState.ts'
 
 const makeBranch = (id, parent, reason) => ({
   id, parent_branch_id: parent, fork_reason: reason, name: id,
@@ -87,15 +87,55 @@ test('缺少重试编号的旧转录也只从最后一条系统提示词开始�
   assert.deepEqual(events.map((event) => event.text), ['最终 System', '最终 User'])
 })
 
-test('线路上下文只取最后一轮生成，前几轮不再各自重复渲染完整输入', () => {
-  const selected = latestAssistantMessage([
-    { id: 'user-1', role: 'user', depth: 0 },
-    { id: 'assistant-1', role: 'assistant', depth: 1 },
-    { id: 'user-2', role: 'user', depth: 2 },
-    { id: 'assistant-2', role: 'assistant', depth: 3 },
-  ])
+test('完整线路保留每一轮工具执行，但系统提示词只选最新版本一次', () => {
+  const first = [
+    { id: 1, step_order: 1, step_type: 'agent_message', created_at: 't1', payload_json: {
+      role: 'system', phase: 'input_context', text: 'System v1', attempt_count: 1,
+    } },
+    { id: 2, step_order: 2, step_type: 'agent_message', created_at: 't2', payload_json: {
+      role: 'user', phase: 'input_context', text: '第一问', attempt_count: 1,
+    } },
+    { id: 3, step_order: 3, step_type: 'agent_message', created_at: 't3', payload_json: {
+      role: 'assistant', phase: 'tool_call', text: '执行第一次工具', attempt_count: 1,
+      tool_calls: [{ id: 'call-1', name: 'match', arguments_text: '{}' }],
+    } },
+    { id: 4, step_order: 4, step_type: 'agent_message', created_at: 't4', payload_json: {
+      role: 'tool', phase: 'tool_result', text: '{"count":10}', attempt_count: 1,
+    } },
+    { id: 5, step_order: 5, step_type: 'agent_message', created_at: 't5', payload_json: {
+      role: 'assistant', phase: 'final', text: '第一次回复', attempt_count: 1,
+    } },
+  ]
+  const second = [
+    { id: 6, step_order: 1, step_type: 'agent_message', created_at: 't6', payload_json: {
+      role: 'system', phase: 'input_context', text: 'System v2', attempt_count: 1,
+    } },
+    { id: 7, step_order: 2, step_type: 'agent_message', created_at: 't7', payload_json: {
+      role: 'user', phase: 'input_context', text: '第一问', attempt_count: 1,
+    } },
+    { id: 8, step_order: 3, step_type: 'agent_message', created_at: 't8', payload_json: {
+      role: 'assistant', phase: 'input_context', text: '第一次回复', attempt_count: 1,
+    } },
+    { id: 9, step_order: 4, step_type: 'agent_message', created_at: 't9', payload_json: {
+      role: 'user', phase: 'input_context', text: '第二问', attempt_count: 1,
+    } },
+    { id: 10, step_order: 5, step_type: 'agent_message', created_at: 't10', payload_json: {
+      role: 'assistant', phase: 'tool_call', text: '执行第二次工具', attempt_count: 1,
+      tool_calls: [{ id: 'call-2', name: 'match', arguments_text: '{}' }],
+    } },
+    { id: 11, step_order: 6, step_type: 'agent_message', created_at: 't11', payload_json: {
+      role: 'tool', phase: 'tool_result', text: '{"count":5}', attempt_count: 1,
+    } },
+    { id: 12, step_order: 7, step_type: 'agent_message', created_at: 't12', payload_json: {
+      role: 'assistant', phase: 'final', text: '第二次回复', attempt_count: 1,
+    } },
+  ]
 
-  assert.equal(selected?.id, 'assistant-2')
+  const executions = [...turnExecutionEvents(first), ...turnExecutionEvents(second)]
+  assert.equal(executions.filter((event) => event.phase === 'tool_call').length, 2)
+  assert.equal(executions.filter((event) => event.phase === 'tool_result').length, 2)
+  assert.deepEqual(executions.filter((event) => event.phase === 'final').map((event) => event.text), ['第一次回复', '第二次回复'])
+  assert.equal(latestSystemContextEvent([first, second])?.text, 'System v2')
 })
 
 test('横向分支树按深度向右展开并让父节点位于子节点中间', () => {

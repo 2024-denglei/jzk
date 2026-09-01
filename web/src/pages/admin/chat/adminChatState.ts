@@ -112,11 +112,16 @@ export function finalAgentContextEvents(steps: TraceStepLike[]): AgentTranscript
   return lastSystemIndex < 0 ? finalAttemptEvents : finalAttemptEvents.slice(lastSystemIndex)
 }
 
-export function latestAssistantMessage<T extends { role: string; depth: number }>(messages: T[]): T | null {
-  return messages.reduce<T | null>((latest, message) => {
-    if (message.role !== 'assistant') return latest
-    return latest === null || message.depth > latest.depth ? message : latest
-  }, null)
+export function turnExecutionEvents(steps: TraceStepLike[]): AgentTranscriptEvent[] {
+  return finalAgentContextEvents(steps).filter((event) => event.phase !== 'input_context')
+}
+
+export function latestSystemContextEvent(stepGroups: TraceStepLike[][]): AgentTranscriptEvent | null {
+  for (let index = stepGroups.length - 1; index >= 0; index -= 1) {
+    const system = finalAgentContextEvents(stepGroups[index]).find((event) => event.role === 'system')
+    if (system) return system
+  }
+  return null
 }
 
 export function flattenBranchTree(branches: ChatBranchSummary[]): BranchTreeRow[] {

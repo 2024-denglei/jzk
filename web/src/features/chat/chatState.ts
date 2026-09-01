@@ -6,6 +6,9 @@ import type {
   GenerationStatus,
 } from '../../types'
 
+export const CHAT_WELCOME_TITLE = '您好'
+export const CHAT_WELCOME_MESSAGE = '描述您的期望，我会帮您筛选合适的候选人。'
+
 export interface BranchPathState {
   ids: string[]
   nextBefore: string | null

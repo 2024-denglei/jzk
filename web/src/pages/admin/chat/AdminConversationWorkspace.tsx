@@ -6,13 +6,14 @@ import type {
   ChatV2Summary,
   FrozenMatchPage,
 } from '../../../types'
+import { CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE } from '../../../features/chat/chatState'
 import { formatTime } from '../adminFormat'
 import { adminChatApi, type AdminGenerationTrace } from './adminChatApi'
 import {
   branchOriginLabel,
-  finalAgentContextEvents,
-  latestAssistantMessage,
+  latestSystemContextEvent,
   layoutHorizontalBranchTree,
+  turnExecutionEvents,
   type AgentToolCall,
   type AgentTranscriptEvent,
 } from './adminChatState'
@@ -47,7 +48,7 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
   const [tree, setTree] = useState<ChatConversationTree | null>(null)
   const [branchId, setBranchId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessageNode[]>([])
-  const [contextArtifacts, setContextArtifacts] = useState<AssistantArtifacts | null>(null)
+  const [artifacts, setArtifacts] = useState<Record<string, AssistantArtifacts>>({})
   const [listState, setListState] = useState<LoadState>({ loading: true, error: '' })
   const [treeState, setTreeState] = useState<LoadState>(IDLE)
   const [pathState, setPathState] = useState<LoadState>(IDLE)
@@ -55,8 +56,13 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
 
   const branchLayout = useMemo(() => layoutHorizontalBranchTree(tree?.branches || []), [tree])
   const selectedBranch = tree?.branches.find((branch) => branch.id === branchId) || null
-  const contextAssistant = useMemo(() => latestAssistantMessage(messages), [messages])
-  const messageById = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages])
+  const assistantMessages = useMemo(() => messages.filter((message) => message.role === 'assistant'), [messages])
+  const systemEvent = useMemo(() => latestSystemContextEvent(
+    assistantMessages.flatMap((message) => {
+      const trace = artifacts[message.id]?.trace
+      return trace ? [trace.steps] : []
+    }),
+  ), [artifacts, assistantMessages])
 
   async function loadChats(reset = true) {
     setListState({ loading: true, error: '' })
@@ -82,7 +88,7 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
     setTreeState({ loading: true, error: '' })
     setTree(null)
     setMessages([])
-    setContextArtifacts(null)
+    setArtifacts({})
     try {
       const loaded = await adminChatApi.tree(userId, chatId)
       if (request !== branchRequestRef.current) return
@@ -102,70 +108,86 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
     setBranchId(branch.id)
     setPathState({ loading: true, error: '' })
     setMessages([])
-    setContextArtifacts(null)
+    setArtifacts({})
     try {
       const page = await adminChatApi.messages(userId, chatId, branch.id)
       if (request !== branchRequestRef.current) return
       setMessages(page.items)
       setPathState(IDLE)
-      void loadContextArtifacts(chatId, page.items, request)
+      void loadAssistantArtifacts(chatId, page.items, request)
     } catch (error) {
       if (request !== branchRequestRef.current) return
       setPathState({ loading: false, error: error instanceof Error ? error.message : '消息路径加载失败' })
     }
   }
 
-  async function loadContextArtifacts(chatId: number, path: ChatMessageNode[], request: number) {
-    const message = latestAssistantMessage(path)
-    if (!message) {
-      setContextArtifacts(null)
-      return
-    }
-    setContextArtifacts(emptyArtifacts(message))
-    const tasks: Promise<void>[] = []
-    if (message.generation_id) {
-      tasks.push(adminChatApi.trace(userId, chatId, message.generation_id).then((trace) => {
+  async function loadAssistantArtifacts(chatId: number, path: ChatMessageNode[], request: number) {
+    const assistants = path.filter((message) => message.role === 'assistant')
+    setArtifacts(Object.fromEntries(assistants.map((message) => [message.id, emptyArtifacts(message)])))
+    await Promise.all(assistants.flatMap((message) => {
+      const tasks: Promise<void>[] = []
+      if (message.generation_id) {
+        tasks.push(adminChatApi.trace(userId, chatId, message.generation_id).then((trace) => {
           if (request !== branchRequestRef.current) return
-          setContextArtifacts((current) => ({ ...(current || emptyArtifacts(message)), trace, traceState: IDLE }))
+          setArtifacts((current) => ({
+            ...current,
+            [message.id]: { ...(current[message.id] || emptyArtifacts(message)), trace, traceState: IDLE },
+          }))
         }).catch((error) => {
           if (request !== branchRequestRef.current) return
-          setContextArtifacts((current) => ({
-            ...(current || emptyArtifacts(message)),
-            traceState: { loading: false, error: error instanceof Error ? error.message : 'Agent Trace 加载失败' },
+          setArtifacts((current) => ({
+            ...current,
+            [message.id]: {
+              ...(current[message.id] || emptyArtifacts(message)),
+              traceState: { loading: false, error: error instanceof Error ? error.message : 'Agent Trace 加载失败' },
+            },
           }))
         }))
-    }
-    if (message.match_run) {
-      tasks.push(adminChatApi.match(userId, chatId, message.id).then((match) => {
+      }
+      if (message.match_run) {
+        tasks.push(adminChatApi.match(userId, chatId, message.id).then((match) => {
           if (request !== branchRequestRef.current) return
-          setContextArtifacts((current) => ({ ...(current || emptyArtifacts(message)), match, matchState: IDLE }))
+          setArtifacts((current) => ({
+            ...current,
+            [message.id]: { ...(current[message.id] || emptyArtifacts(message)), match, matchState: IDLE },
+          }))
         }).catch((error) => {
           if (request !== branchRequestRef.current) return
-          setContextArtifacts((current) => ({
-            ...(current || emptyArtifacts(message)),
-            matchState: { loading: false, error: error instanceof Error ? error.message : '排名快照加载失败' },
+          setArtifacts((current) => ({
+            ...current,
+            [message.id]: {
+              ...(current[message.id] || emptyArtifacts(message)),
+              matchState: { loading: false, error: error instanceof Error ? error.message : '排名快照加载失败' },
+            },
           }))
         }))
-    }
-    await Promise.all(tasks)
+      }
+      return tasks
+    }))
   }
 
   async function loadMatchPage(message: ChatMessageNode, page: number) {
     if (!tree || !message.match_run) return
     const request = branchRequestRef.current
-    setContextArtifacts((current) => ({
-      ...(current || emptyArtifacts(message)),
-      matchState: { loading: true, error: '' },
+    setArtifacts((current) => ({
+      ...current,
+      [message.id]: { ...(current[message.id] || emptyArtifacts(message)), matchState: { loading: true, error: '' } },
     }))
     try {
       const match = await adminChatApi.match(userId, tree.chat.id, message.id, page)
       if (request !== branchRequestRef.current) return
-      setContextArtifacts((current) => ({ ...(current || emptyArtifacts(message)), match, matchState: IDLE }))
+      setArtifacts((current) => ({
+        ...current,
+        [message.id]: { ...(current[message.id] || emptyArtifacts(message)), match, matchState: IDLE },
+      }))
     } catch (error) {
       if (request !== branchRequestRef.current) return
-      setContextArtifacts((current) => ({
-        ...(current || emptyArtifacts(message)),
-        matchState: { loading: false, error: error instanceof Error ? error.message : '排名快照加载失败' },
+      setArtifacts((current) => ({
+        ...current,
+        [message.id]: {
+          ...(current[message.id] || emptyArtifacts(message)),
+          matchState: { loading: false, error: error instanceof Error ? error.message : '排名快照加载失败' },
+        },
       }))
     }
   }
@@ -196,15 +218,15 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
 
         <section className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="mb-3 flex items-start justify-between gap-3">
-            <div><div className="text-[9px] text-[#8793a5]">{tree ? `Session #${tree.chat.id}` : 'Session'} / {selectedBranch?.name || '请选择线路'}</div><h3 className="mt-1 text-sm font-semibold text-[#2e3d54]">{selectedBranch ? `${selectedBranch.name} · 最终组装上下文` : '选择分支查看最终组装上下文'}</h3></div>
-            {contextAssistant && <span className="rounded-full bg-[#edf4ff] px-2.5 py-1 text-[9px] font-semibold text-[#1677ff]">模型实际上下文</span>}
+            <div><div className="text-[9px] text-[#8793a5]">{tree ? `Session #${tree.chat.id}` : 'Session'} / {selectedBranch?.name || '请选择线路'}</div><h3 className="mt-1 text-sm font-semibold text-[#2e3d54]">{selectedBranch ? `${selectedBranch.name} · 完整执行时间线` : '选择分支查看完整执行时间线'}</h3></div>
+            {selectedBranch && <span className="rounded-full bg-[#edf4ff] px-2.5 py-1 text-[9px] font-semibold text-[#1677ff]">{assistantMessages.length} 轮 Agent 执行</span>}
           </div>
           <LoadNotice state={pathState} empty={!messages.length} emptyText="该分支暂无消息" />
-          {contextAssistant && <AgentContextTimeline
-            assistant={contextAssistant}
-            userMessage={contextAssistant.parent_message_id ? messageById.get(contextAssistant.parent_message_id) || null : null}
-            artifacts={contextArtifacts || emptyArtifacts(contextAssistant)}
-            onMatchPage={(page) => void loadMatchPage(contextAssistant, page)}
+          {messages.length > 0 && <BranchExecutionTimeline
+            messages={messages}
+            artifacts={artifacts}
+            systemEvent={systemEvent}
+            onMatchPage={(message, page) => void loadMatchPage(message, page)}
           />}
         </section>
       </main>
@@ -237,30 +259,65 @@ function HorizontalBranchTree({ layout, selectedBranchId, onSelect }: {
   </div>
 }
 
-function AgentContextTimeline({ assistant, userMessage, artifacts, onMatchPage }: {
-  assistant: ChatMessageNode
-  userMessage: ChatMessageNode | null
+function BranchExecutionTimeline({ messages, artifacts, systemEvent, onMatchPage }: {
+  messages: ChatMessageNode[]
+  artifacts: Record<string, AssistantArtifacts>
+  systemEvent: AgentTranscriptEvent | null
+  onMatchPage: (message: ChatMessageNode, page: number) => void
+}) {
+  const assistants = messages.filter((message) => message.role === 'assistant')
+  const latestTrace = [...assistants].reverse().flatMap((message) => artifacts[message.id]?.trace ? [artifacts[message.id].trace] : [])[0]
+  const moduleCount = 1 + (systemEvent ? 1 : 0) + messages.reduce((count, message) => {
+    if (message.role !== 'assistant') return count + 1
+    const trace = artifacts[message.id]?.trace
+    if (!trace) return count + 1
+    return count + Math.max(1, turnExecutionEvents(trace.steps).reduce(
+      (total, event) => total + 1 + (event.phase === 'tool_call' ? event.toolCalls.length : 0),
+      0,
+    ))
+  }, 0)
+  return <section className="overflow-hidden rounded-2xl border border-[#dce4ee] bg-white shadow-[0_3px_12px_rgba(38,55,78,0.04)]">
+    <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e7ecf3] bg-[#fbfcfe] px-4 py-3">
+      <div><div className="text-[11px] font-semibold text-[#304159]">该线路从打开到当前的完整 Agent 执行时间线</div><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[8.5px] text-[#8a96a8]">{latestTrace?.generation.model && <span>{latestTrace.generation.model}</span>}{latestTrace?.generation.prompt_version && <span>{latestTrace.generation.prompt_version}</span>}<span>{assistants.length} generations</span></div></div>
+      <span className="rounded-full bg-[#edf4ff] px-2 py-1 text-[8.5px] font-semibold text-[#1677ff]">{moduleCount} 个时间线模块</span>
+    </header>
+    <div className="p-3">
+      <div className="relative ml-3 space-y-3 border-l border-[#d8e1ec] pl-6">
+        {systemEvent && <TimelineModule tone="violet"><MessagePart event={systemEvent} /></TimelineModule>}
+        <TimelineModule tone="slate"><LegacyPart title={`AI 初始问候 · ${CHAT_WELCOME_TITLE}`} subtitle="客户端打开会话时展示 · 不属于模型输入" icon="ri-message-2-line" iconStyle="bg-cyan-50 text-cyan-700"><div className="whitespace-pre-wrap">{CHAT_WELCOME_MESSAGE}</div></LegacyPart></TimelineModule>
+        {messages.map((message) => message.role === 'assistant'
+          ? <AssistantExecutionModules key={message.id} message={message} artifacts={artifacts[message.id] || emptyArtifacts(message)} onMatchPage={(page) => onMatchPage(message, page)} />
+          : <TimelineModule key={message.id} tone={message.role === 'user' ? 'blue' : 'violet'}><StoredMessagePart message={message} /></TimelineModule>)}
+      </div>
+    </div>
+  </section>
+}
+
+function AssistantExecutionModules({ message, artifacts, onMatchPage }: {
+  message: ChatMessageNode
   artifacts: AssistantArtifacts
   onMatchPage: (page: number) => void
 }) {
-  const events = artifacts.trace ? finalAgentContextEvents(artifacts.trace.steps) : []
-  const moduleCount = events.reduce((count, event) => count + 1 + (event.phase === 'tool_call' ? event.toolCalls.length : 0), 0)
-  return <section className="overflow-hidden rounded-2xl border border-[#dce4ee] bg-white shadow-[0_3px_12px_rgba(38,55,78,0.04)]">
-    <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e7ecf3] bg-[#fbfcfe] px-4 py-3">
-      <div><div className="text-[11px] font-semibold text-[#304159]">该线路最后一次提交给模型的完整上下文</div><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[8.5px] text-[#8a96a8]"><span>{assistant.generation_id ? `generation ${assistant.generation_id}` : `message ${assistant.id}`}</span>{artifacts.trace?.generation.model && <span>{artifacts.trace.generation.model}</span>}{artifacts.trace?.generation.prompt_version && <span>{artifacts.trace.generation.prompt_version}</span>}</div></div>
-      <div className="flex items-center gap-2"><span className="rounded-full bg-[#edf4ff] px-2 py-1 text-[8.5px] font-semibold text-[#1677ff]">{moduleCount} 个上下文模块</span><span className={`rounded-full px-2 py-1 text-[8.5px] font-semibold ${assistant.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-[#eef2f7] text-[#667389]'}`}>{statusLabel(assistant.status)}</span></div>
-    </header>
-    <div className="p-3">
-      <LoadNotice state={artifacts.traceState} empty={!artifacts.trace} emptyText={assistant.generation_id ? '暂无 Agent 执行记录' : '该消息没有生成任务'} />
-      {events.length ? <div className="relative ml-3 space-y-3 border-l border-[#d8e1ec] pl-6">{events.flatMap((event) => event.phase === 'tool_call'
-        ? [
-          <TimelineModule key={`${event.id}-model`} tone="slate"><MessagePart event={event} /></TimelineModule>,
-          ...event.toolCalls.map((call, callIndex) => <TimelineModule key={`${event.id}-call-${call.id}-${callIndex}`} tone="amber"><ToolCallPart call={call} order={event.order} /></TimelineModule>),
-        ]
-        : [<TimelineModule key={event.id} tone={timelineTone(event)}><MessagePart event={event} match={artifacts.match} matchState={artifacts.matchState} onMatchPage={onMatchPage} /></TimelineModule>])}</div>
-        : artifacts.trace ? <LegacyAgentTurn trace={artifacts.trace} userMessage={userMessage} assistant={assistant} match={artifacts.match} matchState={artifacts.matchState} onMatchPage={onMatchPage} /> : null}
-    </div>
-  </section>
+  const events = artifacts.trace ? turnExecutionEvents(artifacts.trace.steps) : []
+  if (artifacts.traceState.loading) return <TimelineModule tone="slate"><TimelineNotice text="正在加载本轮 Agent 执行…" /></TimelineModule>
+  if (artifacts.traceState.error) return <TimelineModule tone="slate"><InlineError text={artifacts.traceState.error} /></TimelineModule>
+  if (!artifacts.trace) return <TimelineModule tone="slate"><StoredMessagePart message={message} /></TimelineModule>
+  if (!events.length) return <TimelineModule tone="slate"><LegacyAgentTurn trace={artifacts.trace} assistant={message} match={artifacts.match} matchState={artifacts.matchState} onMatchPage={onMatchPage} /></TimelineModule>
+  return <>{events.flatMap((event) => event.phase === 'tool_call'
+    ? [
+      <TimelineModule key={`${message.id}-${event.id}-model`} tone="slate"><MessagePart event={event} /></TimelineModule>,
+      ...event.toolCalls.map((call, callIndex) => <TimelineModule key={`${message.id}-${event.id}-call-${call.id}-${callIndex}`} tone="amber"><ToolCallPart call={call} order={event.order} /></TimelineModule>),
+    ]
+    : [<TimelineModule key={`${message.id}-${event.id}`} tone={timelineTone(event)}><MessagePart event={event} match={artifacts.match} matchState={artifacts.matchState} onMatchPage={onMatchPage} /></TimelineModule>])}</>
+}
+
+function StoredMessagePart({ message }: { message: ChatMessageNode }) {
+  const isUser = message.role === 'user'
+  return <LegacyPart title={isUser ? '用户消息' : message.role === 'system' ? '会话系统消息' : '模型回复'} subtitle={`${isUser ? 'User' : message.role === 'system' ? 'System' : 'Assistant'} · 数据库消息 #${message.depth}`} icon={isUser ? 'ri-user-line' : message.role === 'system' ? 'ri-shield-line' : 'ri-robot-2-line'} iconStyle={isUser ? 'bg-blue-50 text-blue-700' : message.role === 'system' ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-700'}><div className="whitespace-pre-wrap">{message.content || `（${statusLabel(message.status)}，无正文）`}</div></LegacyPart>
+}
+
+function TimelineNotice({ text }: { text: string }) {
+  return <div className="rounded-xl border border-[#e0e6ee] bg-white px-3 py-4 text-[10px] text-[#8c98a9]"><i className="ri-loader-4-line mr-2 animate-spin" />{text}</div>
 }
 
 function TimelineModule({ tone, children }: { tone: 'violet' | 'blue' | 'slate' | 'amber' | 'emerald'; children: ReactNode }) {
@@ -317,21 +374,19 @@ function partPresentation(event: AgentTranscriptEvent) {
   return { title: '模型回复', subtitle: 'Assistant · 历史上下文', icon: 'ri-robot-2-line', iconStyle: 'bg-slate-100 text-slate-700' }
 }
 
-function LegacyAgentTurn({ trace, userMessage, assistant, match, matchState, onMatchPage }: {
+function LegacyAgentTurn({ trace, assistant, match, matchState, onMatchPage }: {
   trace: AdminGenerationTrace
-  userMessage: ChatMessageNode | null
   assistant: ChatMessageNode
   match: FrozenMatchPage | null
   matchState: LoadState
   onMatchPage: (page: number) => void
 }) {
-  return <>
+  return <div className="space-y-2">
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[9px] leading-4 text-amber-800">该轮生成早于完整 Agent 转录功能，System 和工具结果无法事后准确还原；以下仅展示当时真实保留的内容。</div>
-    {userMessage && <LegacyPart title="用户消息" subtitle="User" icon="ri-user-line" iconStyle="bg-blue-50 text-blue-700"><div className="whitespace-pre-wrap">{userMessage.content}</div></LegacyPart>}
     <LegacyPart title="旧版运行元数据" subtitle="Generation Steps" icon="ri-pulse-line" iconStyle="bg-amber-50 text-amber-700"><div className="space-y-2">{trace.steps.map((step) => <details key={step.id} className="rounded-lg border border-[#e5eaf1] bg-[#fbfcfe] px-3 py-2"><summary className="cursor-pointer text-[9px] font-medium text-[#59677d]">#{step.step_order} · {step.step_type}</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-[8.5px] leading-4 text-[#68768a]">{JSON.stringify(step.payload_json, null, 2)}</pre></details>)}</div></LegacyPart>
     {match || matchState.loading || matchState.error ? <LegacyPart title="工具结果" subtitle="冻结排名快照" icon="ri-database-2-line" iconStyle="bg-emerald-50 text-emerald-700"><LoadNotice state={matchState} empty={!match} emptyText="暂无排名快照" />{match ? <MatchSnapshot page={match} onPage={onMatchPage} /> : null}</LegacyPart> : null}
     <LegacyPart title="模型最终回复" subtitle="Assistant Final" icon="ri-sparkling-2-line" iconStyle="bg-slate-100 text-slate-700"><div className="whitespace-pre-wrap">{assistant.content || '（无正文）'}</div></LegacyPart>
-  </>
+  </div>
 }
 
 function LegacyPart({ title, subtitle, icon, iconStyle, children }: { title: string; subtitle: string; icon: string; iconStyle: string; children: ReactNode }) {

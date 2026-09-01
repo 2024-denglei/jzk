@@ -6,12 +6,11 @@ import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } fro
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
 import { buildTurnCommand, pendingActionComposerBanner, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
-import { canCreateBranchAfterMessage, candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
+import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
 import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
 import { followGeneration, type GenerationEvent } from './generationStream'
 
 const SUGGESTIONS = ['硕士，身高 175 以上', 'O 型血，体型一般', '本科以上，标本充足']
-const WELCOME = '描述您的期望，我会帮您筛选合适的候选人。'
 const FORK_LABEL: Record<ChatBranchSummary['fork_reason'], string> = {
   root: '主线', rewind_continue: '回溯后继续', edit_resend: '编辑重发',
   regenerate: '重新生成', concurrent_send: '并发分支',
@@ -536,7 +535,7 @@ export function BranchingChatPanel({
 
     <main className="scroll-y min-h-0 flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-sand/80 to-sand/30 px-3.5 py-3.5">
       {selectedPath?.hasMore && <button type="button" disabled={loadingConversation} onClick={() => void loadOlderMessages()} className="w-full py-1 text-[11px] text-teal-deep disabled:opacity-40">{loadingConversation ? '加载中…' : '加载更早消息'}</button>}
-      {!tree && !loadingConversation && <div className="rounded-2xl border border-line/70 bg-white p-4"><div className="text-[13px] font-semibold">您好</div><p className="mt-1 text-[12px] text-ink-soft/65">{WELCOME}</p><div className="mt-3 flex flex-col gap-1.5">{SUGGESTIONS.map((item) => <button key={item} type="button" onClick={() => void send(item)} className="rounded-lg border border-line/80 bg-sand/40 px-3 py-2 text-left text-[12px] text-ink-soft/75">{item}</button>)}</div></div>}
+      {!tree && !loadingConversation && <div className="rounded-2xl border border-line/70 bg-white p-4"><div className="text-[13px] font-semibold">{CHAT_WELCOME_TITLE}</div><p className="mt-1 text-[12px] text-ink-soft/65">{CHAT_WELCOME_MESSAGE}</p><div className="mt-3 flex flex-col gap-1.5">{SUGGESTIONS.map((item) => <button key={item} type="button" onClick={() => void send(item)} className="rounded-lg border border-line/80 bg-sand/40 px-3 py-2 text-left text-[12px] text-ink-soft/75">{item}</button>)}</div></div>}
       {loadingConversation && messages.length === 0 && <div className="py-8 text-center text-[12px] text-ink-soft/45">正在加载对话…</div>}
       {visibleMessages.map((message, index) => {
         const match = matchesByMessage[message.id]
