@@ -17,8 +17,12 @@ from core.preference.pipeline import hydrate_ranked_candidates, match_profile
 from core.preference.result_types import MatchResultMeta, RankedCandidateRef
 from core.preference.validate import ProfileValidationError, parse_profile
 from core.preference.v2_ranker import V2RankerUnavailable
-from db.donors_repo import get_active_donors_by_ids, get_donor_dataset_version
+from db.donors_repo import (
+    get_active_donors_by_ids,
+    get_donor_dataset_version,
+)
 from db.match_runs_repo import (
+    MatchRunValidationError,
     create_match_run,
     delete_match_run,
     get_all_match_run_refs,
@@ -27,6 +31,7 @@ from db.match_runs_repo import (
     match_run_is_expired,
     profile_digest,
 )
+from dialogue.match_snapshot_queries import MatchSnapshotNotFound, get_frozen_match_page
 
 router = APIRouter(tags=["match"])
 logger = logging.getLogger(__name__)
@@ -59,6 +64,10 @@ def execute_match(
     parse_ms = (time.perf_counter() - t0) * 1000
     detail_limit = _initial_page_size(top_k, page_size)
     match_kwargs.setdefault("detail_limit", detail_limit)
+    match_kwargs.setdefault(
+        "build_snapshot",
+        bool(owner_user_id is not None and config.MATCH_SNAPSHOT_ENABLED),
+    )
     result = match_profile(profile, **match_kwargs)
     candidates = result.candidates[:detail_limit]
     slice_ms = 0.0
@@ -90,7 +99,9 @@ def execute_match(
             prefer_hits=list(result.prefer_hits or []),
         )
         if config.MATCH_SNAPSHOT_ENABLED:
-            meta = create_match_run(meta, refs)
+            if len(result.snapshot_items) != total:
+                raise MatchRunValidationError("匹配结果缺少完整候选展示快照")
+            meta = create_match_run(meta, refs, result.snapshot_items)
         if config.MATCH_RESULT_PAGING_ENABLED:
             try:
                 MatchResultStore().create(meta, refs)
@@ -124,6 +135,24 @@ def execute_match(
         "prefer_hits": list(result.prefer_hits or []),
         "model_version": config.MATCH_MODEL_VERSION,
     }
+
+
+def frozen_match_page_payload(
+    owner_user_id: int,
+    result_set_id: str,
+    *,
+    page: int,
+    limit: int,
+) -> dict[str, Any]:
+    try:
+        return get_frozen_match_page(
+            owner_user_id,
+            result_set_id,
+            page=page,
+            limit=limit,
+        )
+    except MatchSnapshotNotFound as exc:
+        raise HTTPException(status_code=404, detail="完整匹配快照不存在") from exc
 
 
 @router.post("/api/match")
@@ -292,7 +321,14 @@ async def remove_match_result(
         MatchResultStore().delete(user_id, result_set_id)
     except MatchResultStoreUnavailable:
         pass
-    delete_match_run(result_set_id, user_id)
+    if not delete_match_run(result_set_id, user_id):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "MATCH_SNAPSHOT_REFERENCED",
+                "message": "该匹配快照已关联对话消息，将随整个会话保留",
+            },
+        )
     return {"ok": True}
 
 

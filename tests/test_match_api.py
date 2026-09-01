@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -261,6 +262,25 @@ def test_invoke_match_endpoint_hits_route():
     assert status == 200
     assert data["ok"] is True
     assert data["skipped"] is True
+
+
+def test_delete_referenced_match_snapshot_returns_conflict(monkeypatch):
+    import asyncio
+
+    from api import match as match_mod
+
+    class Store:
+        def delete(self, *_args):
+            return True
+
+    monkeypatch.setattr(match_mod, "get_match_run", lambda *_args: object())
+    monkeypatch.setattr(match_mod, "MatchResultStore", Store)
+    monkeypatch.setattr(match_mod, "delete_match_run", lambda *_args: False)
+
+    with pytest.raises(match_mod.HTTPException) as exc_info:
+        asyncio.run(match_mod.remove_match_result(str(uuid4()), user_id=7))
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "MATCH_SNAPSHOT_REFERENCED"
 
 
 def test_apply_match_api_response_400_keeps_session():

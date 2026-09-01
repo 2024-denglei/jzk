@@ -21,7 +21,12 @@ def snapshot_stats(retention_days: int) -> dict[str, int]:
             SELECT
                 COUNT(*) AS total,
                 COUNT(*) FILTER (
-                    WHERE created_at < now() - (%s * interval '1 day')
+                    WHERE (status = 'failed'
+                           OR created_at < now() - (%s * interval '1 day'))
+                      AND NOT EXISTS (
+                        SELECT 1 FROM app.chat_messages cm
+                        WHERE cm.match_run_id = app.match_runs.id
+                      )
                 ) AS expired,
                 pg_total_relation_size('app.match_runs') AS table_bytes,
                 pg_indexes_size('app.match_runs') AS index_bytes

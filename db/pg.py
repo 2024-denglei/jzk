@@ -131,6 +131,7 @@ def ensure_schema() -> None:
             "11_add_branching_chat_storage.sql",
             "12_add_match_run_items.sql",
             "13_harden_branching_chat_storage.sql",
+            "14_enforce_chat_match_snapshot.sql",
         ):
             path = _SCHEMA_DIR / name
             if path.exists():

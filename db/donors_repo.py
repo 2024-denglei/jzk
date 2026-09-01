@@ -103,6 +103,19 @@ def get_active_donors_by_ids(donor_ids: list[int]) -> list[dict[str, Any]]:
         )
 
 
+def get_donor_statuses_by_ids(donor_ids: list[int]) -> dict[int, str]:
+    """为历史快照附加当前状态；不存在的候选明确标为 deleted。"""
+    if not donor_ids:
+        return {}
+    with db_session() as conn:
+        rows = fetchall(
+            conn,
+            "SELECT id, status FROM donor.donors WHERE id = ANY(%s)",
+            (donor_ids,),
+        )
+    return {int(row["id"]): str(row["status"]) for row in rows}
+
+
 def get_donor_dataset_version() -> str:
     """生成可审计的数据集版本，不读取或记录候选敏感字段。"""
     with db_session() as conn:

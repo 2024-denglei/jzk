@@ -28,6 +28,7 @@ from dialogue.conversation_cursors import (
     encode_chat_list_cursor,
     encode_message_cursor,
 )
+from dialogue.match_snapshot_queries import MatchSnapshotNotFound, get_frozen_match_page
 
 
 class ConversationQueryError(RuntimeError):
@@ -191,6 +192,40 @@ class ConversationQueryService:
             has_more=has_more,
         )
 
+    def get_message_match_results(
+        self,
+        user_id: int,
+        message_id: UUID,
+        *,
+        page: int = 1,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        page_size = min(
+            max(1, limit or config.MATCH_RESULT_PAGE_SIZE_DEFAULT),
+            config.MATCH_RESULT_PAGE_SIZE_MAX,
+        )
+        with db_session(admin=self.admin) as conn:
+            association = chat_queries_repo.get_message_match_snapshot(
+                conn, user_id, message_id
+            )
+        if association is None:
+            raise ConversationQueryError(
+                ChatErrorCode.MATCH_SNAPSHOT_NOT_FOUND,
+                "消息没有可读取的完整匹配快照",
+            )
+        try:
+            return get_frozen_match_page(
+                user_id,
+                str(association["match_run_id"]),
+                page=page,
+                limit=page_size,
+            )
+        except MatchSnapshotNotFound as exc:
+            raise ConversationQueryError(
+                ChatErrorCode.MATCH_SNAPSHOT_NOT_FOUND,
+                "完整匹配快照不存在",
+            ) from exc
+
     async def alist_chats(self, user_id: int, **kwargs: Any) -> ChatListPage:
         return await run_in_threadpool(partial(self.list_chats, user_id, **kwargs))
 
@@ -206,4 +241,14 @@ class ConversationQueryService:
     ) -> MessagePathPage:
         return await run_in_threadpool(
             partial(self.get_message_path, user_id, chat_id, branch_id, **kwargs)
+        )
+
+    async def aget_message_match_results(
+        self,
+        user_id: int,
+        message_id: UUID,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        return await run_in_threadpool(
+            partial(self.get_message_match_results, user_id, message_id, **kwargs)
         )

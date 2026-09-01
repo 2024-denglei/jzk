@@ -5,7 +5,7 @@ import pytest
 
 from api import match
 from api.match_cursor import InvalidMatchCursor, decode_match_cursor, encode_match_cursor
-from core.preference.result_types import MatchResultMeta, RankedCandidateRef
+from core.preference.result_types import MatchResultMeta, MatchSnapshotItem, RankedCandidateRef
 from core.preference.pipeline import MatchResult
 
 
@@ -151,16 +151,28 @@ def test_create_match_writes_snapshot_before_cache_and_returns_first_page(monkey
         {"rank": 1, "score": 0.9, "donor_info": {"code": "D1"}},
         {"rank": 2, "score": 0.8, "donor_info": {"code": "D2"}},
     ]
+    snapshot_items = [
+        MatchSnapshotItem(
+            donor_id=ref.donor_id,
+            rank=ref.rank,
+            score=ref.score,
+            donor_code_snapshot=f"D{ref.donor_id}",
+            donor_snapshot={"code": f"D{ref.donor_id}"},
+            match_explanation={"reason": "测试"},
+        )
+        for ref in refs
+    ]
     monkeypatch.setattr(
         match, "match_profile",
         lambda _profile, **_kwargs: MatchResult(
             candidates=candidates, match_level="full", bottlenecks=[], skipped=False,
-            filtered_count=2, ranked_refs=refs,
+            filtered_count=2, ranked_refs=refs, snapshot_items=snapshot_items,
         ),
     )
     monkeypatch.setattr(match, "get_donor_dataset_version", lambda: "d1")
 
-    def save_snapshot(meta, saved_refs):
+    def save_snapshot(meta, saved_refs, saved_items):
+        assert list(saved_items) == snapshot_items
         events.append(("postgres", meta.result_set_id, list(saved_refs)))
         return meta
 

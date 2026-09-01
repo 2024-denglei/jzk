@@ -17,6 +17,19 @@ class RankedCandidateRef:
 
 
 @dataclass(frozen=True)
+class MatchSnapshotItem:
+    """匹配发生时冻结的单个排名项；不包含后台私密候选字段。"""
+
+    donor_id: int
+    rank: int
+    score: float
+    donor_code_snapshot: str
+    donor_snapshot: dict[str, Any]
+    match_explanation: dict[str, Any]
+    snapshot_schema_version: int = 1
+
+
+@dataclass(frozen=True)
 class MatchResultMeta:
     result_set_id: str
     owner_user_id: int
@@ -26,6 +39,9 @@ class MatchResultMeta:
     model_version: str
     dataset_version: str
     prefer_hits: list[dict[str, Any]] = field(default_factory=list)
+    status: str = "ready"
+    snapshot_schema_version: int = 1
+    snapshot_source: str = "native"
     created_at: datetime | None = None
+    ready_at: datetime | None = None
     expires_at: datetime | None = None
-

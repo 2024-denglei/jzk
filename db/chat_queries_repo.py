@@ -169,3 +169,21 @@ def get_message_path(
         """,
         (chat_id, start_message_id, chat_id, limit),
     )
+
+
+def get_message_match_snapshot(
+    conn,
+    user_id: int,
+    message_id: UUID,
+) -> dict[str, Any] | None:
+    return fetchone(
+        conn,
+        """
+        SELECT cm.chat_id, cm.match_run_id
+        FROM app.chat_messages cm
+        JOIN app.chats c ON c.id = cm.chat_id
+        JOIN app.match_runs mr ON mr.id = cm.match_run_id AND mr.status = 'ready'
+        WHERE cm.id = %s AND c.user_id = %s AND c.storage_version = 2
+        """,
+        (message_id, user_id),
+    )

@@ -144,3 +144,50 @@ def test_message_path_maps_cursor_errors_to_stable_domain_code(monkeypatch):
         ConversationQueryService().get_message_path(5, 10, branch_id, before="invalid")
     assert exc_info.value.code == ChatErrorCode.INVALID_MESSAGE_CURSOR
 
+
+def test_message_match_results_are_scoped_by_message_and_shared_with_admin(monkeypatch):
+    message_id = uuid4()
+    match_run_id = uuid4()
+    admin_flags = []
+
+    @contextmanager
+    def fake_session(admin=False):
+        admin_flags.append(admin)
+        yield object()
+
+    monkeypatch.setattr(conversation_queries, "db_session", fake_session)
+    monkeypatch.setattr(
+        conversation_queries.chat_queries_repo,
+        "get_message_match_snapshot",
+        lambda *_args: {"chat_id": 10, "match_run_id": match_run_id},
+    )
+    monkeypatch.setattr(
+        conversation_queries,
+        "get_frozen_match_page",
+        lambda owner, result, **kwargs: {
+            "owner": owner,
+            "result_set_id": result,
+            "page": kwargs["page"],
+        },
+    )
+
+    user = ConversationQueryService().get_message_match_results(7, message_id, page=2)
+    admin = ConversationQueryService(admin=True).get_message_match_results(7, message_id, page=2)
+    assert user == admin == {"owner": 7, "result_set_id": str(match_run_id), "page": 2}
+    assert admin_flags == [False, True]
+
+
+def test_message_without_owned_snapshot_returns_stable_not_found(monkeypatch):
+    @contextmanager
+    def fake_session(admin=False):
+        yield object()
+
+    monkeypatch.setattr(conversation_queries, "db_session", fake_session)
+    monkeypatch.setattr(
+        conversation_queries.chat_queries_repo,
+        "get_message_match_snapshot",
+        lambda *_args: None,
+    )
+    with pytest.raises(ConversationQueryError) as exc_info:
+        ConversationQueryService().get_message_match_results(7, uuid4())
+    assert exc_info.value.code == ChatErrorCode.MATCH_SNAPSHOT_NOT_FOUND

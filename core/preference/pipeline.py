@@ -9,7 +9,8 @@ import time
 from core.data_loader import get_donor_display_info
 from core.preference.schema import field_short_label
 from core.preference.scorer import FieldScore, Ranker
-from core.preference.result_types import RankedCandidateRef
+from core.preference.match_snapshot import build_match_snapshot_item
+from core.preference.result_types import MatchSnapshotItem, RankedCandidateRef
 from core.preference.sql_filter import build_hard_filter_sql, diagnose_bottlenecks
 from core.preference.validate import PreferenceProfile
 
@@ -39,6 +40,7 @@ class MatchResult:
     timings: dict[str, float] = field(default_factory=dict)
     prefer_hits: list[dict[str, Any]] = field(default_factory=list)
     ranked_refs: list[RankedCandidateRef] = field(default_factory=list)
+    snapshot_items: list[MatchSnapshotItem] = field(default_factory=list)
 
 
 def default_fetch(sql: str, params: tuple) -> list[dict[str, Any]]:
@@ -203,6 +205,7 @@ def match_profile(
     log: bool = False,
     session_id: str = "",
     detail_limit: int | None = None,
+    build_snapshot: bool = False,
 ) -> MatchResult:
     if not profile.attributes:
         return MatchResult(
@@ -250,6 +253,20 @@ def match_profile(
         )
         for i, (row, score, _parts) in enumerate(ranked)
     ]
+    snapshot_items = (
+        [
+            build_match_snapshot_item(
+                row,
+                donor_id=ranked_refs[index].donor_id,
+                rank=ranked_refs[index].rank,
+                score=ranked_refs[index].score,
+                parts=parts,
+            )
+            for index, (row, _score, parts) in enumerate(ranked)
+        ]
+        if build_snapshot
+        else []
+    )
     detail_count = len(ranked) if detail_limit is None else max(0, min(detail_limit, len(ranked)))
     t2 = time.perf_counter()
     candidates = [
@@ -305,4 +322,5 @@ def match_profile(
         timings=timings,
         prefer_hits=compute_prefer_hits_from_ranked(profile, ranked),
         ranked_refs=ranked_refs,
+        snapshot_items=snapshot_items,
     )
