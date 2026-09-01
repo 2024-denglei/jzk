@@ -25,6 +25,8 @@ class ChatErrorCode(StrEnum):
     CHAT_BRANCH_LIMIT_REACHED = "CHAT_BRANCH_LIMIT_REACHED"
     CHAT_MESSAGE_LIMIT_REACHED = "CHAT_MESSAGE_LIMIT_REACHED"
     BRANCH_GENERATION_ACTIVE = "BRANCH_GENERATION_ACTIVE"
+    BRANCH_ARCHIVED = "BRANCH_ARCHIVED"
+    INVALID_TURN_COMMAND = "INVALID_TURN_COMMAND"
     INVALID_CHAT_CURSOR = "INVALID_CHAT_CURSOR"
     INVALID_MESSAGE_CURSOR = "INVALID_MESSAGE_CURSOR"
 
@@ -230,5 +232,33 @@ class MessagePathPage(BaseModel):
     chat_id: int
     branch_id: UUID
     items: list[ChatMessageView]
-    next_before: UUID | None = None
+    next_before: str | None = None
     has_more: bool = False
+
+
+class ChatListPage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    items: list[ChatSummary]
+    next_cursor: str | None = None
+    has_more: bool = False
+
+
+class ConversationTreeView(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chat: ChatSummary
+    branches: list[BranchSummary]
+
+
+class TurnCreationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chat_id: int
+    branch_id: UUID
+    user_message_id: UUID
+    assistant_message_id: UUID
+    generation_id: UUID
+    branch_created: bool
+    fork_reason: ForkReason
+    idempotent_replay: bool = False

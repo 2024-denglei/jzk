@@ -8,6 +8,7 @@ from db import sql_runner
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_11 = ROOT / "db" / "postgres" / "11_add_branching_chat_storage.sql"
 MIGRATION_12 = ROOT / "db" / "postgres" / "12_add_match_run_items.sql"
+MIGRATION_13 = ROOT / "db" / "postgres" / "13_harden_branching_chat_storage.sql"
 
 
 def test_branching_chat_migration_declares_core_tables_and_constraints():
@@ -36,6 +37,14 @@ def test_match_item_migration_keeps_legacy_arrays_and_adds_versioned_items():
     assert "DROP COLUMN" not in sql
 
 
+def test_hardening_migration_allows_first_message_edit_and_protects_messages():
+    sql = MIGRATION_13.read_text(encoding="utf-8")
+    assert "fork_reason = 'edit_resend'" in sql
+    assert "protect_chat_message_immutability" in sql
+    assert "terminal chat messages are immutable" in sql
+    assert "chat messages can only be deleted with their chat" in sql
+
+
 def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
     class Conn:
         def execute(self, _sql, _params=()):
@@ -59,8 +68,9 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
 
     pg.ensure_schema()
 
-    assert called[-3:] == [
+    assert called[-4:] == [
         "10_add_match_runs.sql",
         "11_add_branching_chat_storage.sql",
         "12_add_match_run_items.sql",
+        "13_harden_branching_chat_storage.sql",
     ]
