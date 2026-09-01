@@ -106,7 +106,7 @@ def generation_status_transition_allowed(current: GenerationStatus, target: Gene
             GenerationStatus.FAILED,
         }
     if current == GenerationStatus.RUNNING:
-        return target in TERMINAL_GENERATION_STATUSES
+        return target == GenerationStatus.QUEUED or target in TERMINAL_GENERATION_STATUSES
     return False
 
 
@@ -262,3 +262,24 @@ class TurnCreationResult(BaseModel):
     branch_created: bool
     fork_reason: ForkReason
     idempotent_replay: bool = False
+
+
+class GenerationRunView(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: UUID
+    user_id: int
+    chat_id: int
+    branch_id: UUID
+    user_message_id: UUID
+    assistant_message_id: UUID
+    status: GenerationStatus
+    model: str | None = None
+    prompt_version: str | None = None
+    cancel_requested_at: datetime | None = None
+    attempt_count: int = Field(ge=0)
+    error_type: str | None = None
+    error_message_safe: str | None = None
+    queued_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None

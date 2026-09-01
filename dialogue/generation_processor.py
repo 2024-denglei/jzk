@@ -1,0 +1,268 @@
+"""持久任务使用的顾问 Agent 处理器。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from time import perf_counter
+from typing import Any
+from uuid import UUID
+
+import config
+from api.match import execute_match
+from core.preference.validate import ProfileValidationError, parse_profile
+from dialogue.agent_tools import (
+    AGENT_SYSTEM_PROMPT,
+    SUBMIT_PROFILE_TOOL,
+    parse_tool_arguments,
+    slim_assistant_for_llm,
+    tool_failure_payload,
+)
+from dialogue.generation_worker import GenerationCancelled, GenerationControl, GenerationOutput
+
+
+def _prompt_hash(messages: list[dict[str, Any]]) -> str:
+    raw = json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _state_with_profile(
+    state: dict[str, Any],
+    profile_payload: dict[str, Any],
+    result_set_id: str | None,
+    total: int,
+) -> dict[str, Any]:
+    parsed = parse_profile(profile_payload).model_dump(mode="json")
+    attributes = dict(parsed.get("attributes") or {})
+    next_state = dict(state)
+    next_state["preference_profile"] = parsed
+    next_state["parsed_features"] = attributes
+    next_state["constraints"] = {
+        key: str(value.get("constraint") or "must")
+        for key, value in attributes.items()
+        if isinstance(value, dict)
+    }
+    next_state["dialogue_state"] = "presenting" if total > 0 else "collecting"
+    next_state["latest_match_run_id"] = result_set_id
+    return next_state
+
+
+class FallbackGenerationProcessor:
+    """开发环境无 LLM 时仍完成持久任务，不伪造匹配数量。"""
+
+    async def __call__(self, context, control: GenerationControl) -> GenerationOutput:
+        state = dict(context["state_after_user"])
+        await control.set_model_metadata(
+            model="fallback",
+            prompt_version="fallback-v1",
+            prompt_hash=hashlib.sha256(b"fallback-v1").hexdigest(),
+        )
+        reply = "已收到您的需求。当前未配置顾问模型，请稍后再试。"
+        await control.set_state(state)
+        await control.emit_token(reply)
+        return GenerationOutput(content=reply, state_after=state)
+
+
+class AgentGenerationProcessor:
+    def __init__(self, llm_client, *, model: str | None = None):
+        self.llm_client = llm_client
+        self.model = model or config.LLM_MODEL
+
+    async def __call__(
+        self,
+        context: dict[str, Any],
+        control: GenerationControl,
+    ) -> GenerationOutput:
+        started = perf_counter()
+        state = dict(context["state_after_user"])
+        history = []
+        input_ids = []
+        for item in context.get("messages") or []:
+            if item.get("role") not in {"user", "assistant"}:
+                continue
+            input_ids.append(str(item.get("id")))
+            content = str(item.get("content") or "")
+            if item.get("role") == "assistant":
+                content = slim_assistant_for_llm(content)
+            history.append({"role": item["role"], "content": content})
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+            *history[-40:],
+        ]
+        initial_prompt_hash = _prompt_hash(messages)
+        await control.set_model_metadata(
+            model=self.model,
+            prompt_version="agent-v2",
+            prompt_hash=initial_prompt_hash,
+        )
+        final_reply = ""
+        match_run_id: UUID | None = None
+        timings: dict[str, Any] = {}
+
+        for round_index in range(4):
+            if await control.cancelled():
+                raise GenerationCancelled("generation_cancelled")
+            llm_started = perf_counter()
+            control.trace.add(
+                "llm_request",
+                phase="tool_select",
+                model=self.model,
+                prompt_hash=_prompt_hash(messages),
+                input_message_ids=input_ids,
+                message_count=len(messages),
+                round=round_index,
+            )
+            response = await self.llm_client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=[SUBMIT_PROFILE_TOOL],
+                tool_choice="auto",
+                temperature=0.2,
+                max_tokens=2048,
+            )
+            timings[f"tool_select_{round_index}_ms"] = round(
+                (perf_counter() - llm_started) * 1000, 1
+            )
+            choice = response.choices[0].message
+            tool_calls = list(getattr(choice, "tool_calls", None) or [])
+            control.trace.add(
+                "llm_response",
+                phase="tool_select",
+                tool_call_count=len(tool_calls),
+                reply_chars=len(choice.content or ""),
+            )
+            if not tool_calls:
+                final_reply = choice.content or "请再具体描述一下您的期望。"
+                await control.set_state(state)
+                await control.emit_token(final_reply)
+                break
+
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": choice.content or None,
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.function.name,
+                                "arguments": call.function.arguments,
+                            },
+                        }
+                        for call in tool_calls
+                    ],
+                }
+            )
+            match_ok = False
+            for call in tool_calls:
+                arguments = parse_tool_arguments(call.function.arguments, choice.content)
+                tool_started = perf_counter()
+                if call.function.name != "submit_preference_profile":
+                    tool_payload = tool_failure_payload(f"unknown tool {call.function.name}")
+                else:
+                    try:
+                        match_data = execute_match(
+                            arguments,
+                            owner_user_id=context["generation"].user_id,
+                            page_size=config.MATCH_RESULT_PAGE_SIZE_DEFAULT,
+                        )
+                        result_set_id = match_data.get("result_set_id")
+                        total = int(match_data.get("total") or 0)
+                        state = _state_with_profile(state, arguments, result_set_id, total)
+                        match_run_id = UUID(result_set_id) if result_set_id else None
+                        await control.set_state(state)
+                        tool_payload = {
+                            "ok": True,
+                            "count": total,
+                            "match_level": match_data.get("match_level"),
+                            "prefer_hits": match_data.get("prefer_hits") or [],
+                            "bottlenecks": match_data.get("bottlenecks") or [],
+                            "result_set_id": result_set_id,
+                            "note": "匹配卡片由客户端按消息快照分页加载。",
+                        }
+                        match_ok = True
+                        if match_run_id:
+                            await control.emit_event(
+                                "match_ready",
+                                {
+                                    "assistant_message_id": str(
+                                        context["generation"].assistant_message_id
+                                    ),
+                                    "total": total,
+                                },
+                            )
+                    except (ProfileValidationError, ValueError) as exc:
+                        tool_payload = tool_failure_payload(exc)
+                timings[f"tool_{round_index}_ms"] = round(
+                    (perf_counter() - tool_started) * 1000, 1
+                )
+                control.trace.add(
+                    "tool_call",
+                    tool_name=call.function.name,
+                    arguments=arguments,
+                    ok=bool(tool_payload.get("ok")),
+                    match_run_id=tool_payload.get("result_set_id"),
+                    count=tool_payload.get("count"),
+                )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": json.dumps(tool_payload, ensure_ascii=False),
+                    }
+                )
+
+            if not match_ok:
+                if round_index < 3:
+                    continue
+                final_reply = "没能生成合法偏好画像，请再明确说明必须条件和偏好。"
+                await control.set_state(state)
+                await control.emit_token(final_reply)
+                break
+
+            summarize_started = perf_counter()
+            control.trace.add(
+                "llm_request",
+                phase="summarize",
+                model=self.model,
+                prompt_hash=_prompt_hash(messages),
+                input_message_ids=input_ids,
+                message_count=len(messages),
+            )
+            stream = await self.llm_client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=600,
+                stream=True,
+            )
+            async for chunk in stream:
+                if await control.cancelled():
+                    raise GenerationCancelled("generation_cancelled")
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                text = str(getattr(delta, "content", None) or "")
+                if text:
+                    final_reply += text
+                    await control.emit_token(text)
+                    await control.checkpoint()
+            timings["summarize_ms"] = round((perf_counter() - summarize_started) * 1000, 1)
+            control.trace.add(
+                "llm_response",
+                phase="summarize",
+                reply_chars=len(final_reply),
+            )
+            break
+
+        if not final_reply:
+            final_reply = "已处理您的请求。"
+            await control.emit_token(final_reply)
+        timings["total_ms"] = round((perf_counter() - started) * 1000, 1)
+        return GenerationOutput(
+            content=final_reply,
+            state_after=state,
+            match_run_id=match_run_id,
+            timings=timings,
+        )

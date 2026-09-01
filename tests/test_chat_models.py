@@ -71,6 +71,7 @@ def test_terminal_message_and_generation_statuses_cannot_reopen():
     assert not message_status_transition_allowed(MessageStatus.STOPPED, MessageStatus.GENERATING)
     assert generation_status_transition_allowed(GenerationStatus.QUEUED, GenerationStatus.RUNNING)
     assert generation_status_transition_allowed(GenerationStatus.RUNNING, GenerationStatus.FAILED)
+    assert generation_status_transition_allowed(GenerationStatus.RUNNING, GenerationStatus.QUEUED)
     assert not generation_status_transition_allowed(GenerationStatus.COMPLETED, GenerationStatus.RUNNING)
 
 

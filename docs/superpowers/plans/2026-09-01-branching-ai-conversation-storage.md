@@ -15,7 +15,8 @@
 | 阶段 1：添加数据库结构 | 已完成 | 增量迁移、迁移顺序、真实 PostgreSQL 重复执行、循环外键和级联删除测试已通过 |
 | 阶段 2 | 已完成 | 命令仓储、共享查询、签名游标、不可变保护和 100 并发验收已落地 |
 | 阶段 3 | 已完成 | 完整冻结排名、消息强关联、共享分页和容量验证已落地 |
-| 阶段 4～10 | 待实施 | 按本文顺序继续 |
+| 阶段 4 | 已完成 | 持久 Worker、租约重试、DB Trace、Redis Stream 和无连接完成验收已落地 |
+| 阶段 5～10 | 待实施 | 按本文顺序继续 |
 
 ## 背景
 
@@ -825,16 +826,16 @@ CHAT_MATCH_SNAPSHOT_MAX_CANDIDATES
 - 新增：`dialogue/generation_events.py`
 - 新增：`dialogue/generation_trace.py`
 - 新增：`scripts/run_generation_worker.py`
-- 修改：`main.py`
+- 独立进程：`scripts/run_generation_worker.py`（不占用 Web 事件循环）
 - 新增：Worker、租约、停止、接管、Redis 故障测试
 
-- [ ] 实现 queued 领取、租约、心跳、取消、重试和最大尝试次数。
-- [ ] 从消息父链和版本化状态恢复上下文。
-- [ ] 把当前 chat_stream 的 LLM、工具与匹配流程移入 Worker。
-- [ ] Redis Stream 发布带序号事件；数据库定期保存部分正文。
-- [ ] 最终提交 AI 消息、状态、MatchRun 关联、Branch head 和计数。
-- [ ] Trace 写 GenerationStep，不再调用本地 `AgentTrace.write_trace`。
-- [ ] Worker 崩溃前后的提交使用租约 fencing，旧 Worker 不得覆盖接管者结果。
+- [x] 实现 queued 领取、租约、心跳、取消、重试和最大尝试次数。
+- [x] 从消息父链和版本化状态恢复上下文。
+- [x] 把当前 chat_stream 的 LLM、工具与匹配流程移入 Worker。
+- [x] Redis Stream 发布带序号事件；数据库定期保存部分正文。
+- [x] 最终提交 AI 消息、状态、MatchRun 关联；Branch head 和计数已在命令事务指向占位消息。
+- [x] Trace 写 GenerationStep，不再调用本地 `AgentTrace.write_trace`。
+- [x] Worker 崩溃前后的提交使用租约 fencing，旧 Worker 不得覆盖接管者结果。
 
 **验收：** Web 重启、浏览器断网和 Worker 崩溃均不丢任务；显式停止保留部分内容；同分支最多一个活动任务。
 

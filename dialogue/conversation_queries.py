@@ -9,7 +9,7 @@ from uuid import UUID
 from starlette.concurrency import run_in_threadpool
 
 import config
-from db import chat_queries_repo
+from db import chat_queries_repo, generation_runs_repo
 from db.chat_models import (
     BranchSummary,
     ChatErrorCode,
@@ -226,6 +226,41 @@ class ConversationQueryService:
                 "完整匹配快照不存在",
             ) from exc
 
+    def get_generation(self, user_id: int, generation_id: UUID):
+        run = generation_runs_repo.get_generation(
+            user_id,
+            generation_id,
+            admin=self.admin,
+        )
+        if run is None:
+            raise ConversationQueryError(
+                ChatErrorCode.GENERATION_NOT_FOUND,
+                "生成任务不存在",
+            )
+        return run
+
+    def get_generation_steps(
+        self,
+        user_id: int,
+        generation_id: UUID,
+        *,
+        after_order: int = -1,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        steps = generation_runs_repo.list_generation_steps(
+            user_id,
+            generation_id,
+            after_order=after_order,
+            limit=limit,
+            admin=self.admin,
+        )
+        if steps is None:
+            raise ConversationQueryError(
+                ChatErrorCode.GENERATION_NOT_FOUND,
+                "生成任务不存在",
+            )
+        return steps
+
     async def alist_chats(self, user_id: int, **kwargs: Any) -> ChatListPage:
         return await run_in_threadpool(partial(self.list_chats, user_id, **kwargs))
 
@@ -251,4 +286,17 @@ class ConversationQueryService:
     ) -> dict[str, Any]:
         return await run_in_threadpool(
             partial(self.get_message_match_results, user_id, message_id, **kwargs)
+        )
+
+    async def aget_generation(self, user_id: int, generation_id: UUID):
+        return await run_in_threadpool(self.get_generation, user_id, generation_id)
+
+    async def aget_generation_steps(
+        self,
+        user_id: int,
+        generation_id: UUID,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        return await run_in_threadpool(
+            partial(self.get_generation_steps, user_id, generation_id, **kwargs)
         )

@@ -10,6 +10,7 @@ MIGRATION_11 = ROOT / "db" / "postgres" / "11_add_branching_chat_storage.sql"
 MIGRATION_12 = ROOT / "db" / "postgres" / "12_add_match_run_items.sql"
 MIGRATION_13 = ROOT / "db" / "postgres" / "13_harden_branching_chat_storage.sql"
 MIGRATION_14 = ROOT / "db" / "postgres" / "14_enforce_chat_match_snapshot.sql"
+MIGRATION_15 = ROOT / "db" / "postgres" / "15_harden_generation_runs.sql"
 
 
 def test_branching_chat_migration_declares_core_tables_and_constraints():
@@ -53,6 +54,15 @@ def test_match_snapshot_association_requires_ready_same_owner_snapshot():
     assert "snapshot_status <> 'ready'" in sql
 
 
+def test_generation_hardening_migration_prevents_reopening_terminal_runs():
+    sql = MIGRATION_15.read_text(encoding="utf-8")
+    assert "protect_generation_run_state" in sql
+    assert "terminal generation runs are immutable" in sql
+    assert "OLD.status = 'queued'" in sql
+    assert "OLD.status = 'running'" in sql
+    assert "'queued', 'completed', 'stopped', 'failed'" in sql
+
+
 def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
     class Conn:
         def execute(self, _sql, _params=()):
@@ -76,10 +86,11 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
 
     pg.ensure_schema()
 
-    assert called[-5:] == [
+    assert called[-6:] == [
         "10_add_match_runs.sql",
         "11_add_branching_chat_storage.sql",
         "12_add_match_run_items.sql",
         "13_harden_branching_chat_storage.sql",
         "14_enforce_chat_match_snapshot.sql",
+        "15_harden_generation_runs.sql",
     ]

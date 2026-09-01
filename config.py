@@ -150,7 +150,7 @@ TRACE_DIR = os.getenv(
     "TRACE_DIR",
     os.path.join(os.path.dirname(__file__), "data", "traces"),
 )
-TRACE_ENABLED = os.getenv("TRACE_ENABLED", "1").strip().lower() not in ("0", "false", "no")
+TRACE_ENABLED = os.getenv("TRACE_ENABLED", "0").strip().lower() not in ("0", "false", "no")
 
 MATCH_LOG_DIR = os.getenv(
     "MATCH_LOG_DIR",

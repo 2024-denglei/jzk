@@ -59,7 +59,15 @@ def _finish_generation(result, content="AI 回复"):
         conn.execute(
             """
             UPDATE app.ai_generation_runs
-            SET status = 'completed', started_at = now(), finished_at = now()
+            SET status = 'running', started_at = now()
+            WHERE id = %s
+            """,
+            (result.generation_id,),
+        )
+        conn.execute(
+            """
+            UPDATE app.ai_generation_runs
+            SET status = 'completed', finished_at = now()
             WHERE id = %s
             """,
             (result.generation_id,),

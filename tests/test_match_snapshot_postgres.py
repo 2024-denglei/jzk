@@ -121,6 +121,10 @@ def test_frozen_snapshot_survives_donor_change_and_lives_with_message(snapshot_s
             (result_id, turn.assistant_message_id),
         )
         conn.execute(
+            "UPDATE app.ai_generation_runs SET status = 'running', started_at = now() WHERE id = %s",
+            (turn.generation_id,),
+        )
+        conn.execute(
             "UPDATE app.ai_generation_runs SET status = 'completed', finished_at = now() WHERE id = %s",
             (turn.generation_id,),
         )

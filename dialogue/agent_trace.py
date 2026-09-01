@@ -1,35 +1,20 @@
-"""Agent 全链路 Trace：对话、LLM、tool 参数与结果。
-
-写入（便于人读，缩进 JSON）:
-  data/traces/sessions/<session_id>/<时间>_<trace_id前8位>.json
-  data/traces/turns/<同上文件名>.json          — 全量副本
-可选机器可读追加:
-  data/traces/agent_trace.jsonl
-"""
+"""旧 Agent Trace 只保留历史文件读取；新写入已迁移到 PostgreSQL。"""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
-import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_lock = threading.Lock()
-
-
 def _default_trace_dir() -> str:
     from config import TRACE_DIR
 
     return TRACE_DIR
-
-
-def _ensure_dir(path: str) -> None:
-    os.makedirs(path, exist_ok=True)
 
 
 def _json_safe(obj: Any) -> Any:
@@ -69,10 +54,6 @@ def _slim_messages(messages: list[dict], max_chars: int = 4000) -> list[dict]:
 
 def _safe_name(s: str, max_len: int = 80) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in str(s))[:max_len]
-
-
-def _pretty(record: dict[str, Any]) -> str:
-    return json.dumps(record, ensure_ascii=False, indent=2) + "\n"
 
 
 class AgentTrace:
@@ -200,54 +181,11 @@ class AgentTrace:
 
 
 def write_trace(record: dict[str, Any]) -> None:
-    """写入缩进 JSON（人读）+ 可选 JSONL（机读）。"""
-    try:
-        from config import TRACE_DIR
-
-        base = TRACE_DIR
-        _ensure_dir(base)
-
-        sid = record.get("session_id") or "unknown"
-        safe_sid = _safe_name(sid)
-        tid = str(record.get("trace_id") or uuid.uuid4())
-        short_tid = tid.replace("-", "")[:8]
-
-        # 文件名带本地时间，便于按时间浏览
-        try:
-            finished = record.get("finished_at") or ""
-            dt = datetime.fromisoformat(finished.replace("Z", "+00:00"))
-            stamp = dt.astimezone().strftime("%Y%m%d-%H%M%S")
-        except Exception:
-            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-        filename = f"{stamp}_{short_tid}.json"
-        pretty = _pretty(record)
-
-        session_dir = os.path.join(base, "sessions", safe_sid)
-        turns_dir = os.path.join(base, "turns")
-        _ensure_dir(session_dir)
-        _ensure_dir(turns_dir)
-
-        session_path = os.path.join(session_dir, filename)
-        turn_path = os.path.join(turns_dir, f"{safe_sid}_{filename}")
-        jsonl_path = os.path.join(base, "agent_trace.jsonl")
-
-        with _lock:
-            with open(session_path, "w", encoding="utf-8") as f:
-                f.write(pretty)
-            with open(turn_path, "w", encoding="utf-8") as f:
-                f.write(pretty)
-            # 机读索引仍追加一行
-            with open(jsonl_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-        logger.info(
-            "agent_trace written %s tools=%s",
-            session_path,
-            sum(1 for s in record.get("steps") or [] if s.get("type") == "tool_call"),
-        )
-    except Exception:
-        logger.exception("写入 agent_trace 失败")
+    """旧入口不再写本地文件；V2 GenerationTrace 统一写 PostgreSQL。"""
+    logger.debug(
+        "legacy local agent trace disabled trace_id=%s",
+        record.get("trace_id"),
+    )
 
 
 def read_session_traces(session_id: str, user_id: int | None = None) -> list[dict[str, Any]]:

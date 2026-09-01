@@ -191,3 +191,31 @@ def test_message_without_owned_snapshot_returns_stable_not_found(monkeypatch):
     with pytest.raises(ConversationQueryError) as exc_info:
         ConversationQueryService().get_message_match_results(7, uuid4())
     assert exc_info.value.code == ChatErrorCode.MATCH_SNAPSHOT_NOT_FOUND
+
+
+def test_generation_and_database_trace_use_same_user_admin_query_service(monkeypatch):
+    generation_id = uuid4()
+    calls = []
+    run = object()
+    monkeypatch.setattr(
+        conversation_queries.generation_runs_repo,
+        "get_generation",
+        lambda user_id, gid, *, admin: calls.append(("run", user_id, gid, admin)) or run,
+    )
+    monkeypatch.setattr(
+        conversation_queries.generation_runs_repo,
+        "list_generation_steps",
+        lambda user_id, gid, **kwargs: calls.append(
+            ("steps", user_id, gid, kwargs["admin"])
+        )
+        or [{"step_order": 0, "step_type": "generation_claimed"}],
+    )
+
+    assert ConversationQueryService().get_generation(7, generation_id) is run
+    assert ConversationQueryService(admin=True).get_generation_steps(7, generation_id)[0][
+        "step_order"
+    ] == 0
+    assert calls == [
+        ("run", 7, generation_id, False),
+        ("steps", 7, generation_id, True),
+    ]

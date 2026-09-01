@@ -1,7 +1,7 @@
 import json
 
 import config
-from dialogue.agent_trace import read_session_traces
+from dialogue.agent_trace import read_session_traces, write_trace
 
 
 def _write_trace(path, **overrides):
@@ -49,3 +49,9 @@ def test_reader_rejects_path_traversal_session_id(tmp_path, monkeypatch):
     _write_trace(outside, session_id="../secret")
 
     assert read_session_traces("../secret", user_id=7) == []
+
+
+def test_legacy_trace_writer_never_creates_local_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TRACE_DIR", str(tmp_path))
+    write_trace({"trace_id": "disabled", "session_id": "session-1"})
+    assert list(tmp_path.rglob("*")) == []
