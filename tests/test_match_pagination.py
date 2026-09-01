@@ -33,6 +33,20 @@ def test_cursor_rejects_tampering_cross_result_and_expiry(monkeypatch):
         decode_match_cursor(token, "result-a", now=111)
 
 
+def test_page_number_resolves_direct_offset_without_cursor_chain():
+    assert match._resolve_result_offset(
+        "result-a", cursor=None, page=100, limit=20
+    ) == 1980
+
+
+def test_page_number_and_cursor_are_mutually_exclusive():
+    with pytest.raises(match.HTTPException) as exc:
+        match._resolve_result_offset(
+            "result-a", cursor="signed", page=2, limit=20
+        )
+    assert exc.value.status_code == 400
+
+
 def test_page_skips_disabled_candidate_and_advances_scan_cursor(monkeypatch):
     result_set_id = str(uuid4())
     meta = _meta(result_set_id)
@@ -63,6 +77,38 @@ def test_page_skips_disabled_candidate_and_advances_scan_cursor(monkeypatch):
     assert [item["donor_info"]["code"] for item in data["items"]] == ["D1", "D3"]
     assert data["returned_count"] == 2
     assert data["has_more"] is False
+
+
+def test_direct_page_rank_window_does_not_spill_into_next_page(monkeypatch):
+    result_set_id = str(uuid4())
+    meta = _meta(result_set_id, total=4)
+    refs = [RankedCandidateRef(i, i, 1 - i / 10) for i in range(1, 5)]
+    monkeypatch.setattr(
+        match, "_load_compact_page",
+        lambda _owner, _result, *, offset, limit: (meta, refs[offset:offset + limit]),
+    )
+    monkeypatch.setattr(
+        match,
+        "get_active_donors_by_ids",
+        lambda ids: [
+            {"id": donor_id, "code": f"D{donor_id}", "height_cm": 180, "status": "active"}
+            for donor_id in ids if donor_id != 1
+        ],
+    )
+    from core.preference.scorer import HeuristicRanker
+    original = match.hydrate_ranked_candidates
+    monkeypatch.setattr(
+        match,
+        "hydrate_ranked_candidates",
+        lambda profile, page_refs, rows: original(
+            profile, page_refs, rows, ranker=HeuristicRanker()
+        ),
+    )
+    data = match._page_payload(
+        4, result_set_id, offset=0, limit=2, scan_end_offset=2
+    )
+    assert [item["rank"] for item in data["items"]] == [2]
+    assert all(item["rank"] <= 2 for item in data["items"])
 
 
 def test_page_cursor_does_not_skip_prefetched_active_candidates(monkeypatch):

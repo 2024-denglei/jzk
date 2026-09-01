@@ -14,7 +14,7 @@
 
 ## 实施状态（2026-09-01）
 
-核心方案已落地：严格快照、Redis 在线结果集、只组装当前页、签名游标分页、聊天结果引用、全结果成员反馈校验和 React 懒加载均已实现。迁移期仍保留 `/api/match.candidates` 第一页兼容字段；待调用方稳定后再删除该重复字段。
+核心方案已落地：严格快照、Redis 在线结果集、只组装当前页、签名游标与页码直达、聊天结果引用、全结果成员反馈校验和 React 懒加载均已实现。迁移期仍保留 `/api/match.candidates` 第一页兼容字段；待调用方稳定后再删除该重复字段。
 
 真实数据基准“硕士、身高 175 以上”结果如下：
 
@@ -243,6 +243,7 @@ CREATE INDEX IF NOT EXISTS idx_match_runs_user_created
 
 ```http
 GET /api/match/results/{result_set_id}?cursor={cursor}&limit=20
+GET /api/match/results/{result_set_id}?page=100&limit=20
 ```
 
 响应：
@@ -260,6 +261,8 @@ GET /api/match/results/{result_set_id}?cursor={cursor}&limit=20
 分页规则：
 
 - cursor 包含结果集 ID、下一个 rank offset 和版本，并使用服务端密钥签名，客户端不能修改页码绕过限制。
+- `page` 由服务端换算为严格 rank offset，支持直接跳至任意页；不能与 cursor 同时使用。
+- 页码直达只读取目标 rank 窗口，不请求前置页面，也不向浏览器暴露全量候选 ID。
 - `limit` 最大 50。
 - PostgreSQL 快照不存在或不属于当前用户统一返回 404。
 - Redis 结果已过期但 PostgreSQL 快照仍存在时，服务端从快照数组读取当前页，并异步或按需重建 Redis 在线结果集，用户不需要重新匹配。
@@ -395,6 +398,7 @@ POST /api/match/results/{result_set_id}/refresh
 - [x] 前端新增 `MatchResultDescriptor` 和分页状态。
 - [x] 首次仅保存第一页候选和总数。
 - [x] 中间候选区切页时调用后端分页接口。
+- [x] 支持首页、尾页、数字页码和输入页码直达，分页栏固定在候选区底部。
 - [x] 按结果集和页游标缓存已加载页面，避免重复请求。
 - [x] 翻页期间显示局部 loading，不清空已显示页面。
 - [x] Redis 缓存过期对前端透明；严格快照过期时显示“重新匹配”动作。

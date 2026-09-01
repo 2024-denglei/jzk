@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getPaginationPages } from './pagination.ts'
+import { getPaginationPages, normalizeJumpPage } from './pagination.ts'
 
 test('首页和尾页不在数字页码中重复展示', () => {
   assert.deepEqual(getPaginationPages(1, 1), [])
@@ -21,4 +21,12 @@ test('接近尾页时数字页码自动贴边', () => {
 test('异常总页数不会生成数字页码', () => {
   assert.deepEqual(getPaginationPages(0, 1), [])
   assert.deepEqual(getPaginationPages(-3, 1), [])
+})
+
+test('跳页输入只接受正整数并限制在尾页', () => {
+  assert.equal(normalizeJumpPage('100', 216), 100)
+  assert.equal(normalizeJumpPage('999', 216), 216)
+  assert.equal(normalizeJumpPage('0', 216), null)
+  assert.equal(normalizeJumpPage('2.5', 216), null)
+  assert.equal(normalizeJumpPage('abc', 216), null)
 })

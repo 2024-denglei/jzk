@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from 'react'
+import { startTransition, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChatPanel } from '../components/ChatPanel'
 import { DonorCard, DonorCardSkeleton } from '../components/DonorCard'
@@ -6,7 +6,7 @@ import { DonorDetailPanel } from '../components/DonorDetailPanel'
 import { FilterPanel } from '../components/FilterPanel'
 import { useAuth } from '../context/AuthContext'
 import { api, ApiError } from '../lib/api'
-import { getPaginationPages } from '../lib/pagination'
+import { getPaginationPages, normalizeJumpPage } from '../lib/pagination'
 import { cacheMatchPage, createMatchPageState } from '../lib/matchPagination'
 import type { MatchPageState } from '../lib/matchPagination'
 import type { Candidate, FilterState, MatchResultDescriptor } from '../types'
@@ -21,6 +21,126 @@ const MODE_META = {
 /** 中间栏每页卡片数，避免一次挂载上千张 DonorCard */
 const LIST_PAGE_SIZE = 12
 const MATCH_PAGE_SIZE = 20
+
+type PaginationBarProps = {
+  page: number
+  totalPages: number
+  loading: boolean
+  onPage: (page: number) => void
+}
+
+function PaginationBar({ page, totalPages, loading, onPage }: PaginationBarProps) {
+  const [jumpValue, setJumpValue] = useState('')
+  const pages = getPaginationPages(totalPages, page)
+  const showLeadingEllipsis = (pages[0] ?? 2) > 2
+  const showTrailingEllipsis = pages.length > 0 && pages[pages.length - 1] < totalPages - 1
+
+  function submitJump(event: FormEvent) {
+    event.preventDefault()
+    const target = normalizeJumpPage(jumpValue, totalPages)
+    if (target === null) return
+    onPage(target)
+    setJumpValue('')
+  }
+
+  return (
+    <nav
+      aria-label="列表分页"
+      className="flex min-w-max items-center justify-center gap-1.5"
+    >
+      <button
+        type="button"
+        disabled={page <= 1 || loading}
+        className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
+        onClick={() => onPage(page - 1)}
+      >
+        上一页
+      </button>
+      <button
+        type="button"
+        disabled={page <= 1 || loading}
+        aria-current={page === 1 ? 'page' : undefined}
+        className={`h-9 rounded-lg px-3 text-[12px] transition disabled:pointer-events-none ${
+          page === 1
+            ? 'bg-teal-deep text-white'
+            : 'border border-line bg-white text-ink-soft/70 hover:border-teal/30 hover:text-teal-deep disabled:opacity-35'
+        }`}
+        onClick={() => onPage(1)}
+      >
+        首页
+      </button>
+      <div className="hidden items-center gap-1.5 sm:flex">
+        {showLeadingEllipsis ? (
+          <span aria-hidden="true" className="px-1 text-[12px] text-ink-soft/45">…</span>
+        ) : null}
+        {pages.map((pageNumber) => (
+          <button
+            key={pageNumber}
+            type="button"
+            disabled={loading}
+            aria-label={`第 ${pageNumber} 页`}
+            aria-current={pageNumber === page ? 'page' : undefined}
+            onClick={() => onPage(pageNumber)}
+            className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-35 ${
+              pageNumber === page
+                ? 'bg-teal-deep text-white'
+                : 'border border-line bg-white text-ink-soft/60 hover:border-teal/30 hover:text-teal-deep'
+            }`}
+          >
+            {pageNumber}
+          </button>
+        ))}
+        {showTrailingEllipsis ? (
+          <span aria-hidden="true" className="px-1 text-[12px] text-ink-soft/45">…</span>
+        ) : null}
+      </div>
+      <span className="min-w-20 text-center text-[12px] tabular-nums text-ink-soft/55 sm:hidden">
+        {page} / {totalPages}
+      </span>
+      <button
+        type="button"
+        disabled={page >= totalPages || loading}
+        aria-current={page === totalPages ? 'page' : undefined}
+        className={`h-9 rounded-lg px-3 text-[12px] transition disabled:pointer-events-none ${
+          page === totalPages
+            ? 'bg-teal-deep text-white'
+            : 'border border-line bg-white text-ink-soft/70 hover:border-teal/30 hover:text-teal-deep disabled:opacity-35'
+        }`}
+        onClick={() => onPage(totalPages)}
+      >
+        尾页
+      </button>
+      <button
+        type="button"
+        disabled={page >= totalPages || loading}
+        className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
+        onClick={() => onPage(page + 1)}
+      >
+        下一页
+      </button>
+      <form onSubmit={submitJump} className="ml-2 hidden items-center gap-1.5 lg:flex">
+        <label htmlFor="page-jump" className="text-[12px] text-ink-soft/55">跳至</label>
+        <input
+          id="page-jump"
+          inputMode="numeric"
+          value={jumpValue}
+          onChange={(event) => setJumpValue(event.target.value.replace(/[^0-9]/g, ''))}
+          placeholder={String(page)}
+          aria-label="跳转页码"
+          className="h-9 w-16 rounded-lg border border-line bg-white px-2 text-center text-[12px] tabular-nums text-ink outline-none transition focus:border-teal/50"
+        />
+        <span className="text-[12px] text-ink-soft/55">页</span>
+        <button
+          type="submit"
+          disabled={loading || !jumpValue}
+          className="h-9 rounded-lg border border-line bg-white px-2.5 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:opacity-35"
+        >
+          跳转
+        </button>
+      </form>
+    </nav>
+  )
+}
 
 export function DonorsPage() {
   const { user, loading: authLoading } = useAuth()
@@ -226,11 +346,6 @@ export function DonorsPage() {
       : mode === 'chat' && matchPages
         ? Math.max(1, Math.ceil(matchPages.total / MATCH_PAGE_SIZE))
         : Math.max(1, Math.ceil(items.length / LIST_PAGE_SIZE))
-  const paginationPages = getPaginationPages(listTotalPages, page)
-  const showLeadingEllipsis = (paginationPages[0] ?? 2) > 2
-  const showTrailingEllipsis =
-    paginationPages.length > 0 && paginationPages[paginationPages.length - 1] < listTotalPages - 1
-
   async function loadMatchPage(targetPage: number) {
     if (!matchPages || targetPage < 1 || targetPage > listTotalPages) return
     const cached = matchPages.pages[targetPage]
@@ -240,8 +355,6 @@ export function DonorsPage() {
       setHint(`共 ${matchPages.total} 位，当前显示第 ${(targetPage - 1) * MATCH_PAGE_SIZE + 1}～${Math.min(targetPage * MATCH_PAGE_SIZE, matchPages.total)} 位`)
       return
     }
-    const cursor = matchPages.cursors[targetPage]
-    if (!cursor) return
     const requestId = ++matchRequestSeq.current
     setLoading(true)
     setError('')
@@ -251,7 +364,7 @@ export function DonorsPage() {
         total: number
         items: Candidate[]
         next_cursor?: string | null
-      }>(`/api/match/results/${encodeURIComponent(matchPages.resultSetId)}?cursor=${encodeURIComponent(cursor)}&limit=${MATCH_PAGE_SIZE}`)
+      }>(`/api/match/results/${encodeURIComponent(matchPages.resultSetId)}?page=${targetPage}&limit=${MATCH_PAGE_SIZE}`)
       if (requestId !== matchRequestSeq.current) return
       const nextState = cacheMatchPage(matchPages, targetPage, data.items, data.next_cursor)
       setMatchPages(nextState)
@@ -498,144 +611,49 @@ export function DonorsPage() {
               </div>
             )}
 
-            <div className="scroll-y flex-1 overflow-y-auto px-3 py-4 md:px-5">
-              {loading && items.length === 0 ? (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <DonorCardSkeleton key={i} />
-                  ))}
-                </div>
-              ) : items.length === 0 ? (
-                <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-line bg-white/50 px-6 text-center">
-                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-mist text-teal-deep">
-                    <i className="ri-user-search-line text-xl" />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="scroll-y min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-5">
+                {loading && items.length === 0 ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <DonorCardSkeleton key={i} />
+                    ))}
                   </div>
-                  <div className="text-[14px] font-medium text-ink-soft/70">暂无匹配结果</div>
-                  <p className="mt-1 max-w-xs text-[12px] text-ink-soft/40">
-                    可调整左侧条件，或向右侧顾问描述您的期望
-                  </p>
-                </div>
-              ) : (
-                <div key={listKey} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {pagedItems.map((c, i) => (
-                    <DonorCard
-                      key={c.donor_info.code}
-                      candidate={c}
-                      index={(page - 1) * (mode === 'chat' && matchPages ? MATCH_PAGE_SIZE : LIST_PAGE_SIZE) + i}
+                ) : items.length === 0 ? (
+                  <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-line bg-white/50 px-6 text-center">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-mist text-teal-deep">
+                      <i className="ri-user-search-line text-xl" />
+                    </div>
+                    <div className="text-[14px] font-medium text-ink-soft/70">暂无匹配结果</div>
+                    <p className="mt-1 max-w-xs text-[12px] text-ink-soft/40">
+                      可调整左侧条件，或向右侧顾问描述您的期望
+                    </p>
+                  </div>
+                ) : (
+                  <div key={listKey} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {pagedItems.map((c, i) => (
+                      <DonorCard
+                        key={c.donor_info.code}
+                        candidate={c}
+                        index={(page - 1) * (mode === 'chat' && matchPages ? MATCH_PAGE_SIZE : LIST_PAGE_SIZE) + i}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {listTotalPages > 1 ? (
+                <div className="shrink-0 border-t border-line/70 bg-white/95 px-3 py-3 shadow-[0_-6px_20px_rgba(15,61,68,0.04)] backdrop-blur-sm md:px-5">
+                  <div className="overflow-x-auto">
+                    <PaginationBar
+                      page={page}
+                      totalPages={listTotalPages}
+                      loading={loading}
+                      onPage={goToPage}
                     />
-                  ))}
+                  </div>
                 </div>
-              )}
-
-              {listTotalPages > 1 && mode === 'chat' && matchPages && (
-                <nav
-                  aria-label="匹配结果分页"
-                  className="mt-6 flex items-center justify-center gap-3"
-                >
-                  <button
-                    type="button"
-                    disabled={page <= 1 || loading}
-                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
-                    onClick={() => goToPage(page - 1)}
-                  >
-                    上一页
-                  </button>
-                  <span className="min-w-24 text-center text-[12px] tabular-nums text-ink-soft/60">
-                    第 {page} / {listTotalPages} 页
-                  </span>
-                  <button
-                    type="button"
-                    disabled={page >= listTotalPages || loading || (!matchPages.pages[page + 1] && !matchPages.cursors[page + 1])}
-                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
-                    onClick={() => goToPage(page + 1)}
-                  >
-                    {loading ? '加载中…' : '下一页'}
-                  </button>
-                </nav>
-              )}
-
-              {listTotalPages > 1 && mode !== 'chat' && (
-                <nav
-                  aria-label="列表分页"
-                  className="mt-6 flex flex-wrap items-center justify-center gap-1.5"
-                >
-                  <button
-                    type="button"
-                    disabled={page <= 1 || loading}
-                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
-                    onClick={() => goToPage(page - 1)}
-                  >
-                    上一页
-                  </button>
-                  <button
-                    type="button"
-                    disabled={page <= 1 || loading}
-                    aria-current={page === 1 ? 'page' : undefined}
-                    className={`h-9 rounded-lg px-3 text-[12px] transition disabled:pointer-events-none ${
-                      page === 1
-                        ? 'bg-teal-deep text-white'
-                        : 'border border-line bg-white text-ink-soft/70 hover:border-teal/30 hover:text-teal-deep disabled:opacity-35'
-                    }`}
-                    onClick={() => goToPage(1)}
-                  >
-                    首页
-                  </button>
-                  {showLeadingEllipsis && (
-                    <span
-                      aria-hidden="true"
-                      className="flex h-9 min-w-5 items-center justify-center text-[12px] text-ink-soft/45"
-                    >
-                      …
-                    </span>
-                  )}
-                  {paginationPages.map((pageNumber) => (
-                    <button
-                      key={pageNumber}
-                      type="button"
-                      disabled={loading}
-                      aria-label={`第 ${pageNumber} 页`}
-                      aria-current={pageNumber === page ? 'page' : undefined}
-                      onClick={() => goToPage(pageNumber)}
-                      className={`flex h-9 min-w-9 items-center justify-center rounded-lg text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-35 ${
-                        pageNumber === page
-                          ? 'bg-teal-deep text-white'
-                          : 'border border-line bg-white text-ink-soft/60 hover:border-teal/30 hover:text-teal-deep'
-                      }`}
-                    >
-                      {pageNumber}
-                    </button>
-                  ))}
-                  {showTrailingEllipsis && (
-                    <span
-                      aria-hidden="true"
-                      className="flex h-9 min-w-5 items-center justify-center text-[12px] text-ink-soft/45"
-                    >
-                      …
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    disabled={page >= listTotalPages || loading}
-                    aria-current={page === listTotalPages ? 'page' : undefined}
-                    className={`h-9 rounded-lg px-3 text-[12px] transition disabled:pointer-events-none ${
-                      page === listTotalPages
-                        ? 'bg-teal-deep text-white'
-                        : 'border border-line bg-white text-ink-soft/70 hover:border-teal/30 hover:text-teal-deep disabled:opacity-35'
-                    }`}
-                    onClick={() => goToPage(listTotalPages)}
-                  >
-                    尾页
-                  </button>
-                  <button
-                    type="button"
-                    disabled={page >= listTotalPages || loading}
-                    className="h-9 rounded-lg border border-line bg-white px-3 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:pointer-events-none disabled:opacity-35"
-                    onClick={() => goToPage(page + 1)}
-                  >
-                    下一页
-                  </button>
-                </nav>
-              )}
+              ) : null}
             </div>
           </>
         )}

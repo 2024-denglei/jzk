@@ -17,3 +17,9 @@ export function getPaginationPages(totalPages: number, currentPage: number): num
 
   return Array.from({ length: VISIBLE_PAGE_COUNT }, (_, index) => start + index)
 }
+
+export function normalizeJumpPage(raw: string, totalPages: number): number | null {
+  const value = Number(raw.trim())
+  if (!Number.isInteger(value) || value < 1) return null
+  return Math.min(value, Math.max(1, Math.floor(totalPages)))
+}

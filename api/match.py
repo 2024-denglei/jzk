@@ -185,6 +185,7 @@ def _page_payload(
     *,
     offset: int,
     limit: int,
+    scan_end_offset: int | None = None,
 ) -> dict[str, Any]:
     """跳过已停用候选并向后补齐当前页，cursor 指向实际扫描位置。"""
     items: list[dict[str, Any]] = []
@@ -193,6 +194,10 @@ def _page_payload(
     profile = None
     while len(items) < limit:
         chunk_size = min(config.MATCH_RESULT_PAGE_SIZE_MAX, max(limit - len(items), 10))
+        if scan_end_offset is not None:
+            if scan_offset >= scan_end_offset:
+                break
+            chunk_size = min(chunk_size, scan_end_offset - scan_offset)
         loaded = _load_compact_page(
             owner_user_id, result_set_id, offset=scan_offset, limit=chunk_size
         )
@@ -228,20 +233,48 @@ def _page_payload(
     }
 
 
+def _resolve_result_offset(
+    result_set_id: str,
+    *,
+    cursor: str | None,
+    page: int | None,
+    limit: int,
+) -> int:
+    """页码用于任意跳转；cursor 保留给顺序分页兼容调用方。"""
+    if cursor and page is not None:
+        raise HTTPException(status_code=400, detail="cursor 与 page 不能同时使用")
+    if page is not None:
+        return (page - 1) * limit
+    try:
+        return decode_match_cursor(cursor, result_set_id).offset if cursor else 0
+    except InvalidMatchCursor as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/api/match/results/{result_set_id}")
 async def get_match_results(
     result_set_id: str,
     cursor: str | None = None,
+    page: int | None = Query(default=None, ge=1, le=1_000_000),
     limit: int = Query(default=config.MATCH_RESULT_PAGE_SIZE_DEFAULT, ge=1),
     user_id: int = Depends(get_current_user_id),
 ):
     limit = min(limit, config.MATCH_RESULT_PAGE_SIZE_MAX)
+    offset = _resolve_result_offset(
+        result_set_id, cursor=cursor, page=page, limit=limit
+    )
     try:
-        offset = decode_match_cursor(cursor, result_set_id).offset if cursor else 0
-    except InvalidMatchCursor as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    try:
-        return _page_payload(user_id, result_set_id, offset=offset, limit=limit)
+        payload = _page_payload(
+            user_id,
+            result_set_id,
+            offset=offset,
+            limit=limit,
+            # 任意页跳转按严格 rank 窗口读取，避免候选停用后与下一页重复。
+            scan_end_offset=offset + limit if page is not None else None,
+        )
+        payload["page"] = page or (offset // limit + 1)
+        payload["page_size"] = limit
+        return payload
     except ProfileValidationError as exc:
         raise HTTPException(status_code=500, detail="快照画像无法读取") from exc
 
