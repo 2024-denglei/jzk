@@ -245,6 +245,8 @@ export interface GenerationRun {
   user_message_id: string
   assistant_message_id: string
   status: GenerationStatus
+  model: string | null
+  prompt_version: string | null
   cancel_requested_at: string | null
   attempt_count: number
   error_type: string | null

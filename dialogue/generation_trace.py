@@ -1,4 +1,4 @@
-"""数据库权威 Generation Trace；只保存引用、摘要、计数和耗时。"""
+"""数据库权威 Generation Trace；保存运行元数据和经脱敏的真实 Agent 消息序列。"""
 
 from __future__ import annotations
 

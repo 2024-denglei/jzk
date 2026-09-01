@@ -13,7 +13,10 @@ AI 消息通过 `chat_messages.match_run_id` 关联 `app.match_runs`。完整排
 不依赖供体当前资料，也不依赖 Redis。
 
 生成由 `app.ai_generation_runs` 持久排队，Generation Worker 领取、续租、重试并更新 AI 消息；
-每一步 Trace 写入 `app.ai_generation_steps`。Redis Stream 只用于 token/event 实时推送和断线续传，
+每一步 Trace 写入 `app.ai_generation_steps`。其中 `agent_message` 按真实请求顺序保存经密钥脱敏的
+System、User、Assistant、Tool Call 和 Tool Result，供有用户查看权限的管理端还原当时实际提交给
+模型的上下文；候选人详情仍只通过工具结果中的 `result_set_id` 关联冻结排名快照，不复制进 Trace。
+Redis Stream 只用于 token/event 实时推送和断线续传，
 Outbox 负责会话硬删除或当前线路编辑后的 Stream 与孤立排名快照清理。
 
 ## 客户端加载
@@ -37,8 +40,8 @@ assistant 消息并由 `match_run_id` 绑定，因此前端把分支入口放在
 
 管理端使用 `/api/admin/users/{user_id}/conversations` 下的同构接口和同一查询服务加载列表、
 分支树与消息路径。它可从根到叶看到显式分叉原因和每条当前线路；用户编辑只呈现修改后的
-当前内容，不形成伪分支。完整排名按消息懒加载，
-数据库 Trace 按 generation 懒加载。每次敏感读取写入管理审计，审计只保存资源定位和分页参数，
+当前内容，不形成伪分支。会话列表使用 `Session #{chat.id}` 作为稳定标题。完整排名按消息懒加载，
+数据库 Trace 按 generation 懒加载，并按真实 Agent 消息顺序展示。每次敏感读取写入管理审计，审计只保存资源定位和分页参数，
 不复制消息、排名或 Trace 正文。
 
 ## 已移除的兼容结构

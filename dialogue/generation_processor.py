@@ -75,20 +75,40 @@ class AgentGenerationProcessor:
     ) -> GenerationOutput:
         started = perf_counter()
         state = dict(context["state_after_user"])
-        history = []
-        input_ids = []
+        history_with_ids: list[tuple[str, dict[str, Any]]] = []
         for item in context.get("messages") or []:
             if item.get("role") not in {"user", "assistant"}:
                 continue
-            input_ids.append(str(item.get("id")))
+            message_id = str(item.get("id"))
             content = str(item.get("content") or "")
             if item.get("role") == "assistant":
                 content = slim_assistant_for_llm(content)
-            history.append({"role": item["role"], "content": content})
+            history_with_ids.append(
+                (message_id, {"role": item["role"], "content": content})
+            )
+        selected_history = history_with_ids[-40:]
+        input_ids = [message_id for message_id, _message in selected_history]
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": AGENT_SYSTEM_PROMPT},
-            *history[-40:],
+            *(message for _message_id, message in selected_history),
         ]
+        attempt_count = int(getattr(context["generation"], "attempt_count", 1) or 1)
+        control.trace.add(
+            "agent_message",
+            role="system",
+            phase="input_context",
+            text=AGENT_SYSTEM_PROMPT,
+            attempt_count=attempt_count,
+        )
+        for message_id, message in selected_history:
+            control.trace.add(
+                "agent_message",
+                role=message["role"],
+                phase="input_context",
+                text=message["content"],
+                source_message_id=message_id,
+                attempt_count=attempt_count,
+            )
         initial_prompt_hash = _prompt_hash(messages)
         await control.set_model_metadata(
             model=self.model,
@@ -137,22 +157,37 @@ class AgentGenerationProcessor:
                 await control.emit_token(final_reply)
                 break
 
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": choice.content or None,
-                    "tool_calls": [
-                        {
-                            "id": call.id,
-                            "type": "function",
-                            "function": {
-                                "name": call.function.name,
-                                "arguments": call.function.arguments,
-                            },
-                        }
-                        for call in tool_calls
-                    ],
-                }
+            assistant_tool_message = {
+                "role": "assistant",
+                "content": choice.content or None,
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                            "name": call.function.name,
+                            "arguments": call.function.arguments,
+                        },
+                    }
+                    for call in tool_calls
+                ],
+            }
+            messages.append(assistant_tool_message)
+            control.trace.add(
+                "agent_message",
+                role="assistant",
+                phase="tool_call",
+                text=choice.content or "",
+                tool_calls=[
+                    {
+                        "id": call.id,
+                        "name": call.function.name,
+                        "arguments_text": call.function.arguments,
+                    }
+                    for call in tool_calls
+                ],
+                round=round_index,
+                attempt_count=attempt_count,
             )
             match_ok = False
             for call in tool_calls:
@@ -205,12 +240,26 @@ class AgentGenerationProcessor:
                     match_run_id=tool_payload.get("result_set_id"),
                     count=tool_payload.get("count"),
                 )
+                tool_result_text = json.dumps(tool_payload, ensure_ascii=False)
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": call.id,
-                        "content": json.dumps(tool_payload, ensure_ascii=False),
+                        "content": tool_result_text,
                     }
+                )
+                control.trace.add(
+                    "agent_message",
+                    role="tool",
+                    phase="tool_result",
+                    text=tool_result_text,
+                    tool_name=call.function.name,
+                    tool_call_id=call.id,
+                    ok=bool(tool_payload.get("ok")),
+                    result_set_id=tool_payload.get("result_set_id"),
+                    count=tool_payload.get("count"),
+                    round=round_index,
+                    attempt_count=attempt_count,
                 )
 
             if not match_ok:
@@ -259,6 +308,14 @@ class AgentGenerationProcessor:
         if not final_reply:
             final_reply = "已处理您的请求。"
             await control.emit_token(final_reply)
+        control.trace.add(
+            "agent_message",
+            role="assistant",
+            phase="final",
+            text=final_reply,
+            match_run_id=match_run_id,
+            attempt_count=attempt_count,
+        )
         timings["total_ms"] = round((perf_counter() - started) * 1000, 1)
         return GenerationOutput(
             content=final_reply,

@@ -125,3 +125,14 @@ def test_agent_processor_creates_match_snapshot_ref_and_streams_summary(monkeypa
     assert control.events[0][1]["total"] == 12
     assert control.metadata["prompt_version"] == "agent-v2"
     assert all("content" not in payload for _step, payload in control.trace.steps)
+    transcript = [payload for step, payload in control.trace.steps if step == "agent_message"]
+    assert [item["role"] for item in transcript] == [
+        "system", "user", "assistant", "tool", "assistant",
+    ]
+    assert transcript[0]["text"] == generation_processor.AGENT_SYSTEM_PROMPT
+    assert transcript[1]["text"] == "必须 O 型"
+    assert transcript[2]["phase"] == "tool_call"
+    assert transcript[2]["tool_calls"][0]["name"] == "submit_preference_profile"
+    assert json.loads(transcript[3]["text"])["result_set_id"] == result_set_id
+    assert transcript[4]["phase"] == "final"
+    assert transcript[4]["text"] == "匹配完成"

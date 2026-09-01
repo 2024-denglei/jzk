@@ -31,6 +31,7 @@ _TRACE_FORBIDDEN_KEYS = frozenset({
     "donor_snapshot",
     "system_prompt",
 })
+_TRACE_LONG_TEXT_KEYS = frozenset({"text", "arguments_text"})
 
 
 class GenerationLeaseLost(RuntimeError):
@@ -55,7 +56,8 @@ def _sanitize_trace_value(value: Any, *, key: str | None = None) -> Any:
     if isinstance(value, UUID):
         return str(value)
     if isinstance(value, str):
-        return _SECRET_PATTERN.sub("[redacted]", value)[:1000]
+        limit = 50_000 if key and key.lower() in _TRACE_LONG_TEXT_KEYS else 1000
+        return _SECRET_PATTERN.sub("[redacted]", value)[:limit]
     if isinstance(value, dict):
         return {
             str(child_key): _sanitize_trace_value(child, key=str(child_key))

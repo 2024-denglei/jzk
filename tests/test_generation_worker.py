@@ -33,6 +33,11 @@ def test_database_trace_rejects_full_messages_and_redacts_secrets():
     )
     assert clean["authorization"] == "[redacted]"
     assert clean["count"] == 3
+    long_text = "系统提示词" * 1000 + " Bearer abc.def.secret"
+    transcript = sanitize_trace_payload({"role": "system", "text": long_text})
+    assert len(transcript["text"]) > 1000
+    assert "abc.def.secret" not in transcript["text"]
+    assert "[redacted]" in transcript["text"]
 
 
 def test_worker_completes_generation_even_when_event_stream_is_unavailable(monkeypatch):
