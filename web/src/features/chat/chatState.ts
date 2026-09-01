@@ -91,6 +91,19 @@ export function messagesForSelectedBranch(state: ChatClientState): ChatMessageNo
     .filter((message): message is ChatMessageNode => Boolean(message))
 }
 
+export type BranchPreview = { items: ChatMessageNode[]; hiddenCount: number }
+
+export function previewMessagesAtBranchPoint(
+  messages: ChatMessageNode[],
+  parentMessageId: string | null,
+): BranchPreview {
+  if (parentMessageId === null) return { items: [], hiddenCount: messages.length }
+  const branchPointIndex = messages.findIndex((message) => message.id === parentMessageId)
+  if (branchPointIndex < 0) return { items: messages, hiddenCount: 0 }
+  const items = messages.slice(0, branchPointIndex + 1)
+  return { items, hiddenCount: messages.length - items.length }
+}
+
 export type CandidateSyncAction =
   | { kind: 'preserve' }
   | { kind: 'clear' }

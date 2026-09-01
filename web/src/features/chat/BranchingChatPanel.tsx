@@ -6,7 +6,7 @@ import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } fro
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
 import { buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
-import { candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, selectConversation } from './chatState'
+import { candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
 import { followGeneration, type GenerationEvent } from './generationStream'
 
 const SUGGESTIONS = ['硕士，身高 175 以上', 'O 型血，体型一般', '本科以上，标本充足']
@@ -89,6 +89,13 @@ export function BranchingChatPanel({
   const currentChatId = tree?.chat.id || null
   const selectedBranch = tree?.branches.find((branch) => branch.id === chatState.selectedBranchId) || null
   const messages = useMemo(() => messagesForSelectedBranch(chatState), [chatState])
+  const messagePreview = useMemo(
+    () => pendingAction
+      ? previewMessagesAtBranchPoint(messages, pendingAction.parentMessageId ?? null)
+      : { items: messages, hiddenCount: 0 },
+    [messages, pendingAction],
+  )
+  const visibleMessages = messagePreview.items
   const selectedPath = chatState.selectedBranchId ? chatState.pathsByBranch[chatState.selectedBranchId] : undefined
   const generatingMessage = [...messages].reverse().find((message) => message.status === 'generating' && message.generation_id)
 
@@ -155,7 +162,7 @@ export function BranchingChatPanel({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages.length, generatingMessage?.content])
+  }, [visibleMessages.length, generatingMessage?.content, pendingAction?.action])
 
   useEffect(() => {
     if (authLoading || !user || !resumeChatId) return
@@ -428,7 +435,7 @@ export function BranchingChatPanel({
       {selectedPath?.hasMore && <button type="button" disabled={loadingConversation} onClick={() => void loadOlderMessages()} className="w-full py-1 text-[11px] text-teal-deep disabled:opacity-40">{loadingConversation ? '加载中…' : '加载更早消息'}</button>}
       {!tree && !loadingConversation && <div className="rounded-2xl border border-line/70 bg-white p-4"><div className="text-[13px] font-semibold">您好</div><p className="mt-1 text-[12px] text-ink-soft/65">{WELCOME}</p><div className="mt-3 flex flex-col gap-1.5">{SUGGESTIONS.map((item) => <button key={item} type="button" onClick={() => void send(item)} className="rounded-lg border border-line/80 bg-sand/40 px-3 py-2 text-left text-[12px] text-ink-soft/75">{item}</button>)}</div></div>}
       {loadingConversation && messages.length === 0 && <div className="py-8 text-center text-[12px] text-ink-soft/45">正在加载对话…</div>}
-      {messages.map((message, index) => {
+      {visibleMessages.map((message, index) => {
         const match = matchesByMessage[message.id]
         return <article key={message.id} className="animate-msg-in group/msg">
           <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`relative max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${message.role === 'user' ? 'rounded-br-md bg-teal-deep text-white' : message.role === 'system' ? 'border border-amber-200 bg-amber-50 text-amber-900/80' : 'rounded-bl-md border border-line/70 bg-white text-ink/90'}`}>
@@ -436,7 +443,7 @@ export function BranchingChatPanel({
             {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'generating' ? '生成中' : message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
           </div></div>
           {!sending && message.role !== 'system' && <div className={`mt-1 flex gap-2 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
-            {message.state_recoverable && index < messages.length - 1 && <button type="button" onClick={() => prepareRewind(message)} className="hover:text-teal-deep">从此处分支</button>}
+            {message.state_recoverable && index < visibleMessages.length - 1 && <button type="button" onClick={() => prepareRewind(message)} className="hover:text-teal-deep">从此处分支</button>}
             {message.role === 'user' && <button type="button" onClick={() => prepareEdit(message)} className="hover:text-teal-deep">编辑重发</button>}
             {message.role === 'assistant' && message.status !== 'generating' && <button type="button" onClick={() => void send(undefined, message)} className="hover:text-teal-deep">{message.status === 'failed' ? '重试' : '重新生成'}</button>}
             {message.match_run && <button type="button" onClick={() => void loadMatch(message)} className="hover:text-teal-deep">{matchLoadingId === message.id ? '加载排名…' : `完整排名（${message.match_run.total}）`}</button>}
@@ -444,6 +451,10 @@ export function BranchingChatPanel({
           {match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
         </article>
       })}
+      {pendingAction && <div className="rounded-xl border border-dashed border-teal/25 bg-white/75 px-3 py-2 text-center text-[10px] text-ink-soft/55">
+        <i className="ri-git-branch-line mr-1 text-teal-deep" />
+        已定位到分支点，原路径后续 {messagePreview.hiddenCount} 条消息已收起但仍完整保留
+      </div>}
       <div ref={bottomRef} />
     </main>
 

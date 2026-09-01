@@ -7,6 +7,7 @@ import {
   mergeMessagePage,
   messagesForSelectedBranch,
   patchMessage,
+  previewMessagesAtBranchPoint,
   selectConversation,
 } from './chatState.ts'
 
@@ -54,6 +55,23 @@ test('生成中保留当前候选，完成后才加载最新完整快照', () =>
   assert.equal(action.kind, 'load')
   assert.equal(action.message.id, 'm3')
   assert.deepEqual(candidateSyncAction([message('m0', 0)]), { kind: 'clear' })
+})
+
+test('待创建分支只预览到分支点且取消所需原消息不被删除', () => {
+  const messages = [
+    message('m0', 0),
+    message('m1', 1, 'm0'),
+    message('m2', 2, 'm1'),
+    message('m3', 3, 'm2'),
+  ]
+  const preview = previewMessagesAtBranchPoint(messages, 'm1')
+  assert.deepEqual(preview.items.map((item) => item.id), ['m0', 'm1'])
+  assert.equal(preview.hiddenCount, 2)
+  assert.equal(messages.length, 4)
+
+  const editFirstMessage = previewMessagesAtBranchPoint(messages, null)
+  assert.deepEqual(editFirstMessage.items, [])
+  assert.equal(editFirstMessage.hiddenCount, 4)
 })
 
 test('分支路径复用公共祖先且向上分页不产生重复消息', () => {
