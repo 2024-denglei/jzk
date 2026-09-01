@@ -164,7 +164,7 @@ class ConversationQueryService:
             config.CHAT_MESSAGE_PAGE_SIZE_MAX,
         )
         with db_session(admin=self.admin) as conn:
-            chat = chat_queries_repo.get_chat(conn, user_id, chat_id)
+            chat = chat_queries_repo.get_chat_path_source(conn, user_id, chat_id)
             if chat is None:
                 raise ConversationQueryError(ChatErrorCode.CHAT_NOT_FOUND, "会话不存在")
             if int(chat.get("storage_version") or 1) == 1:

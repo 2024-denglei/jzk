@@ -75,6 +75,23 @@ def get_chat(conn, user_id: int, chat_id: int) -> dict[str, Any] | None:
     )
 
 
+def get_chat_path_source(conn, user_id: int, chat_id: int) -> dict[str, Any] | None:
+    """消息翻页只读取版本路由所需字段；V2 不加载旧 JSON 或摘要 join。"""
+    return fetchone(
+        conn,
+        """
+        SELECT c.id, c.title, c.storage_version, c.created_at, c.updated_at,
+               CASE WHEN c.storage_version = 1 THEN c.messages_json END
+                 AS legacy_messages_json,
+               CASE WHEN c.storage_version = 1 THEN c.state_json END
+                 AS legacy_state_json
+        FROM app.chats c
+        WHERE c.id = %s AND c.user_id = %s
+        """,
+        (chat_id, user_id),
+    )
+
+
 def list_branches(conn, chat_id: int, active_branch_id: UUID | None) -> list[dict[str, Any]]:
     return fetchall(
         conn,
@@ -127,18 +144,26 @@ def message_is_on_path(
     row = fetchone(
         conn,
         """
-        WITH RECURSIVE path AS (
-          SELECT id, parent_message_id
-          FROM app.chat_messages WHERE chat_id = %s AND id = %s
+        WITH RECURSIVE target AS (
+          SELECT id, depth FROM app.chat_messages
+          WHERE chat_id = %s AND id = %s
+        ), path AS (
+          SELECT head.id, head.parent_message_id, head.depth
+          FROM app.chat_messages head
+          CROSS JOIN target
+          WHERE head.chat_id = %s AND head.id = %s
           UNION ALL
-          SELECT parent.id, parent.parent_message_id
+          SELECT parent.id, parent.parent_message_id, parent.depth
           FROM app.chat_messages parent
           JOIN path child ON child.parent_message_id = parent.id
+          CROSS JOIN target
           WHERE parent.chat_id = %s
+            AND child.id <> target.id
+            AND parent.depth >= target.depth
         )
         SELECT EXISTS (SELECT 1 FROM path WHERE id = %s) AS present
         """,
-        (chat_id, branch_head_id, chat_id, message_id),
+        (chat_id, message_id, chat_id, branch_head_id, chat_id, message_id),
     )
     return bool(row and row["present"])
 
@@ -154,13 +179,13 @@ def get_message_path(
         conn,
         """
         WITH RECURSIVE path AS (
-          SELECT m.* FROM app.chat_messages m
+          SELECT m.*, 1 AS hop FROM app.chat_messages m
           WHERE m.chat_id = %s AND m.id = %s
           UNION ALL
-          SELECT parent.*
+          SELECT parent.*, child.hop + 1
           FROM app.chat_messages parent
           JOIN path child ON child.parent_message_id = parent.id
-          WHERE parent.chat_id = %s
+          WHERE parent.chat_id = %s AND child.hop < %s
         )
         SELECT p.id, p.parent_message_id, p.derived_from_message_id,
                p.created_in_branch_id, p.role, p.status, p.content,
@@ -178,7 +203,7 @@ def get_message_path(
         ORDER BY p.depth DESC, p.created_at DESC, p.id DESC
         LIMIT %s
         """,
-        (chat_id, start_message_id, chat_id, limit),
+        (chat_id, start_message_id, chat_id, limit, limit),
     )
 
 

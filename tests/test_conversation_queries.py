@@ -112,7 +112,7 @@ def test_message_path_returns_chronological_page_and_lazy_match_summary(monkeypa
     monkeypatch.setattr(conversation_queries, "db_session", fake_session)
     monkeypatch.setattr(
         conversation_queries.chat_queries_repo,
-        "get_chat",
+        "get_chat_path_source",
         lambda *_args: _chat_row(10, now, branch_id),
     )
     monkeypatch.setattr(
@@ -146,7 +146,7 @@ def test_message_path_maps_cursor_errors_to_stable_domain_code(monkeypatch):
     monkeypatch.setattr(conversation_queries, "db_session", fake_session)
     monkeypatch.setattr(
         conversation_queries.chat_queries_repo,
-        "get_chat",
+        "get_chat_path_source",
         lambda *_args: _chat_row(10, now, branch_id),
     )
     monkeypatch.setattr(
@@ -189,6 +189,11 @@ def test_v1_chat_is_projected_to_the_same_tree_and_paginated_message_dto(monkeyp
     monkeypatch.setattr(
         conversation_queries.chat_queries_repo,
         "get_chat",
+        lambda *_args: row,
+    )
+    monkeypatch.setattr(
+        conversation_queries.chat_queries_repo,
+        "get_chat_path_source",
         lambda *_args: row,
     )
     monkeypatch.setattr(
