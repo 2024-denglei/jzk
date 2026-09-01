@@ -161,7 +161,7 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
         <div className="min-h-0 flex-1 overflow-y-auto">
           {chats.map((chat) => (
             <button key={chat.id} type="button" onClick={() => void openChat(chat.id)} className={`w-full border-b border-[#edf1f5] px-3 py-3 text-left ${tree?.chat.id === chat.id ? 'bg-[#eef6ff]' : 'hover:bg-[#f8fbff]'}`}>
-              <div className="truncate text-xs font-semibold text-[#304159]">{chat.title}</div>
+              <div className="flex items-center gap-1"><div className="truncate text-xs font-semibold text-[#304159]">{chat.title}</div>{chat.storage_version === 1 && <span className="shrink-0 rounded bg-amber-50 px-1 text-[8px] text-amber-700">V1 只读</span>}</div>
               <div className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#7a8799]">{chat.last_message_preview || '暂无消息摘要'}</div>
               <div className="mt-2 flex justify-between text-[9px] text-[#9aa5b5]"><span>{chat.branch_count} 分支 · {chat.message_count} 消息</span><span>{formatTime(chat.updated_at)}</span></div>
             </button>

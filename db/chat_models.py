@@ -218,6 +218,7 @@ class ChatSummary(BaseModel):
 
     id: int
     title: str
+    storage_version: int = Field(ge=1, le=2)
     active_branch_id: UUID | None
     active_branch_name: str | None = None
     branch_count: int = Field(ge=0)

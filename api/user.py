@@ -224,6 +224,11 @@ async def get_chat(chat_id: int, user_id: int = Depends(get_current_user_id)):
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="对话不存在")
+    if int(row.get("storage_version") or 1) == 2:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CHAT_STORAGE_V2", "message": "该会话请使用 /api/chats V2 接口读取"},
+        )
     state = json.loads(row["state_json"] or "{}")
     return {
         "id": row["id"],
@@ -239,17 +244,23 @@ async def get_chat(chat_id: int, user_id: int = Depends(get_current_user_id)):
 @router.post("/chats")
 async def save_chat(body: ChatSaveBody, user_id: int = Depends(get_current_user_id)):
     import uuid
-    from api.chat_persist import upsert_user_chat
+    from api.chat_persist import LegacyChatWriteBlocked, upsert_user_chat
 
     session_id = (body.session_id or "").strip() or str(uuid.uuid4())
-    chat_id = upsert_user_chat(
-        user_id=user_id,
-        session_id=session_id,
-        messages=body.messages,
-        candidates=body.candidates,
-        state=body.state,
-        title=body.title,
-    )
+    try:
+        chat_id = upsert_user_chat(
+            user_id=user_id,
+            session_id=session_id,
+            messages=body.messages,
+            candidates=body.candidates,
+            state=body.state,
+            title=body.title,
+        )
+    except LegacyChatWriteBlocked as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "LEGACY_CHAT_WRITE_BLOCKED", "message": str(exc)},
+        ) from exc
     return {"ok": True, "id": chat_id, "session_id": session_id}
 
 
@@ -267,6 +278,11 @@ async def resume_chat(
         ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="对话不存在")
+    if int(row.get("storage_version") or 1) == 2:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CHAT_STORAGE_V2", "message": "该会话请使用 /api/chats V2 接口恢复"},
+        )
 
     state = json.loads(row["state_json"] or "{}")
     messages = json.loads(row["messages_json"] or "[]")
@@ -313,11 +329,10 @@ async def resume_chat(
 
 @router.delete("/chats/{chat_id}")
 async def delete_chat(chat_id: int, user_id: int = Depends(get_current_user_id)):
-    with db_session() as conn:
-        cur = conn.execute(
-            "DELETE FROM app.chats WHERE id = %s AND user_id = %s",
-            (chat_id, user_id),
-        )
-        if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="对话不存在")
-    return {"ok": True}
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "code": "IRREVERSIBLE_CONFIRMATION_REQUIRED",
+            "message": "旧删除接口已停用，请使用 /api/chats/{chat_id} 并明确确认不可恢复删除",
+        },
+    )

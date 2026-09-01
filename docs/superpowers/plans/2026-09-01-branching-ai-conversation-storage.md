@@ -19,7 +19,8 @@
 | 阶段 5 | 已完成 | 用户 V2 资源 API、停止/重连事件、元数据修改和不可恢复删除已落地 |
 | 阶段 6 | 已完成 | 客户端分支树、路径缓存、任务恢复、消息快照和不可恢复删除已落地 |
 | 阶段 7 | 已完成 | 管理端三栏分支审计、消息快照、数据库 Trace 和敏感读取审计已落地 |
-| 阶段 8～10 | 待实施 | 按本文顺序继续 |
+| 阶段 8 | 进行中 | 迁移脚本、完整快照回填、V1 只读投影和兼容写保护已落地；预发布复制数据演练待执行 |
+| 阶段 9～10 | 待实施 | 按本文顺序继续 |
 
 ## 背景
 
@@ -660,7 +661,7 @@ web/src/pages/admin/chat/AdminMatchSnapshot.tsx
 - 旧 MatchRun 的数组排名回填到 `match_run_items`。
 - 候选展示资料使用迁移当时允许展示的当前资料构造，设置 `snapshot_source=legacy_backfill`。
 - 已被旧回溯逻辑删除的消息和分支无法恢复。
-- 旧 Trace 尝试按 `session_id`、时间和消息顺序导入 GenerationRun/Step；无法可靠关联的 Trace 写入迁移报告，不伪造关联。
+- 按已确认要求，本地 JSON Trace 不读取、不导入；迁移报告固定输出 `trace_policy=local_json_trace_ignored`，新 Trace 只使用 PostgreSQL GenerationStep。
 
 ### 迁移脚本要求
 
@@ -672,7 +673,7 @@ web/src/pages/admin/chat/AdminMatchSnapshot.tsx
 - `--batch-size`
 - `--resume-after`
 - `--verify-only`
-- 每批独立事务和可重复执行
+- 每条 Chat 独立事务、按批扫描和可重复执行
 - 输出迁移数量、跳过数量、失败原因和校验摘要
 - 不删除或覆盖旧 JSON 字段
 
@@ -913,12 +914,12 @@ CHAT_MATCH_SNAPSHOT_MAX_CANDIDATES
 - 新增：迁移夹具与集成测试
 - 修改：V1 兼容 API
 
-- [ ] 实现 dry-run、批处理、断点续跑、幂等和 verify-only。
-- [ ] 迁移旧 Chat 到单根分支消息树。
-- [ ] 回填旧 MatchRunItems 和 legacy donor snapshot。
-- [ ] 最后一条消息关联可靠 state；其他节点标记不可准确恢复。
-- [ ] best-effort 导入可关联的旧 Trace，生成未关联报告。
-- [ ] V1/V2 查询按 storage_version 路由，前端只消费统一 V2 DTO。
+- [x] 实现 dry-run、批处理、断点续跑、幂等和 verify-only。
+- [x] 迁移旧 Chat 到单根分支消息树。
+- [x] 回填旧 MatchRunItems 和 legacy donor snapshot。
+- [x] 最后一条消息关联可靠 state；其他节点标记不可准确恢复。
+- [x] 按已确认要求不读取或导入本地 JSON Trace，并在报告中明确策略。
+- [x] V1/V2 查询按 storage_version 路由，前端只消费统一 V2 DTO。
 - [ ] 在预发布复制数据上完成全量迁移和抽样人工核对。
 
 **验收：** 所有旧会话至少可读；迁移报告解释每一条部分迁移和失败记录；重跑不产生重复数据。

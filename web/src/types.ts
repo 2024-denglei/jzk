@@ -151,6 +151,7 @@ export type GenerationStatus = 'queued' | 'running' | 'completed' | 'stopped' | 
 export interface ChatV2Summary {
   id: number
   title: string
+  storage_version: 1 | 2
   active_branch_id: string | null
   active_branch_name: string | null
   branch_count: number

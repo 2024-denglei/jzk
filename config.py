@@ -73,6 +73,8 @@ DATABASE_URL = os.getenv(
 )
 # 管理端可选用独立角色；未设置时回退 DATABASE_URL
 DATABASE_ADMIN_URL = os.getenv("DATABASE_ADMIN_URL", "") or DATABASE_URL
+# 仅供离线 schema/数据迁移脚本使用；生产应配置无常驻 LOGIN 的迁移角色。
+DATABASE_MIGRATOR_URL = os.getenv("DATABASE_MIGRATOR_URL", "") or DATABASE_URL
 PG_POOL_MIN_SIZE = int(os.getenv("PG_POOL_MIN_SIZE", "1"))
 PG_POOL_MAX_SIZE = int(os.getenv("PG_POOL_MAX_SIZE", "10"))
 PG_POOL_TIMEOUT_SECONDS = float(os.getenv("PG_POOL_TIMEOUT_SECONDS", "5"))

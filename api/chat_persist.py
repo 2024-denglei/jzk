@@ -8,6 +8,10 @@ from typing import Any
 from db.database import db_session
 
 
+class LegacyChatWriteBlocked(RuntimeError):
+    """兼容发布识别到 V2 会话后，禁止旧 JSON 写路径覆盖它。"""
+
+
 def upsert_user_chat(
     user_id: int,
     session_id: str,
@@ -45,10 +49,15 @@ def upsert_user_chat(
 
     with db_session() as conn:
         existing = conn.execute(
-            "SELECT id, state_json FROM app.chats WHERE user_id = %s AND session_id = %s",
+            """
+            SELECT id, state_json, storage_version FROM app.chats
+            WHERE user_id = %s AND session_id = %s
+            """,
             (user_id, session_id),
         ).fetchone()
         if existing:
+            if int(existing.get("storage_version") or 1) == 2:
+                raise LegacyChatWriteBlocked("该会话已升级为分支存储，旧接口禁止覆盖")
             if not state:
                 state_json = existing.get("state_json") or "{}"
             conn.execute(

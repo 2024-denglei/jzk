@@ -1,6 +1,8 @@
 import json
 from contextlib import contextmanager
 
+import pytest
+
 from api import chat_persist
 
 
@@ -50,3 +52,22 @@ def test_empty_browser_state_does_not_erase_server_match_reference(monkeypatch):
     assert saved_state["match_total"] == 4303
     assert saved_state["match_result_id"].startswith("1111")
 
+
+def test_legacy_writer_refuses_to_overwrite_v2_chat(monkeypatch):
+    class V2Conn(_Conn):
+        def execute(self, sql, params):
+            if "SELECT id, state_json" in sql:
+                return _Result({"id": 9, "state_json": "{}", "storage_version": 2})
+            return super().execute(sql, params)
+
+    @contextmanager
+    def session():
+        yield V2Conn()
+
+    monkeypatch.setattr(chat_persist, "db_session", session)
+    with pytest.raises(chat_persist.LegacyChatWriteBlocked):
+        chat_persist.upsert_user_chat(
+            user_id=1,
+            session_id="v2-session",
+            messages=[{"role": "user", "content": "不得覆盖"}],
+        )

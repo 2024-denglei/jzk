@@ -26,10 +26,13 @@ def list_chats(
     return fetchall(
         conn,
         f"""
-        SELECT c.id, c.title, c.active_branch_id, c.branch_count, c.message_count,
+        SELECT c.id, c.title, c.storage_version, c.active_branch_id,
+               c.branch_count, c.message_count,
                c.created_at, c.updated_at, b.name AS active_branch_name,
                left(COALESCE(NULLIF(head.content, ''), parent.content, ''), 120)
-                 AS last_message_preview
+                 AS last_message_preview,
+               CASE WHEN c.storage_version = 1 THEN c.messages_json END
+                 AS legacy_messages_json
         FROM app.chats c
         LEFT JOIN app.chat_branches b
           ON b.chat_id = c.id AND b.id = c.active_branch_id
@@ -37,7 +40,7 @@ def list_chats(
           ON head.chat_id = c.id AND head.id = b.head_message_id
         LEFT JOIN app.chat_messages parent
           ON parent.chat_id = c.id AND parent.id = head.parent_message_id
-        WHERE c.user_id = %s AND c.storage_version = 2
+        WHERE c.user_id = %s
           {cursor_sql}
         ORDER BY c.updated_at DESC, c.id DESC
         LIMIT %s
@@ -50,10 +53,15 @@ def get_chat(conn, user_id: int, chat_id: int) -> dict[str, Any] | None:
     return fetchone(
         conn,
         """
-        SELECT c.id, c.title, c.active_branch_id, c.branch_count, c.message_count,
+        SELECT c.id, c.title, c.storage_version, c.active_branch_id,
+               c.branch_count, c.message_count,
                c.created_at, c.updated_at, b.name AS active_branch_name,
                left(COALESCE(NULLIF(head.content, ''), parent.content, ''), 120)
-                 AS last_message_preview
+                 AS last_message_preview,
+               CASE WHEN c.storage_version = 1 THEN c.messages_json END
+                 AS legacy_messages_json,
+               CASE WHEN c.storage_version = 1 THEN c.state_json END
+                 AS legacy_state_json
         FROM app.chats c
         LEFT JOIN app.chat_branches b
           ON b.chat_id = c.id AND b.id = c.active_branch_id
@@ -61,7 +69,7 @@ def get_chat(conn, user_id: int, chat_id: int) -> dict[str, Any] | None:
           ON head.chat_id = c.id AND head.id = b.head_message_id
         LEFT JOIN app.chat_messages parent
           ON parent.chat_id = c.id AND parent.id = head.parent_message_id
-        WHERE c.id = %s AND c.user_id = %s AND c.storage_version = 2
+        WHERE c.id = %s AND c.user_id = %s
         """,
         (chat_id, user_id),
     )
