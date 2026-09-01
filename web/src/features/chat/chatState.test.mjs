@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   branchChildren,
+  canCreateBranchAfterMessage,
   candidateSyncAction,
   createChatClientState,
   mergeMessagePage,
@@ -72,6 +73,20 @@ test('待创建分支只预览到分支点且取消所需原消息不被删除',
   const editFirstMessage = previewMessagesAtBranchPoint(messages, null)
   assert.deepEqual(editFirstMessage.items, [])
   assert.equal(editFirstMessage.hiddenCount, 4)
+})
+
+test('分支入口只出现在历史中的完整 AI 回复单元之后', () => {
+  const user = message('m0', 0)
+  const assistant = message('m1', 1, 'm0')
+  const withCandidates = { ...assistant, match_run: { total: 359 } }
+
+  assert.equal(canCreateBranchAfterMessage(user, 0, 4), false)
+  assert.equal(canCreateBranchAfterMessage(assistant, 1, 4), true)
+  assert.equal(canCreateBranchAfterMessage(withCandidates, 1, 4), true)
+  assert.equal(canCreateBranchAfterMessage({ ...assistant, status: 'generating' }, 1, 4), false)
+  assert.equal(canCreateBranchAfterMessage({ ...assistant, status: 'stopped' }, 1, 4), false)
+  assert.equal(canCreateBranchAfterMessage({ ...assistant, state_recoverable: false }, 1, 4), false)
+  assert.equal(canCreateBranchAfterMessage(assistant, 3, 4), false)
 })
 
 test('分支路径复用公共祖先且向上分页不产生重复消息', () => {

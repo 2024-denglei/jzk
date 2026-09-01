@@ -11,9 +11,9 @@ import pytest
 from psycopg.rows import dict_row
 
 import config
-from db.chat_models import TurnAction, TurnCommand
+from db.chat_models import ChatErrorCode, TurnAction, TurnCommand
 from db.pg import close_pools, ensure_schema
-from dialogue.conversation_commands import create_turn
+from dialogue.conversation_commands import ConversationCommandError, create_turn
 from dialogue.conversation_queries import ConversationQueryService
 
 
@@ -197,6 +197,40 @@ def test_edit_without_other_branch_hard_deletes_replaced_line(v2_user):
         assert conn.execute(
             "SELECT 1 FROM app.ai_generation_runs WHERE id = %s", (root.generation_id,)
         ).fetchone() is None
+
+
+def test_branch_point_must_be_a_completed_assistant_reply(v2_user):
+    root = create_turn(v2_user, TurnCommand(content="第一轮", client_request_id=uuid4()))
+
+    for invalid_message_id in (root.user_message_id, root.assistant_message_id):
+        with pytest.raises(ConversationCommandError) as exc_info:
+            create_turn(
+                v2_user,
+                TurnCommand(
+                    branch_id=root.branch_id,
+                    parent_message_id=invalid_message_id,
+                    action=TurnAction.REWIND_CONTINUE,
+                    content="不完整分支",
+                    client_request_id=uuid4(),
+                ),
+                chat_id=root.chat_id,
+            )
+        assert exc_info.value.code == ChatErrorCode.INVALID_TURN_COMMAND
+        assert "已完成的 AI 回复" in str(exc_info.value)
+
+    _finish_generation(root, "完整 AI 回复")
+    fork = create_turn(
+        v2_user,
+        TurnCommand(
+            branch_id=root.branch_id,
+            parent_message_id=root.assistant_message_id,
+            action=TurnAction.REWIND_CONTINUE,
+            content="完整回复后的分支",
+            client_request_id=uuid4(),
+        ),
+        chat_id=root.chat_id,
+    )
+    assert fork.branch_created
 
 
 def test_database_rejects_terminal_message_mutation_and_single_node_delete(v2_user):

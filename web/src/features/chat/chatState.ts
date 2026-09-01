@@ -104,6 +104,17 @@ export function previewMessagesAtBranchPoint(
   return { items, hiddenCount: messages.length - items.length }
 }
 
+export function canCreateBranchAfterMessage(
+  message: ChatMessageNode,
+  index: number,
+  messageCount: number,
+): boolean {
+  return message.role === 'assistant'
+    && message.status === 'completed'
+    && message.state_recoverable
+    && index < messageCount - 1
+}
+
 export type CandidateSyncAction =
   | { kind: 'preserve' }
   | { kind: 'clear' }

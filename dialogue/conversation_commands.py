@@ -79,6 +79,22 @@ def _state_after(message: dict[str, Any] | None) -> tuple[dict[str, Any], bool]:
     return dump_state(message.get("state_after_json") or {}), True
 
 
+def _require_complete_branch_point(message: dict[str, Any]) -> None:
+    """分支只能接在一个完整的 AI 回复单元之后。
+
+    候选人工具结果通过 match_run_id 绑定在 assistant 消息上，因此该消息同时也是
+    “AI 回复 + 候选人快照”的不可拆分尾节点。
+    """
+    if (
+        message.get("role") != MessageRole.ASSISTANT.value
+        or message.get("status") != MessageStatus.COMPLETED.value
+    ):
+        raise ConversationCommandError(
+            ChatErrorCode.INVALID_TURN_COMMAND,
+            "只能从已完成的 AI 回复或其候选人结果后创建分支",
+        )
+
+
 def create_turn(
     user_id: int,
     command: TurnCommand,
@@ -230,6 +246,7 @@ def _create_turn(
                 or fork_reason == ForkReason.CONCURRENT_SEND
             )
             if needs_branch:
+                _require_complete_branch_point(parent_message)
                 if int(chat["branch_count"]) >= config.CHAT_BRANCH_MAX_PER_CHAT:
                     raise ConversationCommandError(
                         ChatErrorCode.CHAT_BRANCH_LIMIT_REACHED,

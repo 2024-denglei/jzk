@@ -110,11 +110,61 @@ def test_v2_api_branch_lifecycle_ownership_and_irreversible_delete(v2_client):
     assert "event: generation_status" in stream.text
     assert '"status":"stopped"' in stream.text
 
-    rewind = client.post(
+    incomplete_rewind = client.post(
         f"/api/chats/{chat_id}/turns",
         json={
             "branch_id": root_branch,
             "parent_message_id": created["assistant_message_id"],
+            "action": "rewind_continue",
+            "content": "不能从已停止回复分支",
+            "client_request_id": str(uuid4()),
+        },
+    )
+    assert incomplete_rewind.status_code == 400
+    assert incomplete_rewind.json()["detail"]["code"] == "INVALID_TURN_COMMAND"
+
+    continuation = client.post(
+        f"/api/chats/{chat_id}/turns",
+        json={
+            "branch_id": root_branch,
+            "parent_message_id": created["assistant_message_id"],
+            "content": "继续完成一轮对话",
+            "client_request_id": str(uuid4()),
+        },
+    )
+    assert continuation.status_code == 202
+    completed = continuation.json()
+    with psycopg.connect(TEST_DATABASE_URL) as conn:
+        conn.execute(
+            """
+            UPDATE app.chat_messages
+            SET status = 'completed', content = '完整回复', completed_at = now()
+            WHERE id = %s
+            """,
+            (completed["assistant_message_id"],),
+        )
+        conn.execute(
+            """
+            UPDATE app.ai_generation_runs
+            SET status = 'running', started_at = now()
+            WHERE id = %s
+            """,
+            (completed["generation_id"],),
+        )
+        conn.execute(
+            """
+            UPDATE app.ai_generation_runs
+            SET status = 'completed', finished_at = now()
+            WHERE id = %s
+            """,
+            (completed["generation_id"],),
+        )
+
+    rewind = client.post(
+        f"/api/chats/{chat_id}/turns",
+        json={
+            "branch_id": root_branch,
+            "parent_message_id": completed["assistant_message_id"],
             "action": "rewind_continue",
             "content": "从这里建立分支",
             "client_request_id": str(uuid4()),
@@ -170,7 +220,7 @@ def test_v2_api_branch_lifecycle_ownership_and_irreversible_delete(v2_client):
         json={"confirm_irreversible": True, "request_id": delete_request},
     )
     assert deleted.status_code == 200
-    assert deleted.json()["message_count"] == 4
+    assert deleted.json()["message_count"] == 6
     assert client.get(f"/api/chats/{chat_id}").status_code == 404
     replay_delete = client.request(
         "DELETE",

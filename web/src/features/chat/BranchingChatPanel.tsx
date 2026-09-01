@@ -6,7 +6,7 @@ import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } fro
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
 import { buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
-import { candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
+import { canCreateBranchAfterMessage, candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
 import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
 import { followGeneration, type GenerationEvent } from './generationStream'
 
@@ -539,17 +539,24 @@ export function BranchingChatPanel({
       {loadingConversation && messages.length === 0 && <div className="py-8 text-center text-[12px] text-ink-soft/45">正在加载对话…</div>}
       {visibleMessages.map((message, index) => {
         const match = matchesByMessage[message.id]
+        const canBranch = canCreateBranchAfterMessage(message, index, visibleMessages.length)
         return <article key={message.id} className="animate-msg-in group/msg">
           <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`relative max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${message.role === 'user' ? 'rounded-br-md bg-teal-deep text-white' : message.role === 'system' ? 'border border-amber-200 bg-amber-50 text-amber-900/80' : 'rounded-bl-md border border-line/70 bg-white text-ink/90'}`}>
             {message.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: fmtMd(message.content || (message.status === 'generating' ? '…' : '')) }} /> : message.content}
             {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'generating' ? '生成中' : message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
           </div></div>
-          {!sending && message.role !== 'system' && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
-            {message.state_recoverable && index < visibleMessages.length - 1 && <button type="button" title="在助手内创建分支" aria-label="在助手内创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
+          {message.match_run && !match?.items.length && <button type="button" onClick={() => void loadMatch(message)} className="mt-2 flex w-full max-w-[92%] items-center gap-2 rounded-xl border border-line/70 bg-white px-3 py-2 text-left text-[11px] text-ink-soft/65 hover:border-teal/30 hover:bg-mist/30">
+            <i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin text-teal-deep' : 'ri-group-line text-teal-deep'} />
+            <span className="font-medium">候选人结果</span>
+            <span className="tabular-nums">{message.match_run.total} 位</span>
+            <i className="ri-arrow-right-s-line ml-auto text-ink-soft/35" />
+          </button>}
+          {match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
+          {!sending && message.role !== 'system' && (canBranch || message.role === 'user' || message.match_run) && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
+            {canBranch && <button type="button" title="在完整回复后创建分支" aria-label="在完整回复后创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
             {message.role === 'user' && <button type="button" title="编辑当前消息" aria-label="编辑当前消息" onClick={() => prepareEdit(message)} className={MESSAGE_ICON_ACTION}><i className="ri-edit-line" /></button>}
             {message.match_run && <button type="button" title={`完整排名（${message.match_run.total}）`} aria-label={`完整排名，共 ${message.match_run.total} 位`} onClick={() => void loadMatch(message)} className={MESSAGE_ICON_ACTION}><i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin' : 'ri-list-ordered-2'} /></button>}
           </div>}
-          {match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
         </article>
       })}
       {pendingAction && <div className="rounded-xl border border-dashed border-teal/25 bg-white/75 px-3 py-2 text-center text-[10px] text-ink-soft/55">
