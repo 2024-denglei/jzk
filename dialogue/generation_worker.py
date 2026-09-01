@@ -128,15 +128,28 @@ class GenerationControl:
 
 
 class GenerationWorker:
-    def __init__(self, worker_id: str, processor: GenerationProcessor):
+    def __init__(
+        self,
+        worker_id: str,
+        processor: GenerationProcessor,
+        *,
+        allowed_user_ids: frozenset[int] | None = None,
+    ):
         if not worker_id.strip():
             raise ValueError("worker_id 不能为空")
         self.worker_id = worker_id
         self.processor = processor
+        self.allowed_user_ids = allowed_user_ids
 
     async def run_once(self) -> bool:
         generation_runs_repo.fail_exhausted_generations()
-        run = generation_runs_repo.claim_next_generation(self.worker_id)
+        run = (
+            generation_runs_repo.claim_next_generation(self.worker_id)
+            if self.allowed_user_ids is None
+            else generation_runs_repo.claim_next_generation(
+                self.worker_id, self.allowed_user_ids
+            )
+        )
         if run is None:
             return False
 

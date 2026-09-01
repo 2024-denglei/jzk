@@ -92,12 +92,23 @@ def _run_view(row: dict[str, Any]) -> GenerationRunView:
     return GenerationRunView.model_validate({key: row.get(key) for key in keys})
 
 
-def claim_next_generation(worker_id: str) -> GenerationRunView | None:
+def claim_next_generation(
+    worker_id: str,
+    allowed_user_ids: frozenset[int] | None = None,
+) -> GenerationRunView | None:
     """领取 queued 或租约过期任务；FOR UPDATE SKIP LOCKED 支持多 Worker。"""
+    if allowed_user_ids is not None and not allowed_user_ids:
+        return None
+    scope_sql = ""
+    params: list[Any] = [config.CHAT_GENERATION_MAX_ATTEMPTS]
+    if allowed_user_ids is not None:
+        scope_sql = "AND user_id = ANY(%s)"
+        params.append(sorted(allowed_user_ids))
+    params.extend([worker_id, config.CHAT_GENERATION_LEASE_SECONDS])
     with db_session() as conn:
         row = fetchone(
             conn,
-            """
+            f"""
             WITH candidate AS (
               SELECT id
               FROM app.ai_generation_runs
@@ -106,6 +117,7 @@ def claim_next_generation(worker_id: str) -> GenerationRunView | None:
                     OR (status = 'running' AND lease_expires_at < now())
                   )
                 AND attempt_count < %s
+                {scope_sql}
               ORDER BY queued_at, id
               FOR UPDATE SKIP LOCKED
               LIMIT 1
@@ -120,11 +132,7 @@ def claim_next_generation(worker_id: str) -> GenerationRunView | None:
             WHERE g.id = c.id
             RETURNING g.*
             """,
-            (
-                config.CHAT_GENERATION_MAX_ATTEMPTS,
-                worker_id,
-                config.CHAT_GENERATION_LEASE_SECONDS,
-            ),
+            params,
         )
     return _run_view(row) if row else None
 

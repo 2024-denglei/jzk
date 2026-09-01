@@ -175,3 +175,30 @@ def test_worker_honors_cancel_before_processor(monkeypatch):
     ) is True
     assert stopped == [{"stopped": True}]
     assert processor_called is False
+
+
+def test_worker_passes_internal_user_scope_to_claim(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        generation_worker.generation_runs_repo,
+        "fail_exhausted_generations",
+        lambda: 0,
+    )
+    monkeypatch.setattr(
+        generation_worker.generation_runs_repo,
+        "claim_next_generation",
+        lambda worker_id, scope: calls.append((worker_id, scope)) or None,
+    )
+
+    async def processor(_context, _control):
+        raise AssertionError("没有任务时不应调用")
+
+    worked = asyncio.run(
+        GenerationWorker(
+            "internal-worker",
+            processor,
+            allowed_user_ids=frozenset({7, 9}),
+        ).run_once()
+    )
+    assert worked is False
+    assert calls == [("internal-worker", frozenset({7, 9}))]

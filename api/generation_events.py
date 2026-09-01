@@ -68,8 +68,7 @@ async def stop_generation(
     generation_id: UUID,
     user_id: int = Depends(get_current_user_id),
 ):
-    if not config.CHAT_STORAGE_V2_WRITE_ENABLED:
-        raise _error(503, "CHAT_STORAGE_V2_WRITE_DISABLED", "新版对话写入尚未启用")
+    _require_read()
     run = await run_in_threadpool(
         generation_runs_repo.request_generation_stop,
         user_id,

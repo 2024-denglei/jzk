@@ -66,3 +66,9 @@ def test_chat_v2_config_rejects_default_page_above_max(monkeypatch):
     monkeypatch.setattr(config, "CHAT_MESSAGE_PAGE_SIZE_MAX", 100)
     with pytest.raises(config.SecurityConfigError, match="CHAT_MESSAGE_PAGE_SIZE_DEFAULT"):
         config.validate_chat_v2_config()
+
+
+def test_chat_v2_config_rejects_invalid_rollout(monkeypatch):
+    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_PERCENT", 101)
+    with pytest.raises(config.SecurityConfigError, match="WRITE_PERCENT"):
+        config.validate_chat_v2_config()

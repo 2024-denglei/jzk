@@ -15,6 +15,7 @@ from db import chats_repo
 from db.chat_models import ChatErrorCode, TurnCommand
 from dialogue.conversation_commands import ConversationCommandError, create_turn
 from dialogue.conversation_queries import ConversationQueryError, ConversationQueryService
+from dialogue.chat_rollout import user_can_write_v2
 
 
 router = APIRouter(prefix="/api/chats", tags=["chats-v2"])
@@ -30,9 +31,11 @@ def _require_read() -> None:
         raise _error(503, "CHAT_STORAGE_V2_READ_DISABLED", "新版对话读取尚未启用")
 
 
-def _require_write() -> None:
+def _require_write(user_id: int) -> None:
     if not config.CHAT_STORAGE_V2_WRITE_ENABLED:
         raise _error(503, "CHAT_STORAGE_V2_WRITE_DISABLED", "新版对话写入尚未启用")
+    if not user_can_write_v2(user_id):
+        raise _error(503, "CHAT_STORAGE_V2_WRITE_NOT_IN_ROLLOUT", "当前用户尚未进入新版对话灰度")
 
 
 def _raise_query_error(exc: ConversationQueryError) -> None:
@@ -112,7 +115,7 @@ async def create_new_chat_turn(
     body: TurnCommand,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_write()
+    _require_write(user_id)
     try:
         return await run_in_threadpool(create_turn, user_id, body)
     except ConversationCommandError as exc:
@@ -137,7 +140,7 @@ async def create_chat_turn(
     body: TurnCommand,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_write()
+    _require_write(user_id)
     try:
         return await run_in_threadpool(partial(create_turn, user_id, body, chat_id=chat_id))
     except ConversationCommandError as exc:
@@ -190,7 +193,7 @@ async def patch_chat(
     body: ChatPatch,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_write()
+    _require_read()
     changed = await run_in_threadpool(chats_repo.rename_chat, user_id, chat_id, body.title)
     if not changed:
         raise _error(404, ChatErrorCode.CHAT_NOT_FOUND.value, "会话不存在")
@@ -204,7 +207,7 @@ async def patch_branch(
     body: BranchPatch,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_write()
+    _require_read()
     try:
         changed = await run_in_threadpool(
             partial(
@@ -229,7 +232,7 @@ async def delete_chat_v2(
     body: ChatDeleteBody = Body(...),
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_write()
+    _require_read()
     if not body.confirm_irreversible:
         raise _error(
             400,

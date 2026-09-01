@@ -17,6 +17,17 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_positive_int_set(name: str) -> frozenset[int]:
+    values = frozenset(
+        int(item.strip())
+        for item in os.getenv(name, "").split(",")
+        if item.strip()
+    )
+    if any(value <= 0 for value in values):
+        raise ValueError(f"{name} 只能包含正整数用户 ID")
+    return values
+
+
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
 JWT_SECRET = os.getenv("JWT_SECRET", "jzk-fertility-match-secret-change-me")
 RATE_LIMIT_PEPPER = os.getenv("RATE_LIMIT_PEPPER", "") or JWT_SECRET
@@ -40,7 +51,16 @@ CHAT_SESSION_STORE = os.getenv("CHAT_SESSION_STORE", "redis").strip().lower()
 # 分支化长期对话 V2。迁移期间默认关闭，由灰度开关逐步启用。
 CHAT_STORAGE_V2_READ_ENABLED = _env_bool("CHAT_STORAGE_V2_READ_ENABLED", False)
 CHAT_STORAGE_V2_WRITE_ENABLED = _env_bool("CHAT_STORAGE_V2_WRITE_ENABLED", False)
+CHAT_STORAGE_V2_WRITE_PERCENT = int(os.getenv("CHAT_STORAGE_V2_WRITE_PERCENT", "100"))
+CHAT_STORAGE_V2_WRITE_USER_IDS = _env_positive_int_set("CHAT_STORAGE_V2_WRITE_USER_IDS")
+CHAT_STORAGE_V2_ROLLOUT_SALT = os.getenv("CHAT_STORAGE_V2_ROLLOUT_SALT", "jzk-chat-v2")
 CHAT_GENERATION_WORKER_ENABLED = _env_bool("CHAT_GENERATION_WORKER_ENABLED", False)
+CHAT_GENERATION_WORKER_USER_IDS = _env_positive_int_set("CHAT_GENERATION_WORKER_USER_IDS")
+CHAT_OUTBOX_WORKER_ENABLED = _env_bool("CHAT_OUTBOX_WORKER_ENABLED", False)
+CHAT_OUTBOX_LEASE_SECONDS = int(os.getenv("CHAT_OUTBOX_LEASE_SECONDS", "60"))
+CHAT_OUTBOX_MAX_ATTEMPTS = int(os.getenv("CHAT_OUTBOX_MAX_ATTEMPTS", "10"))
+CHAT_OUTBOX_RETRY_BASE_SECONDS = int(os.getenv("CHAT_OUTBOX_RETRY_BASE_SECONDS", "2"))
+CHAT_OUTBOX_RETRY_MAX_SECONDS = int(os.getenv("CHAT_OUTBOX_RETRY_MAX_SECONDS", "300"))
 CHAT_GENERATION_LEASE_SECONDS = int(os.getenv("CHAT_GENERATION_LEASE_SECONDS", "60"))
 CHAT_GENERATION_HEARTBEAT_SECONDS = int(os.getenv("CHAT_GENERATION_HEARTBEAT_SECONDS", "15"))
 CHAT_GENERATION_MAX_ATTEMPTS = int(os.getenv("CHAT_GENERATION_MAX_ATTEMPTS", "3"))
@@ -229,6 +249,10 @@ def validate_chat_v2_config() -> None:
         "CHAT_GENERATION_CHECKPOINT_INTERVAL_SECONDS": CHAT_GENERATION_CHECKPOINT_INTERVAL_SECONDS,
         "CHAT_GENERATION_CHECKPOINT_CHARS": CHAT_GENERATION_CHECKPOINT_CHARS,
         "CHAT_GENERATION_STREAM_TTL_SECONDS": CHAT_GENERATION_STREAM_TTL_SECONDS,
+        "CHAT_OUTBOX_LEASE_SECONDS": CHAT_OUTBOX_LEASE_SECONDS,
+        "CHAT_OUTBOX_MAX_ATTEMPTS": CHAT_OUTBOX_MAX_ATTEMPTS,
+        "CHAT_OUTBOX_RETRY_BASE_SECONDS": CHAT_OUTBOX_RETRY_BASE_SECONDS,
+        "CHAT_OUTBOX_RETRY_MAX_SECONDS": CHAT_OUTBOX_RETRY_MAX_SECONDS,
         "CHAT_MESSAGE_PAGE_SIZE_DEFAULT": CHAT_MESSAGE_PAGE_SIZE_DEFAULT,
         "CHAT_MESSAGE_PAGE_SIZE_MAX": CHAT_MESSAGE_PAGE_SIZE_MAX,
         "CHAT_LIST_PAGE_SIZE_DEFAULT": CHAT_LIST_PAGE_SIZE_DEFAULT,
@@ -250,5 +274,11 @@ def validate_chat_v2_config() -> None:
         errors.append("CHAT_LIST_PAGE_SIZE_DEFAULT 不能大于 CHAT_LIST_PAGE_SIZE_MAX")
     if CHAT_MATCH_SNAPSHOT_MAX_CANDIDATES > MATCH_RESULT_MAX_CANDIDATES:
         errors.append("CHAT_MATCH_SNAPSHOT_MAX_CANDIDATES 不能大于 MATCH_RESULT_MAX_CANDIDATES")
+    if not 0 <= CHAT_STORAGE_V2_WRITE_PERCENT <= 100:
+        errors.append("CHAT_STORAGE_V2_WRITE_PERCENT 必须在 0 到 100 之间")
+    if not CHAT_STORAGE_V2_ROLLOUT_SALT.strip():
+        errors.append("CHAT_STORAGE_V2_ROLLOUT_SALT 不能为空")
+    if CHAT_OUTBOX_RETRY_BASE_SECONDS > CHAT_OUTBOX_RETRY_MAX_SECONDS:
+        errors.append("CHAT_OUTBOX_RETRY_BASE_SECONDS 不能大于 CHAT_OUTBOX_RETRY_MAX_SECONDS")
     if errors:
         raise SecurityConfigError("V2 对话配置校验失败：" + "；".join(errors))

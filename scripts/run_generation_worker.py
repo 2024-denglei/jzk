@@ -24,6 +24,8 @@ async def main() -> None:
     parser.add_argument("--worker-id", default="")
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
+    if not config.CHAT_GENERATION_WORKER_ENABLED:
+        raise SystemExit("CHAT_GENERATION_WORKER_ENABLED 未启用，Worker 拒绝启动")
     worker_id = args.worker_id.strip() or f"{socket.gethostname()}-{os.getpid()}-{str(uuid4())[:8]}"
     config.validate_chat_v2_config()
     initialize_pools()
@@ -33,7 +35,8 @@ async def main() -> None:
         if config.LLM_API_KEY
         else FallbackGenerationProcessor()
     )
-    worker = GenerationWorker(worker_id, processor)
+    worker_scope = config.CHAT_GENERATION_WORKER_USER_IDS or None
+    worker = GenerationWorker(worker_id, processor, allowed_user_ids=worker_scope)
     try:
         if args.once:
             await worker.run_once()

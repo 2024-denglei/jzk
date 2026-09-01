@@ -107,6 +107,18 @@ def legacy_subject(monkeypatch):
     finally:
         close_pools()
         with psycopg.connect(TEST_DATABASE_URL) as conn:
+            conn.execute(
+                """
+                DELETE FROM app.outbox_events event
+                USING app.chat_deletion_audit audit
+                WHERE event.aggregate_id = audit.chat_id::text
+                  AND audit.user_id = %s
+                """,
+                (user_id,),
+            )
+            conn.execute(
+                "DELETE FROM app.chat_deletion_audit WHERE user_id = %s", (user_id,)
+            )
             conn.execute("DELETE FROM app.users WHERE id = %s", (user_id,))
             conn.execute("DELETE FROM donor.donors WHERE id = %s", (donor_id,))
 

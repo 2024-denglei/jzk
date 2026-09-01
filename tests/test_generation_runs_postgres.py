@@ -220,3 +220,42 @@ def test_fallback_worker_completes_task_without_any_sse_connection(generation_us
         ).fetchone()
     assert message["status"] == "completed"
     assert "未配置顾问模型" in message["content"]
+
+
+def test_worker_claim_can_be_limited_to_internal_user_scope(generation_user):
+    assert TEST_DATABASE_URL
+    with psycopg.connect(TEST_DATABASE_URL, row_factory=dict_row) as conn:
+        internal_user = int(conn.execute(
+            """
+            INSERT INTO app.users (email, password_hash, nickname)
+            VALUES (%s, 'test-only', 'internal-rollout') RETURNING id
+            """,
+            (f"internal-rollout-{uuid4()}@example.test",),
+        ).fetchone()["id"])
+    try:
+        outside = create_turn(
+            generation_user,
+            TurnCommand(content="非灰度任务", client_request_id=uuid4()),
+        )
+        inside = create_turn(
+            internal_user,
+            TurnCommand(content="内部灰度任务", client_request_id=uuid4()),
+        )
+        claimed = generation_runs_repo.claim_next_generation(
+            "internal-only-worker", frozenset({internal_user})
+        )
+        assert claimed and claimed.id == inside.generation_id
+        assert claimed.user_id == internal_user
+        generation_runs_repo.finish_generation_unsuccessfully(
+            claimed.id,
+            "internal-only-worker",
+            stopped=False,
+            error_type="TestComplete",
+            error_message="test cleanup",
+        )
+        assert generation_runs_repo.request_generation_stop(
+            generation_user, outside.generation_id
+        ).status == GenerationStatus.STOPPED
+    finally:
+        with psycopg.connect(TEST_DATABASE_URL) as conn:
+            conn.execute("DELETE FROM app.users WHERE id = %s", (internal_user,))

@@ -56,6 +56,19 @@ def v2_client(monkeypatch):
     finally:
         close_pools()
         with psycopg.connect(TEST_DATABASE_URL) as conn:
+            conn.execute(
+                """
+                DELETE FROM app.outbox_events event
+                USING app.chat_deletion_audit audit
+                WHERE event.aggregate_id = audit.chat_id::text
+                  AND audit.user_id = ANY(%s)
+                """,
+                (user_ids,),
+            )
+            conn.execute(
+                "DELETE FROM app.chat_deletion_audit WHERE user_id = ANY(%s)",
+                (user_ids,),
+            )
             conn.execute("DELETE FROM app.users WHERE id = ANY(%s)", (user_ids,))
 
 
@@ -184,3 +197,36 @@ def test_v2_flags_fail_closed(v2_client, monkeypatch):
         "/api/chats/turns",
         json={"content": "关闭", "client_request_id": str(uuid4())},
     ).status_code == 503
+
+
+def test_rollback_blocks_new_turns_but_keeps_stop_and_delete_available(v2_client, monkeypatch):
+    client, _current, _users = v2_client
+    created = client.post(
+        "/api/chats/turns",
+        json={"content": "灰度回滚", "client_request_id": str(uuid4())},
+    ).json()
+    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_ENABLED", False)
+    blocked = client.post(
+        "/api/chats/turns",
+        json={"content": "不得新建", "client_request_id": str(uuid4())},
+    )
+    assert blocked.status_code == 503
+    assert client.post(f"/api/generations/{created['generation_id']}/stop").status_code == 200
+    deleted = client.request(
+        "DELETE",
+        f"/api/chats/{created['chat_id']}",
+        json={"confirm_irreversible": True, "request_id": str(uuid4())},
+    )
+    assert deleted.status_code == 200
+
+
+def test_write_rollout_rejects_user_outside_cohort(v2_client, monkeypatch):
+    client, _current, _users = v2_client
+    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_PERCENT", 0)
+    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_USER_IDS", frozenset())
+    response = client.post(
+        "/api/chats/turns",
+        json={"content": "尚未灰度", "client_request_id": str(uuid4())},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "CHAT_STORAGE_V2_WRITE_NOT_IN_ROLLOUT"
