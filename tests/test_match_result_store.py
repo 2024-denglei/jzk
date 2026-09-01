@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from api.match_result_store import MatchResultStore
@@ -139,3 +139,19 @@ def test_user_active_result_limit_removes_oldest(monkeypatch):
     store.create(second, [])
     assert store.get_meta(3, first.result_set_id) is None
     assert store.get_meta(3, second.result_set_id) is not None
+
+
+def test_restore_does_not_recache_after_absolute_lifetime(monkeypatch):
+    fake = _FakeRedis()
+    store = MatchResultStore(fake)
+    meta = _meta(total=0)
+    meta = MatchResultMeta(
+        **{
+            **meta.__dict__,
+            "created_at": datetime.now(timezone.utc)
+            - timedelta(seconds=7201),
+        }
+    )
+    restored = store.create(meta, [])
+    assert restored.expires_at is not None
+    assert store.get_meta(meta.owner_user_id, meta.result_set_id) is None

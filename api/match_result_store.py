@@ -45,10 +45,15 @@ class MatchResultStore:
         if len(items) > config.MATCH_RESULT_MAX_CANDIDATES:
             raise MatchResultTooLarge("匹配候选数量超过允许上限")
         now = time.time()
+        created_at = meta.created_at.timestamp() if meta.created_at else now
         expires = min(
             now + config.MATCH_RESULT_TTL_SECONDS,
-            now + config.MATCH_RESULT_MAX_LIFETIME_SECONDS,
+            created_at + config.MATCH_RESULT_MAX_LIFETIME_SECONDS,
         )
+        ttl_seconds = max(0, int(expires - now))
+        if ttl_seconds <= 0:
+            # 严格快照仍可直接分页，但不再把超过绝对寿命的结果放回 Redis。
+            return replace(meta, expires_at=datetime.fromtimestamp(int(expires), timezone.utc))
         meta_key, items_key, members_key = self._keys(meta.result_set_id)
         index_key = self._index_key(meta.owner_user_id)
         meta_values = {
@@ -73,9 +78,9 @@ class MatchResultStore:
                 # LIST 的物理顺序就是严格 rank；SET 只负责 O(1) 成员校验。
                 pipe.rpush(items_key, *packed_items)
                 pipe.sadd(members_key, *member_ids)
-            pipe.expire(meta_key, config.MATCH_RESULT_TTL_SECONDS)
-            pipe.expire(items_key, config.MATCH_RESULT_TTL_SECONDS)
-            pipe.expire(members_key, config.MATCH_RESULT_TTL_SECONDS)
+            pipe.expire(meta_key, ttl_seconds)
+            pipe.expire(items_key, ttl_seconds)
+            pipe.expire(members_key, ttl_seconds)
             pipe.zremrangebyscore(index_key, "-inf", now)
             pipe.zadd(index_key, {meta.result_set_id: expires})
             pipe.expire(index_key, config.MATCH_RESULT_MAX_LIFETIME_SECONDS)
