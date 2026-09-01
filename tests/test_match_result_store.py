@@ -24,6 +24,8 @@ class _FakeRedis:
     def __init__(self):
         self.hashes = {}
         self.zsets = {}
+        self.lists = {}
+        self.sets = {}
 
     def pipeline(self, transaction=True):
         return _Pipeline(self)
@@ -32,6 +34,8 @@ class _FakeRedis:
         for key in keys:
             self.hashes.pop(key, None)
             self.zsets.pop(key, None)
+            self.lists.pop(key, None)
+            self.sets.pop(key, None)
         return 1
 
     def hset(self, key, mapping):
@@ -44,6 +48,22 @@ class _FakeRedis:
     def hmget(self, key, members):
         data = self.hashes.get(key, {})
         return [data.get(member) for member in members]
+
+    def rpush(self, key, *values):
+        self.lists.setdefault(key, []).extend(str(value) for value in values)
+        return len(self.lists[key])
+
+    def lrange(self, key, start, stop):
+        values = self.lists.get(key, [])
+        return values[start:] if stop == -1 else values[start:stop + 1]
+
+    def sadd(self, key, *members):
+        before = len(self.sets.setdefault(key, set()))
+        self.sets[key].update(str(member) for member in members)
+        return len(self.sets[key]) - before
+
+    def sismember(self, key, member):
+        return str(member) in self.sets.get(key, set())
 
     def zadd(self, key, mapping):
         self.zsets.setdefault(key, {}).update({str(k): float(v) for k, v in mapping.items()})
@@ -119,4 +139,3 @@ def test_user_active_result_limit_removes_oldest(monkeypatch):
     store.create(second, [])
     assert store.get_meta(3, first.result_set_id) is None
     assert store.get_meta(3, second.result_set_id) is not None
-

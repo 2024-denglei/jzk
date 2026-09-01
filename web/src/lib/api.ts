@@ -11,6 +11,35 @@ type AuthPayload<T = unknown> = {
 
 let refreshPromise: Promise<AuthPayload | null> | null = null
 
+export class ApiError extends Error {
+  readonly status: number
+  readonly code?: string
+
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+export function extractApiError(data: unknown, status: number): ApiError {
+  const detail = (data as { detail?: unknown } | null)?.detail
+  if (detail && typeof detail === 'object') {
+    const value = detail as { code?: unknown; message?: unknown }
+    return new ApiError(
+      typeof value.message === 'string' ? value.message : '请求失败',
+      status,
+      typeof value.code === 'string' ? value.code : undefined,
+    )
+  }
+  return new ApiError(typeof detail === 'string' ? detail : '请求失败', status)
+}
+
 export function getToken(): string | null {
   return accessToken
 }
@@ -90,9 +119,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await authFetch(path, { ...init, headers })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const detail = (data as { detail?: string }).detail || '请求失败'
-    if (res.status === 401) expireUserSession(typeof detail === 'string' ? detail : '登录已失效，请重新登录')
-    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    const error = extractApiError(data, res.status)
+    if (res.status === 401) expireUserSession(error.message || '登录已失效，请重新登录')
+    throw error
   }
   return data as T
 }

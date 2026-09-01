@@ -92,8 +92,6 @@ DATA_SHEET_NAME = "人造数据"
 MATCH_THRESHOLD = 0.7
 # <=0 表示不截断，返回全部符合条件的候选人
 MATCH_TOP_K = int(os.getenv("MATCH_TOP_K", "0"))
-# 对话只携带排名靠前的候选详情；总匹配人数单独返回。
-CHAT_MATCH_TOP_K = int(os.getenv("CHAT_MATCH_TOP_K", "100"))
 MATCH_RESULT_PAGING_ENABLED = _env_bool("MATCH_RESULT_PAGING_ENABLED", True)
 MATCH_SNAPSHOT_ENABLED = _env_bool("MATCH_SNAPSHOT_ENABLED", True)
 MATCH_RESULT_TTL_SECONDS = int(os.getenv("MATCH_RESULT_TTL_SECONDS", "1800"))

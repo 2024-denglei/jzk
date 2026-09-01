@@ -26,3 +26,14 @@ test('令牌只保存在内存，过期时清除并通知 AuthContext 退出', a
   assert.equal(dispatched.type, USER_SESSION_EXPIRED_EVENT)
   assert.equal(dispatched.detail, '账号已停用')
 })
+
+test('结构化 API 错误保留稳定错误码', async () => {
+  const { ApiError, extractApiError } = await import('./api.ts')
+  const error = extractApiError({
+    detail: { code: 'MATCH_SNAPSHOT_EXPIRED', message: '匹配快照已过期' },
+  }, 410)
+  assert.ok(error instanceof ApiError)
+  assert.equal(error.status, 410)
+  assert.equal(error.code, 'MATCH_SNAPSHOT_EXPIRED')
+  assert.equal(error.message, '匹配快照已过期')
+})

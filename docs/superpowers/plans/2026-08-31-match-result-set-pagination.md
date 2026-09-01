@@ -12,6 +12,22 @@
 
 提交 `102b5e7` 已将聊天返回详情临时限制为前 100 人，并保留总匹配人数。这是安全止血措施，不应成为长期业务上限。
 
+## 实施状态（2026-09-01）
+
+核心方案已落地：严格快照、Redis 在线结果集、只组装当前页、签名游标分页、聊天结果引用、全结果成员反馈校验和 React 懒加载均已实现。迁移期仍保留 `/api/match.candidates` 第一页兼容字段；待调用方稳定后再删除该重复字段。
+
+真实数据基准“硕士、身高 175 以上”结果如下：
+
+| 指标 | 实测 |
+|---|---:|
+| 全量排名 | 4,303 |
+| 首次详情 | 20 |
+| 第二页首位 rank | 21 |
+| PostgreSQL 单快照行 | 14,832 bytes |
+| Redis 在线结果集 | 278,952 bytes |
+
+最初的 Redis `ZSET + HASH` 结构实测为 663,138 bytes，超过 500 KB 目标，因此在线结构改为按物理顺序保存 rank 的 `LIST(id:score)` 加用于 O(1) 成员校验的 `SET(donor_id)`。PostgreSQL 严格快照结构未变。
+
 ## 目标
 
 - 匹配逻辑仍对全部候选人完成排序，不丢失第 101 名之后的结果。
@@ -102,11 +118,11 @@ jzk:match-result:{result_set_id}:meta
   HASH owner_user_id, total, profile_json, profile_hash,
        model_version, created_at, expires_at
 
-jzk:match-result:{result_set_id}:rank
-  ZSET score=rank, member=donor_id
+jzk:match-result:{result_set_id}:items
+  LIST 按 rank 顺序保存 donor_id:score
 
-jzk:match-result:{result_set_id}:scores
-  HASH donor_id -> match_score
+jzk:match-result:{result_set_id}:members
+  SET donor_id
 
 jzk:match-result-subject:{user_id}
   ZSET score=expires_at, member=result_set_id
@@ -114,12 +130,11 @@ jzk:match-result-subject:{user_id}
 
 说明：
 
-- 排名 ZSET 使用 `rank` 而不是匹配得分作为 Redis score，保证翻页顺序与模型顺序完全一致。
-- 匹配得分单独保存在 HASH 中。
-- `ZSCORE rank donor_id` 可用于反馈成员校验。
-- `ZRANGE start stop WITHSCORES` 用于稳定分页。
+- LIST 的数组位置就是 rank，元素同时保存候选 ID 和六位小数得分，`LRANGE` 用于稳定分页。
+- SET 只保存候选 ID，`SISMEMBER` 用于反馈成员校验。
+- 该结构在 4,303 条真实结果上比 `ZSET + HASH` 节省约 58% Redis 内存。
 - meta 必须保存 `owner_user_id`，读取时同时校验 key、meta 和当前登录用户。
-- 创建结果集使用 pipeline/Lua，确保 meta、rank、scores 和 TTL 不出现部分写入。
+- 创建结果集使用事务 pipeline，确保 meta、items、members 和 TTL 不出现部分写入。
 
 ### PostgreSQL 严格排名快照
 
@@ -276,14 +291,14 @@ POST /api/match/results/{result_set_id}/refresh
 - 修改：`.env.example`
 - 新增：`tests/test_match_runs_repo.py`
 
-- [ ] 新增 `app.match_runs` 表、用户时间索引和可重复执行迁移。
-- [ ] 使用应用生成的 UUID 作为 `match_run_id/result_set_id`。
-- [ ] 实现幂等创建、按用户读取、数组分页、成员校验和按保留期删除。
-- [ ] 使用 `BIGINT[]` 保存排名 ID，使用 `REAL[]` 保存得分，数组位置代表 rank。
-- [ ] 写入时校验数组长度、总数、候选上限和得分有限值。
-- [ ] 保存画像 hash、模型版本、数据集版本和 `prefer_hits`，不保存完整候选详情。
-- [ ] 快照写入成功后才允许接口返回成功。
-- [ ] 增加按批次清理 180 天以前快照的管理命令，避免长事务一次删除全部历史。
+- [x] 新增 `app.match_runs` 表、用户时间索引和可重复执行迁移。
+- [x] 使用应用生成的 UUID 作为 `match_run_id/result_set_id`。
+- [x] 实现幂等创建、按用户读取、数组分页、成员校验和按保留期删除。
+- [x] 使用 `BIGINT[]` 保存排名 ID，使用 `REAL[]` 保存得分，数组位置代表 rank。
+- [x] 写入时校验数组长度、总数、候选上限和得分有限值。
+- [x] 保存画像 hash、模型版本、数据集版本和 `prefer_hits`，不保存完整候选详情。
+- [x] 快照写入成功后才允许接口返回成功。
+- [x] 增加按批次清理 180 天以前快照的管理命令，避免长事务一次删除全部历史。
 - [ ] 记录每日新增快照数、表大小、索引大小和清理进度。
 
 ### 阶段二：Redis MatchResultStore（P0）
@@ -296,14 +311,14 @@ POST /api/match/results/{result_set_id}/refresh
 - 修改：`.env.example`
 - 新增：`tests/test_match_result_store.py`
 
-- [ ] 定义 `RankedCandidateRef` 和结果集 meta 类型。
-- [ ] 实现结果集创建、分页、成员校验、删除和按用户撤销。
-- [ ] 使用 Lua/pipeline 原子写入并设置所有 key TTL。
-- [ ] 所有读取校验 `owner_user_id`。
-- [ ] 实现每用户结果集数量和单结果集候选数量限制。
-- [ ] Redis 异常触发 PostgreSQL 快照降级读取；只有 PostgreSQL 快照也不可用时才返回 503。
-- [ ] Redis miss 时从当前用户的 PostgreSQL 快照恢复结果集，不重新运行模型。
-- [ ] PostgreSQL 快照和 Redis 结果集使用同一个 UUID。
+- [x] 定义 `RankedCandidateRef` 和结果集 meta 类型。
+- [x] 实现结果集创建、分页、成员校验、删除和按用户撤销。
+- [x] 使用事务 pipeline 原子写入并设置所有 key TTL。
+- [x] 所有读取校验 `owner_user_id`。
+- [x] 实现每用户结果集数量和单结果集候选数量限制。
+- [x] Redis 异常触发 PostgreSQL 快照降级读取。
+- [x] Redis miss 时从当前用户的 PostgreSQL 快照恢复结果集，不重新运行模型。
+- [x] PostgreSQL 快照和 Redis 结果集使用同一个 UUID。
 - [ ] 记录结果集条数、字节估算、创建耗时和分页耗时，不记录画像明文敏感值。
 
 ### 阶段三：拆分排序引用与详情组装（P0）
@@ -316,14 +331,14 @@ POST /api/match/results/{result_set_id}/refresh
 - 修改：`api/match.py`
 - 新增：`tests/preference/test_compact_match_results.py`
 
-- [ ] 排序器输出全量轻量引用，不再立即调用 `_candidate_dict` 组装全部详情。
-- [ ] 在排序过程中计算 `prefer_hits`、总数和瓶颈信息。
-- [ ] 仅为第一页引用组装完整候选卡片。
-- [ ] 后续页通过 PostgreSQL `WHERE id = ANY(...)` 一次批量加载。
-- [ ] 批量详情结果按 Redis rank 恢复顺序。
-- [ ] 保留模型版本、画像 hash 和耗时字段。
-- [ ] 排序完成后先写 PostgreSQL 严格快照，再创建 Redis 在线结果集。
-- [ ] 测试确保匹配 4,303 人时详情组装函数只调用当前页次数，而不是 4,303 次。
+- [x] 排序器输出全量轻量引用，不再立即调用 `_candidate_dict` 组装全部详情。
+- [x] 在排序过程中计算 `prefer_hits`、总数和瓶颈信息。
+- [x] 仅为第一页引用组装完整候选卡片。
+- [x] 后续页通过 PostgreSQL `WHERE id = ANY(...)` 一次批量加载。
+- [x] 批量详情结果按严格 rank 恢复顺序。
+- [x] 保留模型版本、画像 hash 和耗时字段。
+- [x] 排序完成后先写 PostgreSQL 严格快照，再创建 Redis 在线结果集。
+- [x] 测试确保匹配 4,303 人时详情组装函数只调用当前页次数，而不是 4,303 次。
 
 ### 阶段四：分页 API 与权限隔离（P0）
 
@@ -334,13 +349,13 @@ POST /api/match/results/{result_set_id}/refresh
 - 新增：`api/match_results.py`（如需拆分路由）
 - 新增：`tests/test_match_results_api.py`
 
-- [ ] `POST /api/match` 创建结果集并返回第一页。
-- [ ] 实现分页、刷新和主动删除接口。
-- [ ] cursor 签名并校验 result ID、offset、版本和有效期。
-- [ ] 用户 A 读取用户 B 结果集时返回 404。
-- [ ] Redis 过期时透明回源 PostgreSQL 快照；只有快照过期才返回稳定错误码。
-- [ ] 候选停用后分页接口不再返回该候选。
-- [ ] Redis 不可用时安全降级到 PostgreSQL 数组分页，不返回未受控全量详情。
+- [x] `POST /api/match` 创建结果集并返回第一页。
+- [x] 实现分页、刷新和主动删除接口。
+- [x] cursor 签名并校验 result ID、offset、版本和有效期。
+- [x] 用户 A 读取用户 B 结果集时返回 404。
+- [x] Redis 过期时透明回源 PostgreSQL 快照；只有快照过期才返回稳定错误码。
+- [x] 候选停用后分页接口不再返回该候选。
+- [x] Redis 不可用时安全降级到 PostgreSQL 数组分页，不返回未受控全量详情。
 
 ### 阶段五：聊天会话、回滚与反馈（P1）
 
@@ -356,14 +371,14 @@ POST /api/match/results/{result_set_id}/refresh
 - 扩展：`tests/test_redis_chat_sessions.py`
 - 新增：`tests/test_chat_match_result_membership.py`
 
-- [ ] `SessionContext` 增加 `match_result_id`、`match_total` 和 `match_next_cursor`。
-- [ ] Redis 会话仅保存结果集引用和聊天卡片预览，不保存全量候选详情。
-- [ ] checkpoint/abort/rewind 同时恢复结果集引用。
-- [ ] SSE `candidates` 事件返回第一页、总数、result ID 和 cursor。
-- [ ] 反馈接口通过结果集成员关系校验候选，而不是检查 `session.candidates` 预览数组。
-- [ ] 结果集仍必须属于当前会话用户。
-- [ ] 长期聊天保存 `match_run_id`、总数和少量预览；严格排名由 `app.match_runs` 保存。
-- [ ] 恢复长期聊天时从 PostgreSQL 严格快照继续分页，并按需重建 Redis。
+- [x] `SessionContext` 增加 `match_result_id`、`match_total` 和 `match_next_cursor`。
+- [x] Redis 会话仅保存结果集引用和聊天卡片预览，不保存全量候选详情。
+- [x] checkpoint/abort/rewind 同时恢复结果集引用。
+- [x] SSE `candidates` 事件返回第一页、总数、result ID 和 cursor。
+- [x] 反馈接口通过结果集成员关系校验候选，而不是检查 `session.candidates` 预览数组。
+- [x] 结果集仍必须属于当前会话用户。
+- [x] 长期聊天保存 `match_run_id`、总数和少量预览；严格排名由 `app.match_runs` 保存。
+- [x] 恢复长期聊天时从 PostgreSQL 严格快照继续分页，并按需重建 Redis。
 - [ ] 只有严格快照超过保留期时才提供“重新生成结果”动作。
 
 ### 阶段六：React 懒加载分页（P1）
@@ -377,20 +392,20 @@ POST /api/match/results/{result_set_id}/refresh
 - 修改：`web/src/lib/api.ts`
 - 新增/扩展前端测试
 
-- [ ] 前端状态从 `Candidate[]` 改为 `MatchResultDescriptor`。
-- [ ] 首次仅保存第一页候选和总数。
-- [ ] 中间候选区切页时调用后端分页接口。
-- [ ] 按 `result_set_id + cursor` 缓存已加载页面，避免重复请求。
-- [ ] 翻页期间显示局部 loading，不清空已显示页面。
-- [ ] Redis 缓存过期对前端透明；严格快照超过保留期时显示“结果已归档或过期，重新匹配”按钮。
-- [ ] 文案明确“共 4,303 位，当前显示第 1～20 位”，不再声称本地已持有全部数据。
-- [ ] 新对话、回溯、恢复历史和退出登录时清理无用页面缓存。
+- [x] 前端新增 `MatchResultDescriptor` 和分页状态。
+- [x] 首次仅保存第一页候选和总数。
+- [x] 中间候选区切页时调用后端分页接口。
+- [x] 按结果集和页游标缓存已加载页面，避免重复请求。
+- [x] 翻页期间显示局部 loading，不清空已显示页面。
+- [x] Redis 缓存过期对前端透明；严格快照过期时显示“重新匹配”动作。
+- [x] 文案明确“共 4,303 位，当前显示第 1～20 位”，不再声称本地已持有全部数据。
+- [x] 新对话、回溯、恢复历史和退出登录时清理无用页面缓存。
 
 ### 阶段七：移除止血兼容与优化（P2）
 
-- [ ] 前后端稳定后移除聊天固定前 100 的业务限制。
+- [x] 移除聊天固定前 100 的业务限制与 `CHAT_MATCH_TOP_K` 配置。
 - [ ] 停止在 `/api/match` 返回重复的 `items`/`candidates` 兼容字段。
-- [ ] 删除 `matchBagsRef` 中保存全量候选的旧逻辑。
+- [x] 删除 `matchBagsRef` 中保存全量候选的旧逻辑。
 - [ ] 对 Redis 结果集启用压缩前先通过真实数据评估；没有收益时不增加复杂度。
 - [ ] 根据指标调整 TTL、每用户结果集上限和页大小。
 - [ ] 根据实际增长决定是否将 `app.match_runs` 改为按月分区或迁移冷快照。

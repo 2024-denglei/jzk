@@ -5,7 +5,7 @@ import { DonorCard, DonorCardSkeleton } from '../components/DonorCard'
 import { DonorDetailPanel } from '../components/DonorDetailPanel'
 import { FilterPanel } from '../components/FilterPanel'
 import { useAuth } from '../context/AuthContext'
-import { api } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 import { getPaginationPages } from '../lib/pagination'
 import { cacheMatchPage, createMatchPageState } from '../lib/matchPagination'
 import type { MatchPageState } from '../lib/matchPagination'
@@ -54,6 +54,7 @@ export function DonorsPage() {
   const [mobileFilter, setMobileFilter] = useState(false)
   const [mobileChat, setMobileChat] = useState(false)
   const [matchPages, setMatchPages] = useState<MatchPageState | null>(null)
+  const [snapshotExpired, setSnapshotExpired] = useState(false)
   const matchRequestSeq = useRef(0)
 
   useEffect(() => {
@@ -122,6 +123,7 @@ export function DonorsPage() {
       setTotal(data.total)
       setHint(MODE_META.featured.blurb)
       setMatchPages(null)
+      setSnapshotExpired(false)
       flashList('featured')
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载失败')
@@ -183,6 +185,7 @@ export function DonorsPage() {
             : '按相似度排序'
       setHint(level + (data.relaxed_hint ? ` · ${data.relaxed_hint}` : ''))
       setMatchPages(null)
+      setSnapshotExpired(false)
       flashList('search', '已根据筛选条件更新结果')
       setMobileFilter(false)
       if (user) {
@@ -256,8 +259,10 @@ export function DonorsPage() {
       setTotal(data.total)
       setPage(targetPage)
       setHint(`共 ${data.total} 位，当前显示第 ${(targetPage - 1) * MATCH_PAGE_SIZE + 1}～${Math.min(targetPage * MATCH_PAGE_SIZE, data.total)} 位`)
+      setSnapshotExpired(false)
     } catch (e) {
       if (requestId === matchRequestSeq.current) {
+        setSnapshotExpired(e instanceof ApiError && e.code === 'MATCH_SNAPSHOT_EXPIRED')
         setError(e instanceof Error ? e.message : '加载匹配结果失败')
       }
     } finally {
@@ -315,6 +320,7 @@ export function DonorsPage() {
           Math.max(1, Math.ceil((result?.total ?? cands.length) / (result ? MATCH_PAGE_SIZE : LIST_PAGE_SIZE))),
         )
         setMatchPages(result ? createMatchPageState(result) : null)
+        setSnapshotExpired(false)
         setHint(
           result
             ? `共 ${result.total} 位，当前显示第 1～${Math.min(result.items.length, result.total)} 位`
@@ -338,6 +344,22 @@ export function DonorsPage() {
         candidates: payload.candidates,
       })
     },
+  }
+
+  async function refreshExpiredMatch() {
+    if (!matchPages) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await api.post<MatchResultDescriptor>(
+        `/api/match/results/${encodeURIComponent(matchPages.resultSetId)}/refresh`,
+      )
+      chatProps.onCandidates(result.items || [], result)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '重新匹配失败')
+    } finally {
+      setLoading(false)
+    }
   }
 
   function handleAskAbout(code: string) {
@@ -461,8 +483,18 @@ export function DonorsPage() {
             </div>
 
             {error && (
-              <div className="border-b border-amber-100 bg-amber-50/90 px-4 py-2 text-[12px] text-amber-900/80">
-                {error}
+              <div className="flex items-center justify-between gap-3 border-b border-amber-100 bg-amber-50/90 px-4 py-2 text-[12px] text-amber-900/80">
+                <span>{error}</span>
+                {snapshotExpired && matchPages ? (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void refreshExpiredMatch()}
+                    className="shrink-0 rounded-md bg-amber-900 px-2.5 py-1 font-medium text-white disabled:opacity-50"
+                  >
+                    重新匹配
+                  </button>
+                ) : null}
               </div>
             )}
 

@@ -32,7 +32,7 @@ class MatchResultStore:
     def _keys(result_set_id: str) -> tuple[str, str, str]:
         tag = "{" + result_set_id + "}"
         base = f"jzk:match-result:{tag}"
-        return f"{base}:meta", f"{base}:rank", f"{base}:scores"
+        return f"{base}:meta", f"{base}:items", f"{base}:members"
 
     @staticmethod
     def _index_key(owner_user_id: int) -> str:
@@ -49,9 +49,10 @@ class MatchResultStore:
             now + config.MATCH_RESULT_TTL_SECONDS,
             now + config.MATCH_RESULT_MAX_LIFETIME_SECONDS,
         )
-        meta_key, rank_key, scores_key = self._keys(meta.result_set_id)
+        meta_key, items_key, members_key = self._keys(meta.result_set_id)
         index_key = self._index_key(meta.owner_user_id)
         meta_values = {
+            "layout_version": "2",
             "owner_user_id": str(meta.owner_user_id),
             "total": str(meta.total),
             "profile_json": json.dumps(meta.profile, ensure_ascii=False, separators=(",", ":")),
@@ -62,18 +63,19 @@ class MatchResultStore:
             "created_at": str(int(now)),
             "expires_at": str(int(expires)),
         }
-        rank_map = {str(item.donor_id): item.rank for item in items}
-        score_map = {str(item.donor_id): f"{float(item.score):.6f}" for item in items}
+        packed_items = [f"{item.donor_id}:{float(item.score):.6f}" for item in items]
+        member_ids = [str(item.donor_id) for item in items]
         try:
             pipe = self.client.pipeline(transaction=True)
-            pipe.delete(meta_key, rank_key, scores_key)
+            pipe.delete(meta_key, items_key, members_key)
             pipe.hset(meta_key, mapping=meta_values)
-            if rank_map:
-                pipe.zadd(rank_key, rank_map)
-                pipe.hset(scores_key, mapping=score_map)
+            if packed_items:
+                # LIST 的物理顺序就是严格 rank；SET 只负责 O(1) 成员校验。
+                pipe.rpush(items_key, *packed_items)
+                pipe.sadd(members_key, *member_ids)
             pipe.expire(meta_key, config.MATCH_RESULT_TTL_SECONDS)
-            pipe.expire(rank_key, config.MATCH_RESULT_TTL_SECONDS)
-            pipe.expire(scores_key, config.MATCH_RESULT_TTL_SECONDS)
+            pipe.expire(items_key, config.MATCH_RESULT_TTL_SECONDS)
+            pipe.expire(members_key, config.MATCH_RESULT_TTL_SECONDS)
             pipe.zremrangebyscore(index_key, "-inf", now)
             pipe.zadd(index_key, {meta.result_set_id: expires})
             pipe.expire(index_key, config.MATCH_RESULT_MAX_LIFETIME_SECONDS)
@@ -103,7 +105,11 @@ class MatchResultStore:
             data = self.client.hgetall(meta_key)
         except RedisError as exc:
             raise MatchResultStoreUnavailable("匹配结果缓存暂时不可用") from exc
-        if not data or int(data.get("owner_user_id", -1)) != owner_user_id:
+        if (
+            not data
+            or data.get("layout_version") != "2"
+            or int(data.get("owner_user_id", -1)) != owner_user_id
+        ):
             return None
         created = datetime.fromtimestamp(int(data["created_at"]), timezone.utc)
         expires = datetime.fromtimestamp(int(data["expires_at"]), timezone.utc)
@@ -128,26 +134,25 @@ class MatchResultStore:
             return None
         offset = max(0, int(offset))
         limit = max(1, min(int(limit), config.MATCH_RESULT_PAGE_SIZE_MAX))
-        _meta_key, rank_key, scores_key = self._keys(result_set_id)
+        _meta_key, items_key, _members_key = self._keys(result_set_id)
         try:
-            ranked = self.client.zrange(rank_key, offset, offset + limit - 1, withscores=True)
-            donor_ids = [str(member) for member, _rank in ranked]
-            scores = self.client.hmget(scores_key, donor_ids) if donor_ids else []
+            packed = self.client.lrange(items_key, offset, offset + limit - 1)
         except RedisError as exc:
             raise MatchResultStoreUnavailable("匹配结果缓存暂时不可用") from exc
-        refs = [
-            RankedCandidateRef(int(donor_id), int(float(rank)), round(float(score), 6))
-            for (donor_id, rank), score in zip(ranked, scores)
-            if score is not None
-        ]
+        refs = []
+        for index, item in enumerate(packed):
+            donor_id, score = str(item).split(":", 1)
+            refs.append(
+                RankedCandidateRef(int(donor_id), offset + index + 1, round(float(score), 6))
+            )
         return meta, refs
 
     def contains(self, owner_user_id: int, result_set_id: str, donor_id: int) -> bool:
         if self.get_meta(owner_user_id, result_set_id) is None:
             return False
-        _meta_key, rank_key, _scores_key = self._keys(result_set_id)
+        _meta_key, _items_key, members_key = self._keys(result_set_id)
         try:
-            return self.client.zscore(rank_key, str(donor_id)) is not None
+            return bool(self.client.sismember(members_key, str(donor_id)))
         except RedisError as exc:
             raise MatchResultStoreUnavailable("匹配结果缓存暂时不可用") from exc
 
@@ -155,10 +160,10 @@ class MatchResultStore:
         meta = self.get_meta(owner_user_id, result_set_id)
         if meta is None:
             return False
-        meta_key, rank_key, scores_key = self._keys(result_set_id)
+        meta_key, items_key, members_key = self._keys(result_set_id)
         try:
             pipe = self.client.pipeline(transaction=True)
-            pipe.delete(meta_key, rank_key, scores_key)
+            pipe.delete(meta_key, items_key, members_key)
             pipe.zrem(self._index_key(owner_user_id), result_set_id)
             pipe.execute()
         except RedisError as exc:
