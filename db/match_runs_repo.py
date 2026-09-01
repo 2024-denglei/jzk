@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 from uuid import UUID
 
@@ -162,6 +162,47 @@ def get_match_run_page(
     return meta, refs
 
 
+def get_all_match_run_refs(
+    result_set_id: str, owner_user_id: int
+) -> tuple[MatchResultMeta, list[RankedCandidateRef]] | None:
+    with db_session() as conn:
+        row = fetchone(
+            conn,
+            """
+            SELECT id, user_id, profile_json, profile_hash, model_version,
+                   dataset_version, total, prefer_hits, created_at, donor_ids, scores
+            FROM app.match_runs WHERE id = %s AND user_id = %s
+            """,
+            (result_set_id, owner_user_id),
+        )
+    if row is None:
+        return None
+    meta = MatchResultMeta(
+        result_set_id=str(row["id"]), owner_user_id=int(row["user_id"]),
+        total=int(row["total"]), profile=dict(row["profile_json"] or {}),
+        profile_hash=str(row["profile_hash"]), model_version=str(row["model_version"]),
+        dataset_version=str(row["dataset_version"]), prefer_hits=list(row["prefer_hits"] or []),
+        created_at=row["created_at"],
+    )
+    refs = [
+        RankedCandidateRef(int(donor_id), index, round(float(score), 6))
+        for index, (donor_id, score) in enumerate(
+            zip(row.get("donor_ids") or [], row.get("scores") or []), 1
+        )
+    ]
+    return meta, refs
+
+
+def match_run_is_expired(meta: MatchResultMeta, *, now: datetime | None = None) -> bool:
+    if meta.created_at is None:
+        return False
+    current = now or datetime.now(timezone.utc)
+    created = meta.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return created < current - timedelta(days=config.MATCH_SNAPSHOT_RETENTION_DAYS)
+
+
 def match_run_contains(result_set_id: str, owner_user_id: int, donor_id: int) -> bool:
     with db_session() as conn:
         row = fetchone(
@@ -205,4 +246,3 @@ def cleanup_expired_match_runs(*, retention_days: int | None = None, batch_size:
             (days, size),
         )
     return int(row["count"]) if row else 0
-

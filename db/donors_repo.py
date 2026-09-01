@@ -91,6 +91,35 @@ def get_donor_by_code(code: str) -> dict[str, Any] | None:
         )
 
 
+def get_active_donors_by_ids(donor_ids: list[int]) -> list[dict[str, Any]]:
+    """一次加载当前仍可展示的候选详情；调用方负责按原排名重排。"""
+    if not donor_ids:
+        return []
+    with db_session() as conn:
+        return fetchall(
+            conn,
+            "SELECT * FROM donor.donors WHERE status = 'active' AND id = ANY(%s)",
+            (donor_ids,),
+        )
+
+
+def get_donor_dataset_version() -> str:
+    """生成可审计的数据集版本，不读取或记录候选敏感字段。"""
+    with db_session() as conn:
+        row = fetchone(
+            conn,
+            """
+            SELECT COUNT(*) AS total, COALESCE(MAX(updated_at), to_timestamp(0)) AS latest
+            FROM donor.donors WHERE status = 'active'
+            """,
+        )
+    if not row:
+        return "donors:0:0"
+    latest = row["latest"]
+    stamp = latest.isoformat() if hasattr(latest, "isoformat") else str(latest)
+    return f"donors:{int(row['total'])}:{stamp}"
+
+
 def list_donors(
     *,
     q: str | None = None,

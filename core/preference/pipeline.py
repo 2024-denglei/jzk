@@ -9,6 +9,7 @@ import time
 from core.data_loader import get_donor_display_info
 from core.preference.schema import field_short_label
 from core.preference.scorer import FieldScore, Ranker
+from core.preference.result_types import RankedCandidateRef
 from core.preference.sql_filter import build_hard_filter_sql, diagnose_bottlenecks
 from core.preference.validate import PreferenceProfile
 
@@ -37,6 +38,7 @@ class MatchResult:
     filtered_count: int
     timings: dict[str, float] = field(default_factory=dict)
     prefer_hits: list[dict[str, Any]] = field(default_factory=list)
+    ranked_refs: list[RankedCandidateRef] = field(default_factory=list)
 
 
 def default_fetch(sql: str, params: tuple) -> list[dict[str, Any]]:
@@ -127,6 +129,72 @@ def compute_prefer_hits(
     return out
 
 
+def _prefer_part_hit(parts: list[FieldScore], field: str) -> bool:
+    return any(
+        part.field == field and (part.s >= 1.0 - 1e-9 or part.s >= PREFER_HIT_SCORE)
+        for part in parts
+    )
+
+
+def compute_prefer_hits_from_ranked(
+    profile: PreferenceProfile,
+    ranked: list[tuple[dict[str, Any], float, list[FieldScore]]],
+) -> list[dict[str, Any]]:
+    """直接从排序中间结果聚合，避免先组装所有候选详情。"""
+    n = len(ranked)
+    out: list[dict[str, Any]] = []
+    for name, attr in profile.attributes.items():
+        if getattr(attr, "constraint", None) != "prefer":
+            continue
+        hits = sum(1 for _row, _score, parts in ranked if _prefer_part_hit(parts, name))
+        out.append({"field": name, "label": field_short_label(name), "hits": hits, "of": n})
+    return out
+
+
+def _internal_donor_id(row: dict[str, Any], fallback_rank: int) -> int:
+    """生产数据使用 donor.donors.id；fallback 仅兼容无 ID 的单元测试/旧数据。"""
+    for key in ("id", "donor_id", "_donor_id", "serial_no", "编号"):
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    return fallback_rank
+
+
+def hydrate_ranked_candidates(
+    profile: PreferenceProfile,
+    refs: list[RankedCandidateRef],
+    rows: list[dict[str, Any]],
+    *,
+    ranker: Ranker | None = None,
+) -> list[dict[str, Any]]:
+    """为一页引用批量组装详情，并严格恢复快照中的 rank/score。"""
+    if not refs or not rows:
+        return []
+    if ranker is None:
+        from core.preference.v2_ranker import get_default_ranker
+
+        ranker = get_default_ranker()
+    scored = ranker.rank(profile, rows)
+    by_id = {
+        _internal_donor_id(row, index): (row, parts)
+        for index, (row, _score, parts) in enumerate(scored, 1)
+    }
+    candidates: list[dict[str, Any]] = []
+    for ref in refs:
+        found = by_id.get(ref.donor_id)
+        if found is None:
+            continue
+        row, parts = found
+        candidates.append(_candidate_dict(row, ref.score, parts, ref.rank))
+    return candidates
+
+
 def match_profile(
     profile: PreferenceProfile,
     fetch_rows: Callable | None = None,
@@ -134,6 +202,7 @@ def match_profile(
     ranker: Ranker | None = None,
     log: bool = False,
     session_id: str = "",
+    detail_limit: int | None = None,
 ) -> MatchResult:
     if not profile.attributes:
         return MatchResult(
@@ -173,10 +242,19 @@ def match_profile(
     t1 = time.perf_counter()
     ranked = ranker.rank(profile, rows)
     rank_ms = (time.perf_counter() - t1) * 1000
+    ranked_refs = [
+        RankedCandidateRef(
+            donor_id=_internal_donor_id(row, i + 1),
+            rank=i + 1,
+            score=round(float(score), 6),
+        )
+        for i, (row, score, _parts) in enumerate(ranked)
+    ]
+    detail_count = len(ranked) if detail_limit is None else max(0, min(detail_limit, len(ranked)))
     t2 = time.perf_counter()
     candidates = [
         _candidate_dict(row, score, parts, i + 1)
-        for i, (row, score, parts) in enumerate(ranked)
+        for i, (row, score, parts) in enumerate(ranked[:detail_count])
     ]
     assemble_ms = (time.perf_counter() - t2) * 1000
     timings = {
@@ -185,6 +263,7 @@ def match_profile(
         "rank_ms": round(rank_ms, 1),
         "assemble_ms": round(assemble_ms, 1),
         "filtered_count": float(len(rows)),
+        "detail_hydrated_count": float(len(candidates)),
     }
     extra = getattr(ranker, "last_timings", None)
     if isinstance(extra, dict):
@@ -202,15 +281,16 @@ def match_profile(
                 "filtered_count": len(rows),
                 "candidates": [
                     {
-                        "code": c["donor_info"].get("code"),
-                        "score": c["score"],
-                        "rank": c["rank"],
-                        "field_scores": c["field_scores"],
+                        "donor_id": ranked_refs[index].donor_id,
+                        "code": get_donor_display_info(row).get("code"),
+                        "score": ranked_refs[index].score,
+                        "rank": ranked_refs[index].rank,
+                        "field_scores": [_jsonable(asdict(part)) for part in parts],
                         "attrs": {
-                            p["field"]: p["actual"] for p in c["field_scores"]
+                            part.field: _jsonable(part.actual) for part in parts
                         },
                     }
-                    for c in candidates
+                    for index, (row, _score, parts) in enumerate(ranked)
                 ],
             })
         except Exception:
@@ -223,5 +303,6 @@ def match_profile(
         skipped=False,
         filtered_count=len(rows),
         timings=timings,
-        prefer_hits=compute_prefer_hits(profile, candidates),
+        prefer_hits=compute_prefer_hits_from_ranked(profile, ranked),
+        ranked_refs=ranked_refs,
     )
