@@ -236,7 +236,7 @@ export function UserPage() {
                       <div className="flex items-center gap-3">
                       <button type="button" onClick={() => void deleteChat(c)} className="text-rose-600">永久删除</button>
                       <Link to={`/donors?chatId=${c.id}${c.active_branch_id ? `&branchId=${encodeURIComponent(c.active_branch_id)}` : ''}`} className="text-teal-deep">
-                        {c.storage_version === 1 ? '查看记录' : '继续对话'}
+                        继续对话
                       </Link>
                       </div>
                     </div>

@@ -12,11 +12,9 @@ from api.admin_permissions import USERS_CONTROL, USERS_VIEW, require_permission
 from api.refresh_sessions import RefreshSessionUnavailable, refresh_sessions
 from db.admin_users_repo import (
     control_user,
-    get_user_chat,
     get_user_profile,
     get_user_summary,
     list_user_audit,
-    list_user_chats,
     list_user_favorites,
     list_user_history,
     list_users,
@@ -129,29 +127,6 @@ async def admin_user_history(
 ):
     rows, total, page, page_size = list_user_history(user_id, kind, page, page_size)
     return _page(rows, total, page, page_size)
-
-
-@router.get("/{user_id}/chats")
-async def admin_user_chats(
-    user_id: int,
-    page: int = 1,
-    page_size: int = 20,
-    admin: dict = Depends(require_permission(USERS_VIEW)),
-):
-    rows, total, page, page_size = list_user_chats(user_id, page, page_size)
-    return _page(rows, total, page, page_size)
-
-
-@router.get("/{user_id}/chats/{chat_id}")
-async def admin_user_chat(
-    user_id: int,
-    chat_id: int,
-    admin: dict = Depends(require_permission(USERS_VIEW)),
-):
-    row = get_user_chat(user_id, chat_id, int(admin["id"]))
-    if not row:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    return _serialize(row)
 
 
 @router.get("/{user_id}/audit")

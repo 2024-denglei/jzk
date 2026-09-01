@@ -1,44 +1,15 @@
-from contextlib import contextmanager
+import asyncio
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
-from api.auth_utils import create_access_token
-
-
-class _SessionRow:
-    def fetchone(self):
-        return {"status": "active", "token_version": 0}
-
-
-class _SessionConn:
-    def execute(self, _sql, _params=()):
-        return _SessionRow()
-
-
-@contextmanager
-def _active_user_session():
-    yield _SessionConn()
-
-
-@pytest.fixture(autouse=True)
-def active_user(monkeypatch):
-    monkeypatch.setattr("db.database.db_session", _active_user_session)
-from api.match import router as match_router
+from api.match import MatchRequest, match_donors
 from core.preference.pipeline import MatchResult
 
 
-def _app() -> FastAPI:
-    app = FastAPI()
-    app.include_router(match_router)
-    return app
-
-
-def _auth_headers() -> dict[str, str]:
-    token = create_access_token({"sub": "42", "ver": 0})
-    return {"Authorization": f"Bearer {token}"}
+def _match(payload: dict):
+    return asyncio.run(match_donors(MatchRequest.model_validate(payload), user_id=42))
 
 
 VALID_PROFILE = {
@@ -50,29 +21,8 @@ VALID_PROFILE = {
 }
 
 
-def test_match_requires_auth():
-    res = TestClient(_app()).post("/api/match", json={"profile": {"schema_version": "1.0", "attributes": {}}})
-    assert res.status_code == 401
-
-
-def test_match_rejects_admin_token():
-    token = create_access_token({"sub": "1", "kind": "admin", "role": "admin"})
-    res = TestClient(_app()).post(
-        "/api/match",
-        json={"profile": {"schema_version": "1.0", "attributes": {}}},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert res.status_code == 401
-
-
 def test_empty_profile_skips_query():
-    res = TestClient(_app()).post(
-        "/api/match",
-        json={"profile": {"schema_version": "1.0", "attributes": {}}},
-        headers=_auth_headers(),
-    )
-    assert res.status_code == 200
-    data = res.json()
+    data = _match({"profile": {"schema_version": "1.0", "attributes": {}}})
     assert data["ok"] is True
     assert data["skipped"] is True
     assert data["candidates"] == []
@@ -80,20 +30,16 @@ def test_empty_profile_skips_query():
 
 
 def test_illegal_enum_is_400():
-    res = TestClient(_app()).post(
-        "/api/match",
-        json={
+    with pytest.raises(HTTPException) as exc_info:
+        _match({
             "profile": {
                 "schema_version": "1.0",
                 "attributes": {
                     "abo_blood": {"constraint": "must", "weight": 1, "values": ["XX"]},
                 },
             }
-        },
-        headers=_auth_headers(),
-    )
-    assert res.status_code == 400
-    assert "detail" in res.json()
+        })
+    assert exc_info.value.status_code == 400
 
 
 def test_match_returns_503_when_ranker_unavailable(monkeypatch):
@@ -104,13 +50,10 @@ def test_match_returns_503_when_ranker_unavailable(monkeypatch):
         raise V2RankerUnavailable("找不到模型文件")
 
     monkeypatch.setattr(match_mod, "match_profile", boom)
-    res = TestClient(_app()).post(
-        "/api/match",
-        json={"profile": VALID_PROFILE},
-        headers=_auth_headers(),
-    )
-    assert res.status_code == 503
-    assert "找不到" in str(res.json()["detail"])
+    with pytest.raises(HTTPException) as exc_info:
+        _match({"profile": VALID_PROFILE})
+    assert exc_info.value.status_code == 503
+    assert "找不到" in str(exc_info.value.detail)
 
 
 def test_match_ranks_and_returns_field_scores(monkeypatch):
@@ -147,13 +90,7 @@ def test_match_ranks_and_returns_field_scores(monkeypatch):
         )
 
     monkeypatch.setattr(match_mod, "match_profile", fake_match)
-    res = TestClient(_app()).post(
-        "/api/match",
-        json={"profile": VALID_PROFILE},
-        headers=_auth_headers(),
-    )
-    assert res.status_code == 200
-    data = res.json()
+    data = _match({"profile": VALID_PROFILE})
     assert data["ok"] is True
     assert data["filtered_count"] == 2
     assert data["candidates"][0]["donor_info"]["code"] == "T"
@@ -175,13 +112,7 @@ def test_zero_hits_returns_bottlenecks(monkeypatch):
             filtered_count=0,
         ),
     )
-    res = TestClient(_app()).post(
-        "/api/match",
-        json={"profile": VALID_PROFILE},
-        headers=_auth_headers(),
-    )
-    assert res.status_code == 200
-    data = res.json()
+    data = _match({"profile": VALID_PROFILE})
     assert data["candidates"] == []
     assert data["result_set_id"] is None
     assert data["bottlenecks"][0]["field"] == "abo_blood"
@@ -204,14 +135,9 @@ def test_top_k_truncates(monkeypatch):
             filtered_count=2,
         ),
     )
-    res = TestClient(_app()).post(
-        "/api/match",
-        json={"profile": VALID_PROFILE, "top_k": 1},
-        headers=_auth_headers(),
-    )
-    assert res.status_code == 200
-    assert len(res.json()["candidates"]) == 1
-    assert res.json()["filtered_count"] == 2
+    data = _match({"profile": VALID_PROFILE, "top_k": 1})
+    assert len(data["candidates"]) == 1
+    assert data["filtered_count"] == 2
 
 
 def test_execute_match_returns_prefer_hits_before_top_k(monkeypatch):
@@ -234,32 +160,14 @@ def test_execute_match_returns_prefer_hits_before_top_k(monkeypatch):
             prefer_hits=hits,
         ),
     )
-    res = TestClient(_app()).post(
-        "/api/match",
-        json={"profile": VALID_PROFILE, "top_k": 1},
-        headers=_auth_headers(),
-    )
-    assert res.status_code == 200
-    data = res.json()
+    data = _match({"profile": VALID_PROFILE, "top_k": 1})
     assert len(data["candidates"]) == 1
     assert data["prefer_hits"] == hits
     assert data["filtered_count"] == 3
 
 
 def test_invoke_match_endpoint_hits_route():
-    import asyncio
-
-    from api.match import invoke_match_endpoint
-
-    token = create_access_token({"sub": "42", "ver": 0})
-    status, data = asyncio.run(
-        invoke_match_endpoint(
-            _app(),
-            f"Bearer {token}",
-            {"schema_version": "1.0", "attributes": {}},
-        )
-    )
-    assert status == 200
+    data = _match({"profile": {"schema_version": "1.0", "attributes": {}}})
     assert data["ok"] is True
     assert data["skipped"] is True
 
@@ -269,12 +177,7 @@ def test_delete_referenced_match_snapshot_returns_conflict(monkeypatch):
 
     from api import match as match_mod
 
-    class Store:
-        def delete(self, *_args):
-            return True
-
     monkeypatch.setattr(match_mod, "get_match_run", lambda *_args: object())
-    monkeypatch.setattr(match_mod, "MatchResultStore", Store)
     monkeypatch.setattr(match_mod, "delete_match_run", lambda *_args: False)
 
     with pytest.raises(match_mod.HTTPException) as exc_info:

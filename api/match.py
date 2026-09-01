@@ -1,7 +1,6 @@
 """校验后的偏好画像匹配、严格快照与详情分页。"""
 
 from typing import Any
-import logging
 import time
 from uuid import uuid4
 
@@ -12,7 +11,6 @@ from pydantic import BaseModel, Field
 import config
 from api.auth_utils import get_current_user_id
 from api.match_cursor import InvalidMatchCursor, decode_match_cursor, encode_match_cursor
-from api.match_result_store import MatchResultStore, MatchResultStoreUnavailable
 from core.preference.pipeline import hydrate_ranked_candidates, match_profile
 from core.preference.result_types import MatchResultMeta, RankedCandidateRef
 from core.preference.validate import ProfileValidationError, parse_profile
@@ -25,7 +23,6 @@ from db.match_runs_repo import (
     MatchRunValidationError,
     create_match_run,
     delete_match_run,
-    get_all_match_run_refs,
     get_match_run,
     get_match_run_page,
     match_run_is_expired,
@@ -34,7 +31,6 @@ from db.match_runs_repo import (
 from dialogue.match_snapshot_queries import MatchSnapshotNotFound, get_frozen_match_page
 
 router = APIRouter(tags=["match"])
-logger = logging.getLogger(__name__)
 
 
 class MatchRequest(BaseModel):
@@ -66,7 +62,10 @@ def execute_match(
     match_kwargs.setdefault("detail_limit", detail_limit)
     match_kwargs.setdefault(
         "build_snapshot",
-        bool(owner_user_id is not None and config.MATCH_SNAPSHOT_ENABLED),
+        bool(
+            owner_user_id is not None
+            and (config.MATCH_SNAPSHOT_ENABLED or config.MATCH_RESULT_PAGING_ENABLED)
+        ),
     )
     result = match_profile(profile, **match_kwargs)
     candidates = result.candidates[:detail_limit]
@@ -98,16 +97,9 @@ def execute_match(
             dataset_version=get_donor_dataset_version(),
             prefer_hits=list(result.prefer_hits or []),
         )
-        if config.MATCH_SNAPSHOT_ENABLED:
-            if len(result.snapshot_items) != total:
-                raise MatchRunValidationError("匹配结果缺少完整候选展示快照")
-            meta = create_match_run(meta, refs, result.snapshot_items)
-        if config.MATCH_RESULT_PAGING_ENABLED:
-            try:
-                MatchResultStore().create(meta, refs)
-            except MatchResultStoreUnavailable:
-                # PostgreSQL 快照已经提交，Redis 失败只影响缓存，不影响严格结果。
-                logger.exception("Redis 匹配结果集写入失败 result_set_id=%s", result_set_id[:8])
+        if len(result.snapshot_items) != total:
+            raise MatchRunValidationError("匹配结果缺少完整候选展示快照")
+        meta = create_match_run(meta, refs, result.snapshot_items)
 
     timings = dict(result.timings or {})
     timings["parse_profile_ms"] = round(parse_ms, 1)
@@ -179,34 +171,19 @@ def _load_compact_page(
     offset: int,
     limit: int,
 ) -> tuple[MatchResultMeta, list[RankedCandidateRef]] | None:
-    """优先 Redis；miss/故障时读取严格快照并尽力恢复 Redis。"""
-    store = MatchResultStore()
-    cached = None
-    try:
-        cached = store.page(owner_user_id, result_set_id, offset=offset, limit=limit)
-    except MatchResultStoreUnavailable:
-        logger.warning("Redis 匹配分页降级 result_set_id=%s", result_set_id[:8])
-    if cached is not None:
-        return cached
-
+    """从 PostgreSQL 完整快照读取严格排名页。"""
     snapshot_page = get_match_run_page(
         result_set_id, owner_user_id, offset=offset, limit=limit
     )
     if snapshot_page is None:
         return None
-    meta, refs = snapshot_page
+    meta, _refs = snapshot_page
     if match_run_is_expired(meta):
         raise HTTPException(
             status_code=410,
             detail={"code": "MATCH_SNAPSHOT_EXPIRED", "message": "匹配快照已过期"},
         )
-    try:
-        complete = get_all_match_run_refs(result_set_id, owner_user_id)
-        if complete is not None:
-            store.create(*complete)
-    except MatchResultStoreUnavailable:
-        pass
-    return meta, refs
+    return snapshot_page
 
 
 def _page_payload(
@@ -317,10 +294,6 @@ async def remove_match_result(
     snapshot = get_match_run(result_set_id, user_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="匹配结果不存在")
-    try:
-        MatchResultStore().delete(user_id, result_set_id)
-    except MatchResultStoreUnavailable:
-        pass
     if not delete_match_run(result_set_id, user_id):
         raise HTTPException(
             status_code=409,

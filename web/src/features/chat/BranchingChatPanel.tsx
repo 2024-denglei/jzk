@@ -86,7 +86,6 @@ export function BranchingChatPanel({
   ttsOnRef.current = ttsOn
   const tree = chatState.tree
   const currentChatId = tree?.chat.id || null
-  const legacyReadOnly = tree?.chat.storage_version === 1
   const selectedBranch = tree?.branches.find((branch) => branch.id === chatState.selectedBranchId) || null
   const messages = useMemo(() => messagesForSelectedBranch(chatState), [chatState])
   const selectedPath = chatState.selectedBranchId ? chatState.pathsByBranch[chatState.selectedBranchId] : undefined
@@ -271,10 +270,6 @@ export function BranchingChatPanel({
       if (generatingMessage?.generation_id) await stopGeneration(generatingMessage.generation_id)
       return
     }
-    if (legacyReadOnly) {
-      setError('这条历史会话正在迁移，目前可完整查看但不能继续；你可以新建对话。')
-      return
-    }
     const text = regenerate ? '' : (textOverride ?? input).trim()
     if (!regenerate && !text) return
     setSending(true)
@@ -370,7 +365,7 @@ export function BranchingChatPanel({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold text-ink">{tree?.chat.title || '匹配顾问'}</div>
-          <div className="mt-0.5 truncate text-[11px] text-ink-soft/45">{legacyReadOnly ? '旧会话兼容只读，迁移后可继续' : selectedBranch ? `${selectedBranch.name} · ${tree?.chat.branch_count || 1} 条分支` : '对话会保存为可回溯分支'}</div>
+          <div className="mt-0.5 truncate text-[11px] text-ink-soft/45">{selectedBranch ? `${selectedBranch.name} · ${tree?.chat.branch_count || 1} 条分支` : '对话会保存为可回溯分支'}</div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button type="button" title="新对话" onClick={startNewChat} className="rounded-md p-1.5 text-ink-soft/50 hover:bg-mist/60"><i className="ri-add-line" /></button>
@@ -420,7 +415,7 @@ export function BranchingChatPanel({
             {message.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: fmtMd(message.content || (message.status === 'generating' ? '…' : '')) }} /> : message.content}
             {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'generating' ? '生成中' : message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
           </div></div>
-          {!legacyReadOnly && !sending && message.role !== 'system' && <div className={`mt-1 flex gap-2 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
+          {!sending && message.role !== 'system' && <div className={`mt-1 flex gap-2 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
             {message.state_recoverable && index < messages.length - 1 && <button type="button" onClick={() => prepareRewind(message)} className="hover:text-teal-deep">从此处分支</button>}
             {message.role === 'user' && <button type="button" onClick={() => prepareEdit(message)} className="hover:text-teal-deep">编辑重发</button>}
             {message.role === 'assistant' && message.status !== 'generating' && <button type="button" onClick={() => void send(undefined, message)} className="hover:text-teal-deep">{message.status === 'failed' ? '重试' : '重新生成'}</button>}
@@ -436,10 +431,10 @@ export function BranchingChatPanel({
       {(error || notice) && <div className={`mb-2 rounded-lg px-2 py-1.5 text-[10px] ${error ? 'bg-rose-50 text-rose-700' : 'bg-mist text-teal-deep'}`}>{error || notice}</div>}
       {pendingAction && <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-teal/20 bg-mist/50 px-2.5 py-2 text-[10px] text-teal-deep"><span>{pendingAction.label}</span><button type="button" onClick={() => setPendingAction(null)}>取消</button></div>}
       <div className="flex items-end gap-2 rounded-xl border border-line/80 bg-sand/50 px-2 py-1.5 focus-within:border-teal/40">
-        <textarea value={input} disabled={legacyReadOnly || selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={legacyReadOnly ? '旧会话正在迁移，目前仅支持查看' : selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction ? '输入新分支的消息…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
+        <textarea value={input} disabled={selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction ? '输入新分支的消息…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
         <button type="button" title={ttsOn ? '关闭语音播报' : '开启语音播报'} onClick={() => { if (ttsOn) stopSpeaking(); setTtsOn((value) => !value) }} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg ${ttsOn ? 'bg-mist text-teal-deep' : 'text-ink-soft/45'}`}><i className={ttsOn ? 'ri-volume-up-line' : 'ri-volume-mute-line'} /></button>
-        <button type="button" title="语音输入" disabled={legacyReadOnly || sending} onClick={toggleVoice} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg disabled:opacity-40 ${recording ? 'bg-red-100 text-red-500' : 'bg-mist text-ink-soft/70'}`}><i className={recording ? 'ri-mic-fill' : 'ri-mic-line'} /></button>
-        <button type="button" disabled={legacyReadOnly || (!sending && !input.trim())} onClick={() => void send()} title={sending ? '停止生成' : '发送'} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-white disabled:opacity-40 ${sending ? 'bg-red-500' : 'bg-teal-deep'}`}><i className={sending ? 'ri-stop-fill' : 'ri-arrow-up-line'} /></button>
+        <button type="button" title="语音输入" disabled={sending} onClick={toggleVoice} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg disabled:opacity-40 ${recording ? 'bg-red-100 text-red-500' : 'bg-mist text-ink-soft/70'}`}><i className={recording ? 'ri-mic-fill' : 'ri-mic-line'} /></button>
+        <button type="button" disabled={!sending && !input.trim()} onClick={() => void send()} title={sending ? '停止生成' : '发送'} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-white disabled:opacity-40 ${sending ? 'bg-red-500' : 'bg-teal-deep'}`}><i className={sending ? 'ri-stop-fill' : 'ri-arrow-up-line'} /></button>
       </div>
     </footer>
   </aside>

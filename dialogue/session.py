@@ -5,9 +5,6 @@ import uuid
 from enum import Enum
 from typing import Any
 
-from config import SESSION_TIMEOUT_MINUTES
-
-
 class DialogueState(str, Enum):
     START = "start"
     COLLECTING = "collecting"
@@ -41,7 +38,6 @@ class SessionContext:
         self._active_checkpoint: dict[str, Any] | None = None
         self.created_at = time.time()
         self.last_active = time.time()
-        self.storage_version = 0
 
     def add_message(self, role: str, content: str):
         """添加对话记录。"""
@@ -178,10 +174,6 @@ class SessionContext:
         })
         self.last_active = time.time()
 
-    def is_expired(self) -> bool:
-        """检查会话是否超时。"""
-        return (time.time() - self.last_active) > SESSION_TIMEOUT_MINUTES * 60
-
     def get_llm_messages(self) -> list[dict[str, str]]:
         """获取供 LLM 使用的对话历史（最近20轮）。"""
         return self.history[-20:]
@@ -242,114 +234,3 @@ class SessionContext:
             "match_next_cursor": self.match_next_cursor,
             "feedback_count": len(self.feedback_log),
         }
-
-    def to_storage_dict(self) -> dict:
-        """序列化完整临时状态，供 Redis 跨实例共享。"""
-        return {
-            "owner_user_id": self.owner_user_id,
-            "session_id": self.session_id,
-            "state": self.state.value,
-            "parsed_features": self.parsed_features,
-            "constraints": self.constraints,
-            "history": self.history,
-            "candidates": self.candidates,
-            "match_result_id": self.match_result_id,
-            "match_total": self.match_total,
-            "match_next_cursor": self.match_next_cursor,
-            "feedback_log": self.feedback_log,
-            "pending_relaxations": self.pending_relaxations,
-            "preference_profile": self.preference_profile,
-            "active_checkpoint": self._active_checkpoint,
-            "created_at": self.created_at,
-            "last_active": self.last_active,
-            "storage_version": self.storage_version,
-        }
-
-    @classmethod
-    def from_storage_dict(cls, data: dict[str, Any]) -> "SessionContext":
-        session = cls(
-            owner_user_id=int(data["owner_user_id"]),
-            session_id=str(data["session_id"]),
-        )
-        try:
-            session.state = DialogueState(data.get("state") or DialogueState.START.value)
-        except ValueError:
-            session.state = DialogueState.COLLECTING
-        session.parsed_features = dict(data.get("parsed_features") or {})
-        session.constraints = dict(data.get("constraints") or {})
-        session.history = list(data.get("history") or [])
-        session.candidates = list(data.get("candidates") or [])
-        session.match_result_id = data.get("match_result_id") or None
-        session.match_total = int(data.get("match_total") or 0)
-        session.match_next_cursor = data.get("match_next_cursor") or None
-        session.feedback_log = list(data.get("feedback_log") or [])
-        session.pending_relaxations = list(data.get("pending_relaxations") or [])
-        raw_profile = data.get("preference_profile")
-        session.preference_profile = dict(raw_profile) if raw_profile else None
-        checkpoint = data.get("active_checkpoint")
-        session._active_checkpoint = dict(checkpoint) if checkpoint else None
-        session.created_at = float(data.get("created_at") or time.time())
-        session.last_active = float(data.get("last_active") or time.time())
-        session.storage_version = int(data.get("storage_version") or 0)
-        return session
-
-
-class SessionManager:
-    """全局会话管理器。"""
-
-    def __init__(self, store=None):
-        from dialogue.session_store import InMemorySessionStore
-
-        self._store = store or InMemorySessionStore()
-
-    def create_session(self, user_id: int) -> SessionContext:
-        """创建新会话。"""
-        self._cleanup_expired()
-        session = SessionContext(owner_user_id=user_id)
-        self._store.save(session)
-        return session
-
-    def get_session(self, user_id: int, session_id: str) -> SessionContext | None:
-        """获取当前用户的会话，不存在、越权或过期均返回 None。"""
-        session = self._store.load(user_id, session_id)
-        if session and not session.is_expired():
-            return session
-        if session and session.is_expired():
-            self._store.delete(user_id, session_id)
-        return None
-
-    def get_or_create(self, user_id: int, session_id: str | None) -> SessionContext:
-        """获取当前用户的会话，不存在时创建新会话。"""
-        if session_id:
-            session = self.get_session(user_id, session_id)
-            if session:
-                return session
-        return self.create_session(user_id)
-
-    def put_session(self, session: SessionContext) -> SessionContext:
-        """写入/覆盖内存会话（用于从 DB resume）。"""
-        session.last_active = time.time()
-        self._store.save(session)
-        return session
-
-    def restore_session(
-        self,
-        user_id: int,
-        session_id: str,
-        state: dict | None = None,
-        candidates: list | None = None,
-    ) -> SessionContext:
-        """按用户和 session_id 恢复或创建，并灌入状态。"""
-        session = self.get_session(user_id, session_id)
-        if not session:
-            session = SessionContext(owner_user_id=user_id, session_id=session_id)
-        session.load_state(state)
-        if candidates is not None:
-            session.candidates = list(candidates)
-        if session.state == DialogueState.START and (session.history or session.parsed_features):
-            session.state = DialogueState.PRESENTING if session.candidates else DialogueState.COLLECTING
-        return self.put_session(session)
-
-    def _cleanup_expired(self):
-        """清理过期会话。"""
-        self._store.cleanup_expired()

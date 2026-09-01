@@ -2,7 +2,7 @@
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth_utils import get_current_user_id
@@ -28,14 +28,6 @@ class HistoryBody(BaseModel):
 class PreferencesBody(BaseModel):
     filters: dict = Field(default_factory=dict)
     priority: list[str] = Field(default_factory=list)
-
-
-class ChatSaveBody(BaseModel):
-    session_id: str | None = Field(default=None, max_length=64)
-    title: str = Field(default="对话", max_length=100)
-    messages: list[dict] = Field(default_factory=list, max_length=100)
-    candidates: list[dict] = Field(default_factory=list, max_length=1000)
-    state: dict = Field(default_factory=dict)
 
 
 @router.get("/favorites")
@@ -92,7 +84,6 @@ async def remove_favorite(donor_code: str, user_id: int = Depends(get_current_us
             (user_id, donor_code),
         )
     return {"ok": True}
-
 
 @router.get("/favorites/{donor_code}")
 async def is_favorite(donor_code: str, user_id: int = Depends(get_current_user_id)):
@@ -190,149 +181,3 @@ async def save_preferences(body: PreferencesBody, user_id: int = Depends(get_cur
             ),
         )
     return {"ok": True}
-
-
-@router.get("/chats")
-async def list_chats(user_id: int = Depends(get_current_user_id)):
-    with db_session() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, session_id, title, updated_at FROM app.chats
-            WHERE user_id = %s ORDER BY updated_at DESC
-            """,
-            (user_id,),
-        ).fetchall()
-    return {
-        "items": [
-            {
-                "id": r["id"],
-                "session_id": r["session_id"],
-                "title": r["title"],
-                "updated_at": _ts(r["updated_at"]),
-            }
-            for r in rows
-        ]
-    }
-
-
-@router.get("/chats/{chat_id}")
-async def get_chat(chat_id: int, user_id: int = Depends(get_current_user_id)):
-    with db_session() as conn:
-        row = conn.execute(
-            "SELECT * FROM app.chats WHERE id = %s AND user_id = %s",
-            (chat_id, user_id),
-        ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="对话不存在")
-    if int(row.get("storage_version") or 1) == 2:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "CHAT_STORAGE_V2", "message": "该会话请使用 /api/chats V2 接口读取"},
-        )
-    state = json.loads(row["state_json"] or "{}")
-    return {
-        "id": row["id"],
-        "session_id": row["session_id"],
-        "title": row["title"],
-        "messages": json.loads(row["messages_json"] or "[]"),
-        "candidates": json.loads(row["candidates_json"] or "[]"),
-        "state": state,
-        "updated_at": _ts(row["updated_at"]),
-    }
-
-
-@router.post("/chats")
-async def save_chat(body: ChatSaveBody, user_id: int = Depends(get_current_user_id)):
-    import uuid
-    from api.chat_persist import LegacyChatWriteBlocked, upsert_user_chat
-
-    session_id = (body.session_id or "").strip() or str(uuid.uuid4())
-    try:
-        chat_id = upsert_user_chat(
-            user_id=user_id,
-            session_id=session_id,
-            messages=body.messages,
-            candidates=body.candidates,
-            state=body.state,
-            title=body.title,
-        )
-    except LegacyChatWriteBlocked as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "LEGACY_CHAT_WRITE_BLOCKED", "message": str(exc)},
-        ) from exc
-    return {"ok": True, "id": chat_id, "session_id": session_id}
-
-
-@router.post("/chats/{chat_id}/resume")
-async def resume_chat(
-    chat_id: int,
-    request: Request,
-    user_id: int = Depends(get_current_user_id),
-):
-    """恢复历史对话到内存会话，便于继续聊。"""
-    with db_session() as conn:
-        row = conn.execute(
-            "SELECT * FROM app.chats WHERE id = %s AND user_id = %s",
-            (chat_id, user_id),
-        ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="对话不存在")
-    if int(row.get("storage_version") or 1) == 2:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "CHAT_STORAGE_V2", "message": "该会话请使用 /api/chats V2 接口恢复"},
-        )
-
-    state = json.loads(row["state_json"] or "{}")
-    messages = json.loads(row["messages_json"] or "[]")
-    candidates = json.loads(row["candidates_json"] or "[]")
-    session_id = row["session_id"]
-
-    if not state.get("history"):
-        state["history"] = [
-            {
-                "role": "user" if m.get("role") == "user" else "assistant",
-                "content": m.get("content") or "",
-            }
-            for m in messages
-            if m.get("role") in ("user", "bot", "assistant") and m.get("content")
-        ]
-
-    sm = getattr(request.app.state, "session_manager", None)
-    if sm is None:
-        raise HTTPException(status_code=503, detail="会话服务未就绪")
-    session = sm.restore_session(user_id, session_id, state=state, candidates=candidates)
-
-    return {
-        "ok": True,
-        "id": row["id"],
-        "session_id": session.session_id,
-        "title": row["title"],
-        "messages": messages,
-        "candidates": candidates,
-        "match_result_id": session.match_result_id,
-        "match_total": session.match_total,
-        "match_next_cursor": session.match_next_cursor,
-        "state": {
-            "parsed_features": session.parsed_features,
-            "constraints": session.constraints,
-            "dialogue_state": session.state.value,
-            "pending_relaxations": session.pending_relaxations,
-            "match_result_id": session.match_result_id,
-            "match_total": session.match_total,
-            "match_next_cursor": session.match_next_cursor,
-        },
-        "updated_at": _ts(row["updated_at"]),
-    }
-
-
-@router.delete("/chats/{chat_id}")
-async def delete_chat(chat_id: int, user_id: int = Depends(get_current_user_id)):
-    raise HTTPException(
-        status_code=410,
-        detail={
-            "code": "IRREVERSIBLE_CONFIRMATION_REQUIRED",
-            "message": "旧删除接口已停用，请使用 /api/chats/{chat_id} 并明确确认不可恢复删除",
-        },
-    )

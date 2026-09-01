@@ -44,4 +44,3 @@ class MatchResultMeta:
     snapshot_source: str = "native"
     created_at: datetime | None = None
     ready_at: datetime | None = None
-    expires_at: datetime | None = None

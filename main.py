@@ -15,18 +15,6 @@ from fastapi.responses import FileResponse, JSONResponse
 import config
 from core.data_loader import load_donor_data
 from core.feature_engine import FeatureEncoder
-from dialogue.session import SessionManager
-from dialogue.session_store import create_session_store
-from dialogue.session_store import (
-    SessionConflict,
-    SessionLimitExceeded,
-    SessionStoreUnavailable,
-    SessionTooLarge,
-)
-from dialogue.nlu import create_async_llm_client, create_llm_client
-from api.chat import router as chat_router, inject_dependencies as inject_chat_deps
-from api.chat_stream import router as stream_router, inject_dependencies as inject_stream_deps
-from api.feedback import router as feedback_router, inject_dependencies as inject_feedback_deps
 from api.search import router as search_router
 from api.auth import router as auth_router
 from api.user import router as user_router
@@ -57,25 +45,6 @@ app = FastAPI(
     version="0.1.0",
 )
 
-
-@app.exception_handler(SessionStoreUnavailable)
-async def session_store_unavailable_handler(_request, exc: SessionStoreUnavailable):
-    return JSONResponse(status_code=503, content={"detail": str(exc)})
-
-
-@app.exception_handler(SessionConflict)
-async def session_conflict_handler(_request, exc: SessionConflict):
-    return JSONResponse(status_code=409, content={"detail": str(exc)})
-
-
-@app.exception_handler(SessionLimitExceeded)
-async def session_limit_handler(_request, exc: SessionLimitExceeded):
-    return JSONResponse(status_code=429, content={"detail": str(exc)})
-
-
-@app.exception_handler(SessionTooLarge)
-async def session_too_large_handler(_request, exc: SessionTooLarge):
-    return JSONResponse(status_code=413, content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -144,27 +113,8 @@ async def startup():
     encoder.encode_all()
     logger.info(f"特征矩阵维度: {encoder.feature_matrix.shape}")
 
-    session_manager = SessionManager(create_session_store())
-
-    llm_client = None
-    async_llm_client = None
-    if config.LLM_API_KEY:
-        llm_client = create_llm_client()
-        async_llm_client = create_async_llm_client()
-        logger.info(f"LLM 已配置: model={config.LLM_MODEL}, base_url={config.LLM_BASE_URL}")
-    else:
-        logger.warning("未配置 LLM_API_KEY，对话功能将使用模拟模式")
-        llm_client = None
-
-    inject_chat_deps(session_manager, encoder, donor_df, llm_client)
-    inject_stream_deps(session_manager, encoder, donor_df, async_llm_client)
-    inject_feedback_deps(session_manager)
-
     app.state.donor_df = donor_df
     app.state.encoder = encoder
-    app.state.session_manager = session_manager
-    app.state.llm_client = llm_client
-    app.state.async_llm_client = async_llm_client
 
     logger.info("系统启动完成！")
 
@@ -177,9 +127,6 @@ async def shutdown():
 
 # ============ 注册路由 ============
 
-app.include_router(chat_router)
-app.include_router(stream_router)
-app.include_router(feedback_router)
 app.include_router(search_router)
 app.include_router(auth_router)
 app.include_router(user_router)
@@ -205,7 +152,7 @@ if os.path.isdir(docs_dir):
 @app.get("/architecture")
 async def architecture():
     """架构图页面。"""
-    arch_path = os.path.join(docs_dir, "research_architecture.html")
+    arch_path = os.path.join(docs_dir, "chat-v2-architecture.html")
     if os.path.exists(arch_path):
         return FileResponse(arch_path)
     return {"message": "架构图未找到"}

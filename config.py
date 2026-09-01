@@ -46,8 +46,6 @@ CORS_ORIGINS = [
     ).split(",")
     if item.strip()
 ]
-CHAT_SESSION_STORE = os.getenv("CHAT_SESSION_STORE", "redis").strip().lower()
-
 # 分支化长期对话 V2。迁移期间默认关闭，由灰度开关逐步启用。
 CHAT_STORAGE_V2_READ_ENABLED = _env_bool("CHAT_STORAGE_V2_READ_ENABLED", False)
 CHAT_STORAGE_V2_WRITE_ENABLED = _env_bool("CHAT_STORAGE_V2_WRITE_ENABLED", False)
@@ -140,9 +138,6 @@ MATCH_THRESHOLD = 0.7
 MATCH_TOP_K = int(os.getenv("MATCH_TOP_K", "0"))
 MATCH_RESULT_PAGING_ENABLED = _env_bool("MATCH_RESULT_PAGING_ENABLED", True)
 MATCH_SNAPSHOT_ENABLED = _env_bool("MATCH_SNAPSHOT_ENABLED", True)
-MATCH_RESULT_TTL_SECONDS = int(os.getenv("MATCH_RESULT_TTL_SECONDS", "1800"))
-MATCH_RESULT_MAX_LIFETIME_SECONDS = int(os.getenv("MATCH_RESULT_MAX_LIFETIME_SECONDS", "7200"))
-MATCH_RESULT_MAX_ACTIVE_PER_USER = int(os.getenv("MATCH_RESULT_MAX_ACTIVE_PER_USER", "5"))
 MATCH_RESULT_MAX_CANDIDATES = int(os.getenv("MATCH_RESULT_MAX_CANDIDATES", "20000"))
 MATCH_RESULT_PAGE_SIZE_DEFAULT = int(os.getenv("MATCH_RESULT_PAGE_SIZE_DEFAULT", "20"))
 MATCH_RESULT_PAGE_SIZE_MAX = int(os.getenv("MATCH_RESULT_PAGE_SIZE_MAX", "50"))
@@ -152,10 +147,6 @@ MATCH_MODEL_VERSION = os.getenv("MATCH_MODEL_VERSION", "v2")
 COSINE_WEIGHT = 0.6
 EUCLIDEAN_WEIGHT = 0.4
 
-# 会话配置
-SESSION_TIMEOUT_MINUTES = 30
-SESSION_MAX_ACTIVE_PER_USER = int(os.getenv("SESSION_MAX_ACTIVE_PER_USER", "20"))
-SESSION_MAX_BYTES = int(os.getenv("SESSION_MAX_BYTES", "2000000"))
 MAX_REQUEST_BODY_BYTES = int(os.getenv("MAX_REQUEST_BODY_BYTES", "25000000"))
 MAX_JSON_BODY_BYTES = int(os.getenv("MAX_JSON_BODY_BYTES", "1000000"))
 MAX_AUDIO_UPLOAD_BYTES = int(os.getenv("MAX_AUDIO_UPLOAD_BYTES", "20000000"))
@@ -166,13 +157,6 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8010"))
 # 热重载：默认开启，生产可设 RELOAD=0
 RELOAD = os.getenv("RELOAD", "1").strip().lower() not in ("0", "false", "no")
-
-# Agent Trace 目录（JSONL）
-TRACE_DIR = os.getenv(
-    "TRACE_DIR",
-    os.path.join(os.path.dirname(__file__), "data", "traces"),
-)
-TRACE_ENABLED = os.getenv("TRACE_ENABLED", "0").strip().lower() not in ("0", "false", "no")
 
 MATCH_LOG_DIR = os.getenv(
     "MATCH_LOG_DIR",
@@ -222,8 +206,6 @@ def validate_security_config() -> None:
         errors.append("生产环境必须设置至少 12 位且非默认的管理员引导密码")
     if not CORS_ORIGINS or "*" in CORS_ORIGINS:
         errors.append("生产环境必须配置明确的 CORS_ORIGINS，不能使用通配符")
-    if CHAT_SESSION_STORE != "redis":
-        errors.append("生产环境 CHAT_SESSION_STORE 必须设置为 redis")
     if PG_POOL_MIN_SIZE < 1 or PG_POOL_MAX_SIZE < PG_POOL_MIN_SIZE:
         errors.append("PostgreSQL 连接池大小配置无效")
     if REDIS_MAX_CONNECTIONS < 1:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -218,7 +218,7 @@ class ChatSummary(BaseModel):
 
     id: int
     title: str
-    storage_version: int = Field(ge=1, le=2)
+    storage_version: Literal[2] = 2
     active_branch_id: UUID | None
     active_branch_name: str | None = None
     branch_count: int = Field(ge=0)

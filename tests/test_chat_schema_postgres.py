@@ -33,10 +33,10 @@ def test_branching_schema_accepts_atomic_chat_tree_and_cascades_on_user_delete()
         ).fetchone()["id"]
         chat_id = conn.execute(
             """
-            INSERT INTO app.chats (user_id, session_id, title, storage_version)
-            VALUES (%s, %s, '测试会话', 2) RETURNING id
+            INSERT INTO app.chats (user_id, title, storage_version)
+            VALUES (%s, '测试会话', 2) RETURNING id
             """,
-            (user_id, str(uuid4())),
+            (user_id,),
         ).fetchone()["id"]
         conn.execute(
             """

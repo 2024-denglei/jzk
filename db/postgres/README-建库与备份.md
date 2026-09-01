@@ -55,7 +55,8 @@ CREATE DATABASE jzk
 - `01_init_db.sql`
 - `02_schema.sql`
 - 修改 `03_roles.sql` 中的默认密码后执行（或手工 `CREATE ROLE ... PASSWORD`）
-- 已有数据库升级时执行 `05_add_user_phone.sql`
+- 全新建库或升级均按编号依次执行 `05` 至 `16`；最终清理迁移
+  `16_drop_legacy_chat_storage.sql` 会在存在 V1 会话或不完整 ready 快照时主动拒绝执行
 
 4. 将连接串交给应用（建议应用使用 `jzk_app` / 管理端使用 `jzk_admin_api`；`jzk_migrator` 仅部署窗口启用）。
 
@@ -92,4 +93,6 @@ pg_restore -d jzk --clean --if-exists jzk_YYYYMMDD.dump
 
 ## 6. 从旧 SQLite 迁移
 
-见 `agent/scripts/migrate_sqlite_to_pg.py`：将历史 `data/app.db` 用户侧数据导入 `app` schema。捐精人请用管理端「导入」或按《文本信息》模板 Excel 入库。
+见 `scripts/migrate_sqlite_to_pg.py`：只迁移用户、收藏、历史和偏好。旧 SQLite 线性 JSON 会话
+不再直接导入最终结构；如确有正式历史数据，应先使用保留兼容列的旧发布版本完成 V2 转换。
+捐精人请用管理端「导入」或按《文本信息》模板 Excel 入库。

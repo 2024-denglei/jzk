@@ -134,7 +134,6 @@ def _create_turn(
                 conn,
                 user_id,
                 title=_title_from_content(command.content),
-                legacy_session_id=f"v2:{uuid4()}",
             )
             branch_id = uuid4()
             fork_reason = ForkReason.ROOT

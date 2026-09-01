@@ -41,11 +41,6 @@ def migrate(sqlite_path: str) -> None:
             "preferences",
             "SELECT user_id, filters_json, priority_json, updated_at FROM preferences",
         ),
-        (
-            "chats",
-            "SELECT id, user_id, session_id, title, messages_json, candidates_json, "
-            "COALESCE(state_json, '{}') AS state_json, updated_at FROM chats",
-        ),
     ]
 
     with db_session(admin=True) as conn:
@@ -100,25 +95,9 @@ def migrate(sqlite_path: str) -> None:
                         """,
                         d,
                     )
-                elif name == "chats":
-                    conn.execute(
-                        """
-                        INSERT INTO app.chats
-                          (id, user_id, session_id, title, messages_json, candidates_json, state_json, updated_at)
-                        VALUES
-                          (%(id)s, %(user_id)s, %(session_id)s, %(title)s, %(messages_json)s,
-                           %(candidates_json)s, %(state_json)s, %(updated_at)s)
-                        ON CONFLICT (id) DO UPDATE SET
-                          messages_json = EXCLUDED.messages_json,
-                          candidates_json = EXCLUDED.candidates_json,
-                          state_json = EXCLUDED.state_json,
-                          updated_at = EXCLUDED.updated_at
-                        """,
-                        d,
-                    )
 
         # 校正序列
-        for seq_table in ("users", "favorites", "history", "chats"):
+        for seq_table in ("users", "favorites", "history"):
             conn.execute(
                 f"""
                 SELECT setval(

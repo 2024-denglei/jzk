@@ -3,7 +3,6 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import pytest
-from fastapi import HTTPException
 
 from api import admin_users as admin_users_mod
 from db import admin_users_repo
@@ -84,56 +83,3 @@ def test_user_control_repository_applies_status_and_token_rules(monkeypatch, act
     assert result["token_version"] == expected_token_version
     assert any(sql_fragment in sql for sql, _params in executed)
     assert any("INSERT INTO admin.user_audit_logs" in sql for sql, _params in executed)
-
-
-def test_admin_chat_lookup_is_scoped_to_user_and_operator(monkeypatch):
-    called = {}
-
-    def fake_chat(user_id, chat_id, operator_id):
-        called.update(user_id=user_id, chat_id=chat_id, operator_id=operator_id)
-        return {
-            "id": chat_id,
-            "messages": [{"role": "user", "content": "你好"}],
-            "turns": [{"trace_id": "trace-1", "steps": [{"type": "tool_call", "name": "match"}]}],
-        }
-
-    monkeypatch.setattr(admin_users_mod, "get_user_chat", fake_chat)
-    data = asyncio.run(admin_users_mod.admin_user_chat(7, 88, ADMIN))
-    assert called == {"user_id": 7, "chat_id": 88, "operator_id": 9}
-    assert data["messages"][0]["content"] == "你好"
-    assert data["turns"][0]["steps"][0]["name"] == "match"
-
-
-def test_admin_chat_returns_404_when_not_owned_by_user(monkeypatch):
-    monkeypatch.setattr(admin_users_mod, "get_user_chat", lambda *_args: None)
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(admin_users_mod.admin_user_chat(7, 99, ADMIN))
-    assert exc.value.status_code == 404
-
-
-def test_legacy_admin_chat_no_longer_reads_local_trace_files(monkeypatch):
-    class Conn:
-        def execute(self, _sql, _params=()):
-            return None
-
-    @contextmanager
-    def fake_session(admin=False):
-        assert admin is True
-        yield Conn()
-
-    monkeypatch.setattr(admin_users_repo, "db_session", fake_session)
-    monkeypatch.setattr(
-        admin_users_repo,
-        "fetchone",
-        lambda _conn, _sql, _params: {
-            "id": 88,
-            "user_id": 7,
-            "session_id": "session-unique-id",
-            "messages_json": '[{"role":"user","content":"你好"}]',
-            "candidates_json": "[]",
-            "state_json": "{}",
-        },
-    )
-    row = admin_users_repo.get_user_chat(7, 88, 9)
-
-    assert row["turns"] == []

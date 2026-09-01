@@ -135,16 +135,11 @@ def test_page_cursor_does_not_skip_prefetched_active_candidates(monkeypatch):
 
 
 def test_cross_user_snapshot_is_reported_as_not_found(monkeypatch):
-    class MissingStore:
-        def page(self, *_args, **_kwargs):
-            return None
-
-    monkeypatch.setattr(match, "MatchResultStore", MissingStore)
     monkeypatch.setattr(match, "get_match_run_page", lambda *_args, **_kwargs: None)
     assert match._load_compact_page(99, str(uuid4()), offset=0, limit=20) is None
 
 
-def test_create_match_writes_snapshot_before_cache_and_returns_first_page(monkeypatch):
+def test_create_match_writes_complete_postgres_snapshot_and_returns_first_page(monkeypatch):
     events = []
     refs = [RankedCandidateRef(1, 1, 0.9), RankedCandidateRef(2, 2, 0.8)]
     candidates = [
@@ -176,13 +171,7 @@ def test_create_match_writes_snapshot_before_cache_and_returns_first_page(monkey
         events.append(("postgres", meta.result_set_id, list(saved_refs)))
         return meta
 
-    class Store:
-        def create(self, meta, saved_refs):
-            events.append(("redis", meta.result_set_id, list(saved_refs)))
-            return meta
-
     monkeypatch.setattr(match, "create_match_run", save_snapshot)
-    monkeypatch.setattr(match, "MatchResultStore", Store)
     data = match.execute_match(
         {"schema_version": "1.0", "attributes": {
             "height_cm": {"constraint": "prefer", "weight": 1, "range": {"min": 175}},
@@ -190,8 +179,8 @@ def test_create_match_writes_snapshot_before_cache_and_returns_first_page(monkey
         owner_user_id=4,
         page_size=1,
     )
-    assert [event[0] for event in events] == ["postgres", "redis"]
-    assert events[0][1] == events[1][1] == data["result_set_id"]
+    assert [event[0] for event in events] == ["postgres"]
+    assert events[0][1] == data["result_set_id"]
     assert data["total"] == 2
     assert data["returned_count"] == 1
     assert decode_match_cursor(data["next_cursor"], data["result_set_id"]).offset == 1

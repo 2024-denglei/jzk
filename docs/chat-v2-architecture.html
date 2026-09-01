@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>分支化 AI 对话架构</title>
+  <style>
+    body{margin:0;background:#f5f7fa;color:#223047;font:15px/1.7 system-ui,sans-serif}
+    main{max-width:1080px;margin:auto;padding:40px 24px 64px}h1{margin:0 0 8px;font-size:30px}
+    h2{margin:28px 0 12px;font-size:19px}.muted{color:#718096}.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+    .card{border:1px solid #dce4ee;border-radius:12px;background:#fff;padding:16px;box-shadow:0 4px 14px #1b365d0a}
+    .arrow{text-align:center;color:#168b83;font-weight:700}code{background:#edf2f7;border-radius:5px;padding:2px 5px}
+    ul{padding-left:20px}@media(max-width:760px){.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}}
+  </style>
+</head>
+<body><main>
+  <h1>分支化 AI 对话架构</h1>
+  <div class="muted">PostgreSQL 长期权威数据 · Redis 仅承载实时事件</div>
+  <h2>写入与生成</h2>
+  <div class="flow">
+    <div class="card">客户端<br><code>POST /api/chats/*/turns</code></div><div class="arrow">→</div>
+    <div class="card">消息树<br>Chat / Branch / Message</div><div class="arrow">→</div>
+    <div class="card">持久生成任务<br>Generation Worker</div>
+  </div>
+  <h2>消息、排名与 Trace</h2>
+  <div class="flow">
+    <div class="card"><code>chat_messages</code><br>不可变父链与状态</div><div class="arrow">→</div>
+    <div class="card"><code>match_runs</code><br>快照元数据</div><div class="arrow">→</div>
+    <div class="card"><code>match_run_items</code><br>完整冻结排名</div>
+  </div>
+  <p class="card"><code>ai_generation_runs</code> 保存任务状态，<code>ai_generation_steps</code>
+  保存数据库 Trace；Redis Stream 只推送 token/event，断线后可从 PostgreSQL 恢复。</p>
+  <h2>客户端与管理端加载</h2>
+  <ul>
+    <li>会话列表只加载计数与摘要，使用签名游标分页。</li>
+    <li>打开会话先加载分支拓扑，再沿选中分支 head 的父链分页加载消息。</li>
+    <li>完整排名和 Trace 均按对应 AI 消息或 generation 懒加载。</li>
+    <li>回溯、编辑、重新生成和并发旧头发送均新建分支，原路径永久保留。</li>
+    <li>用户确认后整会话立即硬删除，Outbox 清理关联实时事件。</li>
+  </ul>
+</main></body></html>

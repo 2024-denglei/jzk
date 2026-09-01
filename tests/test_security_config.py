@@ -33,7 +33,6 @@ def test_production_accepts_explicit_secure_values(production):
         ("ADMIN_BOOTSTRAP_PASSWORD", "Admin@ChangeMe1", "管理员引导密码"),
         ("REDIS_URL", "redis://redis.internal:6379/0", "Redis"),
         ("CORS_ORIGINS", ["*"], "CORS_ORIGINS"),
-        ("CHAT_SESSION_STORE", "memory", "CHAT_SESSION_STORE"),
         ("PG_POOL_MIN_SIZE", 0, "PostgreSQL"),
         ("REDIS_MAX_CONNECTIONS", 0, "Redis 连接池"),
     ],

@@ -29,11 +29,6 @@ from dialogue.conversation_cursors import (
     encode_message_cursor,
 )
 from dialogue.match_snapshot_queries import MatchSnapshotNotFound, get_frozen_match_page
-from dialogue.legacy_chat_projection import (
-    project_legacy_branch,
-    project_legacy_messages,
-    project_legacy_summary,
-)
 
 
 class ConversationQueryError(RuntimeError):
@@ -43,8 +38,6 @@ class ConversationQueryError(RuntimeError):
 
 
 def _chat_summary(row: dict[str, Any]) -> ChatSummary:
-    if int(row.get("storage_version") or 1) == 1:
-        return project_legacy_summary(row)
     return ChatSummary.model_validate({
         key: row[key] for key in ChatSummary.model_fields if key in row
     })
@@ -134,14 +127,11 @@ class ConversationQueryService:
             chat = chat_queries_repo.get_chat(conn, user_id, chat_id)
             if chat is None:
                 raise ConversationQueryError(ChatErrorCode.CHAT_NOT_FOUND, "会话不存在")
-            if int(chat.get("storage_version") or 1) == 1:
-                branches = [project_legacy_branch(chat)]
-            else:
-                branches = chat_queries_repo.list_branches(
-                    conn,
-                    chat_id,
-                    UUID(str(chat["active_branch_id"])) if chat.get("active_branch_id") else None,
-                )
+            branches = chat_queries_repo.list_branches(
+                conn,
+                chat_id,
+                UUID(str(chat["active_branch_id"])) if chat.get("active_branch_id") else None,
+            )
         return ConversationTreeView(
             chat=_chat_summary(chat),
             branches=[
@@ -167,43 +157,6 @@ class ConversationQueryService:
             chat = chat_queries_repo.get_chat_path_source(conn, user_id, chat_id)
             if chat is None:
                 raise ConversationQueryError(ChatErrorCode.CHAT_NOT_FOUND, "会话不存在")
-            if int(chat.get("storage_version") or 1) == 1:
-                expected_branch_id = project_legacy_branch(chat).id
-                if branch_id != expected_branch_id:
-                    raise ConversationQueryError(ChatErrorCode.BRANCH_NOT_FOUND, "分支不存在")
-                messages = project_legacy_messages(chat)
-                start_index = len(messages) - 1
-                if before:
-                    try:
-                        start_id = decode_message_cursor(before, user_id, chat_id, branch_id)
-                    except InvalidConversationCursor as exc:
-                        raise ConversationQueryError(
-                            ChatErrorCode.INVALID_MESSAGE_CURSOR, str(exc)
-                        ) from exc
-                    start_index = next(
-                        (index for index, message in enumerate(messages) if message.id == start_id),
-                        -1,
-                    )
-                    if start_index < 0:
-                        raise ConversationQueryError(
-                            ChatErrorCode.INVALID_MESSAGE_CURSOR,
-                            "消息游标不属于当前分支路径",
-                        )
-                descending = list(reversed(messages[: start_index + 1]))
-                has_more = len(descending) > page_size
-                next_before = (
-                    encode_message_cursor(
-                        user_id, chat_id, branch_id, descending[page_size].id
-                    )
-                    if has_more else None
-                )
-                return MessagePathPage(
-                    chat_id=chat_id,
-                    branch_id=branch_id,
-                    items=list(reversed(descending[:page_size])),
-                    next_before=next_before,
-                    has_more=has_more,
-                )
             branch = chat_queries_repo.get_branch_for_user(conn, user_id, chat_id, branch_id)
             if branch is None:
                 raise ConversationQueryError(ChatErrorCode.BRANCH_NOT_FOUND, "分支不存在")

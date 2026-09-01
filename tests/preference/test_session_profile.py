@@ -18,7 +18,7 @@ def test_checkpoint_includes_profile():
     assert s.preference_profile["attributes"] == {}
 
 
-def test_checkpoint_and_storage_restore_match_result_reference():
+def test_checkpoint_restores_match_result_reference():
     s = SessionContext(owner_user_id=1)
     s.match_result_id = "11111111-1111-1111-1111-111111111111"
     s.match_total = 4303
@@ -28,8 +28,4 @@ def test_checkpoint_and_storage_restore_match_result_reference():
     s.restore_checkpoint(cp)
     assert (s.match_result_id, s.match_total, s.match_next_cursor) == (
         "11111111-1111-1111-1111-111111111111", 4303, "cursor-2"
-    )
-    loaded = SessionContext.from_storage_dict(s.to_storage_dict())
-    assert (loaded.match_result_id, loaded.match_total, loaded.match_next_cursor) == (
-        s.match_result_id, 4303, "cursor-2"
     )

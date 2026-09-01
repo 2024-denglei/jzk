@@ -30,9 +30,7 @@ def list_chats(
                c.branch_count, c.message_count,
                c.created_at, c.updated_at, b.name AS active_branch_name,
                left(COALESCE(NULLIF(head.content, ''), parent.content, ''), 120)
-                 AS last_message_preview,
-               CASE WHEN c.storage_version = 1 THEN c.messages_json END
-                 AS legacy_messages_json
+                 AS last_message_preview
         FROM app.chats c
         LEFT JOIN app.chat_branches b
           ON b.chat_id = c.id AND b.id = c.active_branch_id
@@ -57,11 +55,7 @@ def get_chat(conn, user_id: int, chat_id: int) -> dict[str, Any] | None:
                c.branch_count, c.message_count,
                c.created_at, c.updated_at, b.name AS active_branch_name,
                left(COALESCE(NULLIF(head.content, ''), parent.content, ''), 120)
-                 AS last_message_preview,
-               CASE WHEN c.storage_version = 1 THEN c.messages_json END
-                 AS legacy_messages_json,
-               CASE WHEN c.storage_version = 1 THEN c.state_json END
-                 AS legacy_state_json
+                 AS last_message_preview
         FROM app.chats c
         LEFT JOIN app.chat_branches b
           ON b.chat_id = c.id AND b.id = c.active_branch_id
@@ -76,15 +70,11 @@ def get_chat(conn, user_id: int, chat_id: int) -> dict[str, Any] | None:
 
 
 def get_chat_path_source(conn, user_id: int, chat_id: int) -> dict[str, Any] | None:
-    """消息翻页只读取版本路由所需字段；V2 不加载旧 JSON 或摘要 join。"""
+    """消息翻页只读取归属校验所需字段，避免摘要 join。"""
     return fetchone(
         conn,
         """
-        SELECT c.id, c.title, c.storage_version, c.created_at, c.updated_at,
-               CASE WHEN c.storage_version = 1 THEN c.messages_json END
-                 AS legacy_messages_json,
-               CASE WHEN c.storage_version = 1 THEN c.state_json END
-                 AS legacy_state_json
+        SELECT c.id, c.title, c.storage_version, c.created_at, c.updated_at
         FROM app.chats c
         WHERE c.id = %s AND c.user_id = %s
         """,

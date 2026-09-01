@@ -1,6 +1,5 @@
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-import json
 from uuid import uuid4
 
 import pytest
@@ -158,66 +157,6 @@ def test_message_path_maps_cursor_errors_to_stable_domain_code(monkeypatch):
     with pytest.raises(ConversationQueryError) as exc_info:
         ConversationQueryService().get_message_path(5, 10, branch_id, before="invalid")
     assert exc_info.value.code == ChatErrorCode.INVALID_MESSAGE_CURSOR
-
-
-def test_v1_chat_is_projected_to_the_same_tree_and_paginated_message_dto(monkeypatch):
-    now = datetime.now(timezone.utc)
-    row = {
-        "id": 44,
-        "title": "旧会话",
-        "storage_version": 1,
-        "active_branch_id": None,
-        "branch_count": 0,
-        "message_count": 0,
-        "active_branch_name": None,
-        "last_message_preview": "",
-        "legacy_messages_json": json.dumps([
-            {"role": "user", "content": "第一条"},
-            {"role": "bot", "content": "第二条"},
-            {"role": "user", "content": "第三条"},
-        ], ensure_ascii=False),
-        "legacy_state_json": "{}",
-        "created_at": now,
-        "updated_at": now,
-    }
-
-    @contextmanager
-    def fake_session(admin=False):
-        yield object()
-
-    monkeypatch.setattr(conversation_queries, "db_session", fake_session)
-    monkeypatch.setattr(
-        conversation_queries.chat_queries_repo,
-        "get_chat",
-        lambda *_args: row,
-    )
-    monkeypatch.setattr(
-        conversation_queries.chat_queries_repo,
-        "get_chat_path_source",
-        lambda *_args: row,
-    )
-    monkeypatch.setattr(
-        conversation_queries.chat_queries_repo,
-        "list_branches",
-        lambda *_args: pytest.fail("V1 不应查询关系分支表"),
-    )
-
-    service = ConversationQueryService()
-    tree = service.get_conversation(7, 44)
-    assert tree.chat.storage_version == 1
-    assert tree.chat.message_count == 3 and tree.chat.branch_count == 1
-    assert tree.chat.last_message_preview == "第三条"
-    assert len(tree.branches) == 1 and tree.branches[0].head_message_id
-
-    first = service.get_message_path(7, 44, tree.branches[0].id, limit=2)
-    assert [item.depth for item in first.items] == [1, 2]
-    assert first.items[0].role == "assistant"
-    assert first.has_more and first.next_before
-    second = service.get_message_path(
-        7, 44, tree.branches[0].id, before=first.next_before, limit=2
-    )
-    assert [item.depth for item in second.items] == [0]
-    assert not second.has_more
 
 
 def test_message_match_results_are_scoped_by_message_and_shared_with_admin(monkeypatch):

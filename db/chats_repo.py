@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from uuid import UUID
 
@@ -26,16 +25,16 @@ def find_turn_by_request(conn, user_id: int, request_id: UUID) -> dict[str, Any]
     )
 
 
-def create_chat(conn, user_id: int, *, title: str, legacy_session_id: str) -> int:
+def create_chat(conn, user_id: int, *, title: str) -> int:
     row = fetchone(
         conn,
         """
         INSERT INTO app.chats
-            (user_id, session_id, title, storage_version, branch_count, message_count)
-        VALUES (%s, %s, %s, 2, 0, 0)
+            (user_id, title, storage_version, branch_count, message_count)
+        VALUES (%s, %s, 2, 0, 0)
         RETURNING id
         """,
-        (user_id, legacy_session_id, title),
+        (user_id, title),
     )
     assert row is not None
     return int(row["id"])
@@ -46,7 +45,7 @@ def lock_chat(conn, user_id: int, chat_id: int) -> dict[str, Any] | None:
         conn,
         """
         SELECT id, user_id, title, active_branch_id, branch_count, message_count,
-               storage_version, messages_json
+               storage_version
         FROM app.chats
         WHERE id = %s AND user_id = %s
         FOR UPDATE
@@ -361,28 +360,17 @@ def hard_delete_chat(
         chat = lock_chat(conn, user_id, chat_id)
         if chat is None:
             return None
-        if int(chat.get("storage_version") or 1) == 1:
-            try:
-                legacy_messages = json.loads(chat.get("messages_json") or "[]")
-            except (TypeError, ValueError):
-                legacy_messages = []
-            counts = {
-                "branches": 1,
-                "messages": len(legacy_messages) if isinstance(legacy_messages, list) else 0,
-                "matches": 0,
-            }
-        else:
-            counts = fetchone(
-                conn,
-                """
-                SELECT
-                  (SELECT COUNT(*) FROM app.chat_branches WHERE chat_id = %s) AS branches,
-                  (SELECT COUNT(*) FROM app.chat_messages WHERE chat_id = %s) AS messages,
-                  (SELECT COUNT(DISTINCT match_run_id) FROM app.chat_messages
-                   WHERE chat_id = %s AND match_run_id IS NOT NULL) AS matches
-                """,
-                (chat_id, chat_id, chat_id),
-            ) or {}
+        counts = fetchone(
+            conn,
+            """
+            SELECT
+              (SELECT COUNT(*) FROM app.chat_branches WHERE chat_id = %s) AS branches,
+              (SELECT COUNT(*) FROM app.chat_messages WHERE chat_id = %s) AS messages,
+              (SELECT COUNT(DISTINCT match_run_id) FROM app.chat_messages
+               WHERE chat_id = %s AND match_run_id IS NOT NULL) AS matches
+            """,
+            (chat_id, chat_id, chat_id),
+        ) or {}
         match_rows = fetchall(
             conn,
             "SELECT DISTINCT match_run_id FROM app.chat_messages WHERE chat_id = %s AND match_run_id IS NOT NULL",

@@ -11,6 +11,7 @@ MIGRATION_12 = ROOT / "db" / "postgres" / "12_add_match_run_items.sql"
 MIGRATION_13 = ROOT / "db" / "postgres" / "13_harden_branching_chat_storage.sql"
 MIGRATION_14 = ROOT / "db" / "postgres" / "14_enforce_chat_match_snapshot.sql"
 MIGRATION_15 = ROOT / "db" / "postgres" / "15_harden_generation_runs.sql"
+MIGRATION_16 = ROOT / "db" / "postgres" / "16_drop_legacy_chat_storage.sql"
 
 
 def test_branching_chat_migration_declares_core_tables_and_constraints():
@@ -30,13 +31,23 @@ def test_branching_chat_migration_declares_core_tables_and_constraints():
     assert "idx_chats_user_updated_id" in sql
 
 
-def test_match_item_migration_keeps_legacy_arrays_and_adds_versioned_items():
+def test_match_item_migration_adds_versioned_items_before_final_cleanup():
     sql = MIGRATION_12.read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS app.match_run_items" in sql
     assert "snapshot_schema_version" in sql
     assert "snapshot_source" in sql
     assert "legacy_backfill" in sql
     assert "DROP COLUMN" not in sql
+
+
+def test_final_cleanup_drops_legacy_chat_json_and_match_arrays_with_guards():
+    sql = MIGRATION_16.read_text(encoding="utf-8")
+    for column in ("session_id", "messages_json", "candidates_json", "state_json"):
+        assert f"DROP COLUMN IF EXISTS {column}" in sql
+    for column in ("donor_ids", "scores"):
+        assert f"DROP COLUMN IF EXISTS {column}" in sql
+    assert "storage_version <> 2" in sql
+    assert "ready snapshots are incomplete" in sql
 
 
 def test_hardening_migration_allows_first_message_edit_and_protects_messages():
@@ -86,11 +97,12 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
 
     pg.ensure_schema()
 
-    assert called[-6:] == [
+    assert called[-7:] == [
         "10_add_match_runs.sql",
         "11_add_branching_chat_storage.sql",
         "12_add_match_run_items.sql",
         "13_harden_branching_chat_storage.sql",
         "14_enforce_chat_match_snapshot.sql",
         "15_harden_generation_runs.sql",
+        "16_drop_legacy_chat_storage.sql",
     ]

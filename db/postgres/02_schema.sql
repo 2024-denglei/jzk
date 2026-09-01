@@ -159,16 +159,11 @@ CREATE TABLE IF NOT EXISTS app.preferences (
 CREATE TABLE IF NOT EXISTS app.chats (
     id              BIGSERIAL PRIMARY KEY,
     user_id         BIGINT NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-    session_id      TEXT NOT NULL,
     title           TEXT NOT NULL DEFAULT '对话',
-    messages_json   TEXT NOT NULL DEFAULT '[]',
-    candidates_json TEXT NOT NULL DEFAULT '[]',
-    state_json      TEXT NOT NULL DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_user_session ON app.chats (user_id, session_id);
 CREATE INDEX IF NOT EXISTS idx_chats_user ON app.chats (user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_favorites_user ON app.favorites (user_id);
 CREATE INDEX IF NOT EXISTS idx_history_user ON app.history (user_id);

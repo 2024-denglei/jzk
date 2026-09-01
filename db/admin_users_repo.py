@@ -178,45 +178,6 @@ def list_user_history(user_id: int, kind: str | None = None, page: int = 1, page
     return rows, int((total or {}).get("c") or 0), page, page_size
 
 
-def list_user_chats(user_id: int, page: int = 1, page_size: int = 20):
-    page, page_size, offset = _page_args(page, page_size)
-    with db_session(admin=True) as conn:
-        total = fetchone(conn, "SELECT COUNT(*) AS c FROM app.chats WHERE user_id = %s", (user_id,))
-        rows = fetchall(
-            conn,
-            """
-            SELECT id, session_id, title, messages_json, created_at, updated_at
-            FROM app.chats WHERE user_id = %s
-            ORDER BY updated_at DESC
-            LIMIT %s OFFSET %s
-            """,
-            (user_id, page_size, offset),
-        )
-    for row in rows:
-        row["message_count"] = len(_loads(row.pop("messages_json", None), []))
-    return rows, int((total or {}).get("c") or 0), page, page_size
-
-
-def get_user_chat(user_id: int, chat_id: int, operator_id: int) -> dict[str, Any] | None:
-    with db_session(admin=True) as conn:
-        row = fetchone(conn, "SELECT * FROM app.chats WHERE id = %s AND user_id = %s", (chat_id, user_id))
-        if not row:
-            return None
-        conn.execute(
-            """
-            INSERT INTO admin.user_audit_logs (user_id, action, operator_id, reason)
-            VALUES (%s, 'view_chat', %s, %s)
-            """,
-            (user_id, operator_id, f"查看会话 {chat_id}"),
-        )
-    row["messages"] = _loads(row.pop("messages_json", None), [])
-    row["candidates"] = _loads(row.pop("candidates_json", None), [])
-    row["state"] = _loads(row.pop("state_json", None), {})
-    # 本地 JSON Trace 已停用；V2 管理端只通过 generation_steps 读取数据库 Trace。
-    row["turns"] = []
-    return row
-
-
 def control_user(
     user_id: int,
     action: str,

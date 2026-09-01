@@ -185,10 +185,10 @@ def test_message_rejects_building_or_cross_owner_snapshot(snapshot_subject):
                 """
                 INSERT INTO app.match_runs (
                     id, user_id, profile_json, profile_hash, model_version,
-                    dataset_version, total, donor_ids, scores, status,
+                    dataset_version, total, status,
                     snapshot_schema_version, snapshot_source, ready_at
                 ) VALUES (%s, %s, '{}'::jsonb, 'h', 'v2', 'd', 0,
-                          ARRAY[]::bigint[], ARRAY[]::real[], %s, 1, 'native',
+                          %s, 1, 'native',
                           CASE WHEN %s = 'ready' THEN now() ELSE NULL END)
                 """,
                 (match_id, owner, status, status),

@@ -41,8 +41,9 @@ def test_cursor_membership_walk_stops_at_target_depth():
     assert "child.id <> target.id" in conn.sql
 
 
-def test_path_version_route_avoids_summary_joins_and_v2_legacy_json_load():
+def test_path_source_avoids_summary_joins_and_legacy_json_columns():
     conn = _Conn(_Result(row=None))
     chat_queries_repo.get_chat_path_source(conn, 7, 9)
     assert "JOIN app.chat_messages" not in conn.sql
-    assert "CASE WHEN c.storage_version = 1 THEN c.messages_json" in conn.sql
+    assert "messages_json" not in conn.sql
+    assert "state_json" not in conn.sql
