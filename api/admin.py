@@ -36,6 +36,7 @@ from db.donors_repo import (
     set_donor_status,
     upsert_donor,
 )
+from db.pg import db_session
 from password_policy import validate_password_strength
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])

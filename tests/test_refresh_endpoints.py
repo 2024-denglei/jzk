@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import pytest
 from fastapi import HTTPException, Request, Response
 
+from api import admin as admin_api
 from api import auth as auth_api
 from api.refresh_sessions import RefreshSession
 
@@ -17,6 +18,15 @@ USER = {
     "token_version": 3,
     "created_at": "2026-08-31T00:00:00Z",
     "last_login_at": None,
+}
+
+ADMIN = {
+    "id": 7,
+    "username": "operator",
+    "display_name": "运营员",
+    "role": "super_admin",
+    "is_active": True,
+    "token_version": 4,
 }
 
 
@@ -107,3 +117,33 @@ def test_refresh_rejects_token_version_mismatch(monkeypatch):
         )
     assert exc.value.status_code == 401
     assert ("user", 42) in store.revoked
+
+
+def test_admin_refresh_reads_admin_account_and_rotates_cookie(monkeypatch):
+    store = _RefreshStore()
+    store.session = RefreshSession(7, "admin", 4, "admin-family")
+
+    @contextmanager
+    def admin_db_session(*, admin=False):
+        assert admin is True
+
+        class AdminConnection:
+            def execute(self, _sql, _params=()):
+                return type("Cursor", (), {"fetchone": lambda self: ADMIN})()
+
+        yield AdminConnection()
+
+    monkeypatch.setattr(admin_api, "refresh_sessions", store)
+    monkeypatch.setattr(admin_api, "db_session", admin_db_session)
+    response = Response()
+
+    data = asyncio.run(
+        admin_api.admin_refresh(
+            _request_with_cookie(admin_api.config.ADMIN_REFRESH_COOKIE_NAME, "old-refresh"),
+            response,
+        )
+    )
+
+    assert store.rotated is True
+    assert data["admin"]["id"] == ADMIN["id"]
+    assert "new-refresh" in response.headers["set-cookie"].lower()

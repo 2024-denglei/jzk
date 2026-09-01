@@ -91,6 +91,19 @@ export function messagesForSelectedBranch(state: ChatClientState): ChatMessageNo
     .filter((message): message is ChatMessageNode => Boolean(message))
 }
 
+export type CandidateSyncAction =
+  | { kind: 'preserve' }
+  | { kind: 'clear' }
+  | { kind: 'load'; message: ChatMessageNode }
+
+export function candidateSyncAction(messages: ChatMessageNode[]): CandidateSyncAction {
+  // 新 Turn 刚创建时只有 generating 占位消息，完整快照尚未关联。
+  // 此时保留中间候选区，避免先清空一次、生成完成后又刷新一次。
+  if (messages.some((message) => message.status === 'generating')) return { kind: 'preserve' }
+  const latestMatch = [...messages].reverse().find((message) => message.match_run)
+  return latestMatch ? { kind: 'load', message: latestMatch } : { kind: 'clear' }
+}
+
 export function branchChildren(branches: ChatBranchSummary[]): Map<string | null, ChatBranchSummary[]> {
   const children = new Map<string | null, ChatBranchSummary[]>()
   for (const branch of branches) {

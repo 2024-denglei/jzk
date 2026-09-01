@@ -6,7 +6,7 @@ import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } fro
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
 import { buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
-import { createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, selectConversation } from './chatState'
+import { candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, selectConversation } from './chatState'
 import { followGeneration, type GenerationEvent } from './generationStream'
 
 const SUGGESTIONS = ['硕士，身高 175 以上', 'O 型血，体型一般', '本科以上，标本充足']
@@ -75,6 +75,7 @@ export function BranchingChatPanel({
   const [recording, setRecording] = useState(false)
   const [ttsOn, setTtsOn] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<ReturnType<typeof createSpeechRecognizer>>(null)
   const generationAbortRef = useRef<AbortController | null>(null)
   const loadedLocationRef = useRef('')
@@ -120,6 +121,8 @@ export function BranchingChatPanel({
   async function loadConversation(chatId: number, requestedBranchId?: string | null, notify = true) {
     setLoadingConversation(true)
     setError('')
+    setPendingAction(null)
+    setNotice('')
     try {
       const nextTree = await chatApi.tree(chatId)
       const selected = nextTree.branches.find((branch) => branch.id === requestedBranchId)
@@ -133,9 +136,9 @@ export function BranchingChatPanel({
       })
       loadedLocationRef.current = `${chatId}:${selected.id}`
       if (notify) changeLocationRef.current?.(chatId, selected.id)
-      const latest = [...page.items].reverse().find((message) => message.match_run)
-      if (latest) await loadMatch(latest)
-      else publishCandidates()
+      const candidateAction = candidateSyncAction(page.items)
+      if (candidateAction.kind === 'load') await loadMatch(candidateAction.message)
+      else if (candidateAction.kind === 'clear') publishCandidates()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '无法加载历史对话')
     } finally {
@@ -237,6 +240,7 @@ export function BranchingChatPanel({
     setPendingAction(null)
     setInput('')
     setError('')
+    setNotice('')
     setHistoryOpen(false)
     loadedLocationRef.current = ''
     publishCandidates()
@@ -296,13 +300,25 @@ export function BranchingChatPanel({
 
   function prepareRewind(message: ChatMessageNode) {
     setPendingAction({ action: 'rewind_continue', parentMessageId: message.id,
-      label: `将从“${message.content.slice(0, 24) || '此消息'}”创建新分支，原分支完整保留` })
+      label: `待创建：从“${message.content.slice(0, 24) || '此消息'}”继续，发送新消息后创建分支` })
+    setInput('')
+    setBranchesOpen(true)
+    setNotice('已选择回溯点。请输入新消息并发送，原分支会完整保留。')
+    window.requestAnimationFrame(() => inputRef.current?.focus())
   }
 
   function prepareEdit(message: ChatMessageNode) {
     setPendingAction({ action: 'edit_resend', parentMessageId: message.parent_message_id,
-      derivedFromMessageId: message.id, label: '编辑重发会创建新分支，原消息和后续对话完整保留' })
+      derivedFromMessageId: message.id, label: '待创建：发送编辑后的消息后创建新分支，原路径完整保留' })
     setInput(message.content)
+    setBranchesOpen(true)
+    setNotice('请修改消息并发送，发送成功后新分支会显示在树中。')
+    window.requestAnimationFrame(() => inputRef.current?.focus())
+  }
+
+  function cancelPendingAction() {
+    setPendingAction(null)
+    setNotice('')
   }
 
   async function renameBranch(branch: ChatBranchSummary) {
@@ -402,6 +418,10 @@ export function BranchingChatPanel({
         <button type="button" title="重命名分支" onClick={() => void renameBranch(branch)} className="p-1 text-ink-soft/30 opacity-0 group-hover/branch:opacity-100"><i className="ri-edit-line text-xs" /></button>
         {!branch.is_active && <button type="button" title={branch.is_archived ? '恢复分支' : '归档分支'} onClick={() => void toggleBranchArchive(branch)} className="p-1 text-ink-soft/30 opacity-0 group-hover/branch:opacity-100"><i className={`${branch.is_archived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'} text-xs`} /></button>}
       </div>)}
+      {pendingAction && <div className="mt-1 flex items-center gap-1 rounded-lg border border-dashed border-teal/30 bg-mist/40 px-2 py-1.5 text-teal-deep">
+        <span className="text-ink-soft/30">└</span>
+        <div className="min-w-0"><div className="truncate text-[11px] font-medium">待创建分支</div><div className="text-[9px] opacity-65">发送下方消息后写入分支树</div></div>
+      </div>}
     </section>}
 
     <main className="scroll-y min-h-0 flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-sand/80 to-sand/30 px-3.5 py-3.5">
@@ -429,12 +449,12 @@ export function BranchingChatPanel({
 
     <footer className="shrink-0 border-t border-line/70 bg-white p-3">
       {(error || notice) && <div className={`mb-2 rounded-lg px-2 py-1.5 text-[10px] ${error ? 'bg-rose-50 text-rose-700' : 'bg-mist text-teal-deep'}`}>{error || notice}</div>}
-      {pendingAction && <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-teal/20 bg-mist/50 px-2.5 py-2 text-[10px] text-teal-deep"><span>{pendingAction.label}</span><button type="button" onClick={() => setPendingAction(null)}>取消</button></div>}
+      {pendingAction && <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-teal/20 bg-mist/50 px-2.5 py-2 text-[10px] text-teal-deep"><span>{pendingAction.label}</span><button type="button" onClick={cancelPendingAction}>取消</button></div>}
       <div className="flex items-end gap-2 rounded-xl border border-line/80 bg-sand/50 px-2 py-1.5 focus-within:border-teal/40">
-        <textarea value={input} disabled={selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction ? '输入新分支的消息…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
+        <textarea ref={inputRef} value={input} disabled={selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction ? '输入消息，发送后创建新分支…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
         <button type="button" title={ttsOn ? '关闭语音播报' : '开启语音播报'} onClick={() => { if (ttsOn) stopSpeaking(); setTtsOn((value) => !value) }} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg ${ttsOn ? 'bg-mist text-teal-deep' : 'text-ink-soft/45'}`}><i className={ttsOn ? 'ri-volume-up-line' : 'ri-volume-mute-line'} /></button>
         <button type="button" title="语音输入" disabled={sending} onClick={toggleVoice} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg disabled:opacity-40 ${recording ? 'bg-red-100 text-red-500' : 'bg-mist text-ink-soft/70'}`}><i className={recording ? 'ri-mic-fill' : 'ri-mic-line'} /></button>
-        <button type="button" disabled={!sending && !input.trim()} onClick={() => void send()} title={sending ? '停止生成' : '发送'} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-white disabled:opacity-40 ${sending ? 'bg-red-500' : 'bg-teal-deep'}`}><i className={sending ? 'ri-stop-fill' : 'ri-arrow-up-line'} /></button>
+        <button type="button" disabled={!sending && !input.trim()} onClick={() => void send()} title={sending ? '停止生成' : pendingAction ? '发送并创建分支' : '发送'} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-white disabled:opacity-40 ${sending ? 'bg-red-500' : 'bg-teal-deep'}`}><i className={sending ? 'ri-stop-fill' : 'ri-arrow-up-line'} /></button>
       </div>
     </footer>
   </aside>

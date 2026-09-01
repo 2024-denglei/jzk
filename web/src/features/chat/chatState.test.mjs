@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   branchChildren,
+  candidateSyncAction,
   createChatClientState,
   mergeMessagePage,
   messagesForSelectedBranch,
@@ -41,6 +42,18 @@ const message = (id, depth, parent = null) => ({
   match_run: null,
   created_at: '2026-01-01',
   completed_at: '2026-01-01',
+})
+
+test('生成中保留当前候选，完成后才加载最新完整快照', () => {
+  const previous = { ...message('m1', 1), match_run: { total: 20 } }
+  const generating = { ...message('m3', 3, 'm2'), status: 'generating' }
+  assert.deepEqual(candidateSyncAction([previous, generating]), { kind: 'preserve' })
+
+  const completed = { ...generating, status: 'completed', match_run: { total: 359 } }
+  const action = candidateSyncAction([previous, completed])
+  assert.equal(action.kind, 'load')
+  assert.equal(action.message.id, 'm3')
+  assert.deepEqual(candidateSyncAction([message('m0', 0)]), { kind: 'clear' })
 })
 
 test('分支路径复用公共祖先且向上分页不产生重复消息', () => {

@@ -448,7 +448,10 @@ export function DonorsPage() {
             : MODE_META.chat.blurb,
         )
         setLoading(false)
-        flashList('chat', '已根据对话更新中间结果')
+        // 对话快照就绪时只更新候选数据，不强制重挂整个卡片网格。
+        // 这样已有卡片会原位更新，不再产生一次类似整页刷新的动画。
+        setMode('chat')
+        setSyncToast('已根据对话更新中间结果')
         setMobileChat(false)
       })
       if (showingDetail) navigate('/donors')
