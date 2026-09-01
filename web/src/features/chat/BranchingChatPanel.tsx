@@ -4,9 +4,10 @@ import { ChatMatchCards } from '../../components/ChatMatchCards'
 import { useAuth } from '../../context/AuthContext'
 import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } from '../../lib/speech'
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
-import { buildBranchWorkspacePath, buildTurnCommand, type PendingChatAction } from './chatActions'
+import { buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
 import { candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
+import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
 import { followGeneration, type GenerationEvent } from './generationStream'
 
 const SUGGESTIONS = ['硕士，身高 175 以上', 'O 型血，体型一般', '本科以上，标本充足']
@@ -23,7 +24,6 @@ type Props = {
   onSeedConsumed?: () => void
   resumeChatId?: number | null
   resumeBranchId?: string | null
-  resumeForkFromMessageId?: string | null
   onConversationChange?: (chatId: number | null, branchId: string | null) => void
   drawer?: boolean
   onClose?: () => void
@@ -54,13 +54,15 @@ function isAbortError(error: unknown) {
 
 export function BranchingChatPanel({
   onCandidates, seedMessage, onSeedConsumed, resumeChatId, resumeBranchId,
-  resumeForkFromMessageId, onConversationChange, drawer = false, onClose, className = '',
+  onConversationChange, drawer = false, onClose, className = '',
 }: Props) {
   const { user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [chatState, setChatState] = useState(createChatClientState)
-  const [input, setInput] = useState('')
+  const [workspaceTabs, setWorkspaceTabs] = useState<WorkspaceTab[]>([])
+  const [activeTabKey, setActiveTabKey] = useState('new')
+  const [inputsByTab, setInputsByTab] = useState<Record<string, string>>({ new: '' })
   const [loadingConversation, setLoadingConversation] = useState(false)
   const [sending, setSending] = useState(false)
   const [notice, setNotice] = useState('')
@@ -71,7 +73,6 @@ export function BranchingChatPanel({
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
   const [historyHasMore, setHistoryHasMore] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [pendingAction, setPendingAction] = useState<PendingChatAction | null>(null)
   const [matchesByMessage, setMatchesByMessage] = useState<Record<string, MatchResultDescriptor>>({})
   const [matchLoadingId, setMatchLoadingId] = useState<string | null>(null)
   const [recording, setRecording] = useState(false)
@@ -81,10 +82,10 @@ export function BranchingChatPanel({
   const recognitionRef = useRef<ReturnType<typeof createSpeechRecognizer>>(null)
   const generationAbortRef = useRef<AbortController | null>(null)
   const loadedLocationRef = useRef('')
-  const initializedForkRef = useRef('')
+  const workspaceChatIdRef = useRef<number | null>(null)
   const ttsOnRef = useRef(ttsOn)
   const changeLocationRef = useRef(onConversationChange)
-  const loadRef = useRef<((chatId: number, branchId?: string | null, notify?: boolean) => Promise<void>) | null>(null)
+  const loadRef = useRef<((chatId: number, branchId?: string | null, notify?: boolean, tabKey?: string) => Promise<void>) | null>(null)
   const loadOlderRef = useRef<(() => Promise<void>) | null>(null)
 
   changeLocationRef.current = onConversationChange
@@ -92,6 +93,9 @@ export function BranchingChatPanel({
   const tree = chatState.tree
   const currentChatId = tree?.chat.id || null
   const selectedBranch = tree?.branches.find((branch) => branch.id === chatState.selectedBranchId) || null
+  const activeTab = workspaceTabs.find((tab) => tab.key === activeTabKey) || null
+  const pendingAction = activeTab?.pendingAction || null
+  const input = inputsByTab[activeTabKey] || ''
   const messages = useMemo(() => messagesForSelectedBranch(chatState), [chatState])
   const messagePreview = useMemo(
     () => pendingAction
@@ -102,6 +106,16 @@ export function BranchingChatPanel({
   const visibleMessages = messagePreview.items
   const selectedPath = chatState.selectedBranchId ? chatState.pathsByBranch[chatState.selectedBranchId] : undefined
   const generatingMessage = [...messages].reverse().find((message) => message.status === 'generating' && message.generation_id)
+
+  function setInput(value: string) {
+    setInputsByTab((current) => ({ ...current, [activeTabKey]: value }))
+  }
+
+  function setPendingAction(value: PendingChatAction | null) {
+    setWorkspaceTabs((current) => current.map((tab) => tab.key === activeTabKey
+      ? { ...tab, pendingAction: value || undefined }
+      : tab))
+  }
 
   function publishCandidates(result?: MatchResultDescriptor) {
     startTransition(() => onCandidates(result?.items || [], result))
@@ -129,10 +143,9 @@ export function BranchingChatPanel({
     }
   }
 
-  async function loadConversation(chatId: number, requestedBranchId?: string | null, notify = true) {
+  async function loadConversation(chatId: number, requestedBranchId?: string | null, notify = true, tabKey?: string) {
     setLoadingConversation(true)
     setError('')
-    setPendingAction(null)
     setNotice('')
     try {
       const nextTree = await chatApi.tree(chatId)
@@ -141,6 +154,30 @@ export function BranchingChatPanel({
         || nextTree.branches.find((branch) => !branch.is_archived) || nextTree.branches[0]
       if (!selected) throw new Error('该会话没有可加载的分支')
       const page = await chatApi.messages(chatId, selected.id)
+      const targetTabKey = tabKey || selected.id
+      if (workspaceChatIdRef.current !== chatId) {
+        const rootBranch = nextTree.branches.find((branch) => branch.fork_reason === 'root') || selected
+        const initialTabs = [rootBranch, ...(selected.id === rootBranch.id ? [] : [selected])]
+        workspaceChatIdRef.current = chatId
+        setWorkspaceTabs(initialTabs.map((branch) => ({
+          key: branch.id,
+          branchId: branch.id,
+          name: branch.name,
+          closable: branch.fork_reason !== 'root',
+        })))
+        setInputsByTab(Object.fromEntries(initialTabs.map((branch) => [branch.id, ''])))
+        setActiveTabKey(selected.id)
+      } else {
+        setWorkspaceTabs((current) => {
+          if (current.some((tab) => tab.key === targetTabKey)) {
+            return current.map((tab) => tab.key === targetTabKey && targetTabKey === selected.id
+              ? { ...tab, name: selected.name }
+              : tab)
+          }
+          return [...current, { key: selected.id, branchId: selected.id, name: selected.name, closable: selected.fork_reason !== 'root' }]
+        })
+        setActiveTabKey(targetTabKey)
+      }
       setChatState((current) => {
         const base = current.tree?.chat.id === chatId ? current : createChatClientState()
         return mergeMessagePage(selectConversation(base, nextTree, selected.id), page)
@@ -231,31 +268,6 @@ export function BranchingChatPanel({
     return () => controller.abort()
   }, [generatingMessage?.generation_id, generatingMessage?.id, currentChatId, selectedBranch?.id])
 
-  useEffect(() => {
-    if (!resumeForkFromMessageId || !currentChatId || !selectedBranch) return
-    const key = `${currentChatId}:${selectedBranch.id}:${resumeForkFromMessageId}`
-    if (initializedForkRef.current === key) return
-    const source = messages.find((message) => message.id === resumeForkFromMessageId)
-    if (!source) {
-      if (selectedPath?.hasMore && selectedPath.nextBefore && !loadingConversation) {
-        void loadOlderRef.current?.()
-      } else if (!selectedPath?.hasMore && !loadingConversation) {
-        setError('指定的分支点不在当前线路中')
-      }
-      return
-    }
-    initializedForkRef.current = key
-    setPendingAction({
-      action: 'rewind_continue',
-      parentMessageId: source.id,
-      label: `新分支将从“${source.content.slice(0, 24) || '此消息'}”继续`,
-    })
-    setInput('')
-    setBranchesOpen(true)
-    setNotice('这是一个独立分支窗口。请输入新消息，原窗口和原线路不会改变。')
-    window.requestAnimationFrame(() => inputRef.current?.focus())
-  }, [resumeForkFromMessageId, currentChatId, selectedBranch, selectedPath, loadingConversation, messages])
-
   async function loadHistory(reset = true) {
     if (!user || historyLoading) return
     setHistoryLoading(true)
@@ -273,8 +285,10 @@ export function BranchingChatPanel({
     generationAbortRef.current?.abort()
     setChatState(createChatClientState())
     setMatchesByMessage({})
-    setPendingAction(null)
-    setInput('')
+    setWorkspaceTabs([])
+    setActiveTabKey('new')
+    setInputsByTab({ new: '' })
+    workspaceChatIdRef.current = null
     setError('')
     setNotice('')
     setHistoryOpen(false)
@@ -326,28 +340,83 @@ export function BranchingChatPanel({
         requestId: crypto.randomUUID(),
       }))
       created = true
-      if (pendingAction?.action === 'rewind_continue' && resumeForkFromMessageId) {
-        initializedForkRef.current = `${result.chat_id}:${result.branch_id}:${resumeForkFromMessageId}`
+      const submittedTabKey = activeTabKey
+      if (pendingAction?.action === 'rewind_continue') {
+        setWorkspaceTabs((current) => replaceDraftTab(
+          current,
+          submittedTabKey,
+          result.branch_id,
+          activeTab?.name || '分支',
+        ))
+        setInputsByTab((current) => {
+          const next = { ...current, [result.branch_id]: '' }
+          delete next[submittedTabKey]
+          return next
+        })
+        setActiveTabKey(result.branch_id)
+      } else {
+        setPendingAction(null)
       }
-      setPendingAction(null)
-      await loadConversation(result.chat_id, result.branch_id)
+      await loadConversation(result.chat_id, result.branch_id, true, result.branch_id)
     } catch (cause) {
       setInput(text)
       setError(cause instanceof Error ? cause.message : '发送失败，请稍后重试')
     } finally { if (!created) setSending(false) }
   }
 
-  function openBranchWorkspace(branchId: string, forkFromMessageId?: string) {
+  function openBranchTab(branch: ChatBranchSummary) {
     if (!currentChatId) return
-    const path = buildBranchWorkspacePath(location.search, currentChatId, branchId, forkFromMessageId)
-    const opened = window.open(new URL(path, window.location.origin).toString(), '_blank')
-    if (opened) opened.opener = null
-    else navigate(path)
+    setWorkspaceTabs((current) => current.some((tab) => tab.key === branch.id)
+      ? current
+      : [...current, { key: branch.id, branchId: branch.id, name: branch.name, closable: branch.fork_reason !== 'root' }])
+    void loadConversation(currentChatId, branch.id, true, branch.id)
+    setBranchesOpen(false)
+  }
+
+  function switchWorkspaceTab(tab: WorkspaceTab) {
+    if (!currentChatId || tab.key === activeTabKey) return
+    void loadConversation(currentChatId, tab.branchId, true, tab.key)
+  }
+
+  function closeWorkspaceTab(tabKey: string) {
+    const nextState = closeTabState(workspaceTabs, activeTabKey, tabKey)
+    if (nextState.tabs === workspaceTabs) return
+    setWorkspaceTabs(nextState.tabs)
+    setInputsByTab((current) => {
+      const next = { ...current }
+      delete next[tabKey]
+      return next
+    })
+    if (tabKey !== activeTabKey) return
+    const fallback = nextState.tabs.find((tab) => tab.key === nextState.nextActiveKey)
+    if (fallback && currentChatId) {
+      void loadConversation(currentChatId, fallback.branchId, true, fallback.key)
+    }
   }
 
   function prepareRewind(message: ChatMessageNode) {
-    if (!selectedBranch) return
-    openBranchWorkspace(selectedBranch.id, message.id)
+    if (!selectedBranch || !tree) return
+    const draftName = nextDraftBranchName(
+      tree.branches.filter((branch) => branch.fork_reason !== 'root').length,
+      workspaceTabs.filter((tab) => tab.key.startsWith('draft:')).length,
+    )
+    const key = `draft:${crypto.randomUUID()}`
+    const pending: PendingChatAction = {
+      action: 'rewind_continue',
+      parentMessageId: message.id,
+      label: `新分支将从“${message.content.slice(0, 24) || '此消息'}”继续`,
+    }
+    setWorkspaceTabs((current) => [...current, {
+      key,
+      branchId: selectedBranch.id,
+      name: draftName,
+      closable: true,
+      pendingAction: pending,
+    }])
+    setInputsByTab((current) => ({ ...current, [key]: '' }))
+    setActiveTabKey(key)
+    setNotice('已在 AI 助手内打开新分支标签，原线路保持不变。')
+    window.requestAnimationFrame(() => inputRef.current?.focus())
   }
 
   function prepareEdit(message: ChatMessageNode) {
@@ -359,21 +428,9 @@ export function BranchingChatPanel({
   }
 
   function cancelPendingAction() {
-    setPendingAction(null)
     setNotice('')
-    if (resumeForkFromMessageId && currentChatId && selectedBranch) {
-      changeLocationRef.current?.(currentChatId, selectedBranch.id)
-    }
-  }
-
-  async function renameBranch(branch: ChatBranchSummary) {
-    if (!currentChatId) return
-    const name = window.prompt('分支名称', branch.name)?.trim()
-    if (!name || name === branch.name) return
-    try {
-      await chatApi.updateBranch(currentChatId, branch.id, { name })
-      await loadConversation(currentChatId, selectedBranch?.id, false)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '修改分支名称失败') }
+    if (pendingAction?.action === 'rewind_continue') closeWorkspaceTab(activeTabKey)
+    else setPendingAction(null)
   }
 
   async function toggleBranchArchive(branch: ChatBranchSummary) {
@@ -439,6 +496,17 @@ export function BranchingChatPanel({
       </div>
     </header>
 
+    {tree && workspaceTabs.length > 0 && <nav aria-label="当前打开的对话线路" className="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-line/60 bg-mist/45 px-2 pt-1.5">
+      {workspaceTabs.map((tab) => <div key={tab.key} className={`flex min-w-[92px] max-w-[140px] flex-1 items-center gap-1 rounded-t-lg border border-b-0 px-2 py-1.5 ${tab.key === activeTabKey ? 'border-line/70 bg-white text-teal-deep' : 'border-transparent text-ink-soft/55 hover:bg-white/60'}`}>
+        <button type="button" onClick={() => switchWorkspaceTab(tab)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left" aria-current={tab.key === activeTabKey ? 'page' : undefined}>
+          <i className={`${tab.name === '主线' ? 'ri-chat-3-line' : 'ri-git-branch-line'} shrink-0 text-[11px]`} />
+          <span className="truncate text-[11px] font-medium">{tab.name}</span>
+        </button>
+        {tab.closable && <button type="button" title={`关闭${tab.name}`} aria-label={`关闭${tab.name}`} onClick={() => closeWorkspaceTab(tab.key)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-soft/35 hover:bg-rose-50 hover:text-rose-600"><i className="ri-close-line text-xs" /></button>}
+      </div>)}
+      <button type="button" title="打开其他分支" aria-label="打开其他分支" onClick={() => setBranchesOpen(true)} className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-soft/45 hover:bg-white hover:text-teal-deep"><i className="ri-add-line" /></button>
+    </nav>}
+
     {historyOpen && user && <section className="max-h-52 shrink-0 overflow-y-auto border-b border-line/50 bg-sand/50 px-2 py-2">
       {historyItems.map((chat) => <button key={chat.id} type="button" onClick={() => { setHistoryOpen(false); void loadConversation(chat.id, chat.active_branch_id) }} className="mb-1 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white">
         <div className="flex items-center justify-between gap-2"><span className="truncate text-[12px] font-medium">{chat.title}</span><span className="text-[9px] text-ink-soft/40">{chat.branch_count} 分支</span></div>
@@ -453,11 +521,10 @@ export function BranchingChatPanel({
       <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-ink-soft/40">完整分支树</div>
       {tree.branches.map((branch) => <div key={branch.id} style={{ paddingLeft: `${branchDepth(branch, tree.branches) * 14}px` }} className="group/branch flex items-center gap-1">
         <span className="text-ink-soft/30">└</span>
-        <button type="button" title="在独立窗口打开分支" onClick={() => openBranchWorkspace(branch.id)} className={`min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left ${branch.id === selectedBranch?.id ? 'bg-mist text-teal-deep' : 'hover:bg-sand'}`}>
+        <button type="button" title="在助手内打开分支" onClick={() => openBranchTab(branch)} className={`min-w-0 flex-1 rounded-lg px-2 py-1.5 text-left ${branch.id === selectedBranch?.id ? 'bg-mist text-teal-deep' : 'hover:bg-sand'}`}>
           <div className="flex items-center gap-1"><span className="truncate text-[11px] font-medium">{branch.name}</span>{branch.is_active && <span className="text-[8px]">活跃</span>}{branch.is_archived && <span className="text-[8px]">已归档</span>}</div>
           <div className="text-[9px] text-ink-soft/40">{FORK_LABEL[branch.fork_reason]} · {branch.message_count} 条消息</div>
         </button>
-        <button type="button" title="重命名分支" onClick={() => void renameBranch(branch)} className="p-1 text-ink-soft/30 opacity-0 group-hover/branch:opacity-100"><i className="ri-edit-line text-xs" /></button>
         {!branch.is_active && <button type="button" title={branch.is_archived ? '恢复分支' : '归档分支'} onClick={() => void toggleBranchArchive(branch)} className="p-1 text-ink-soft/30 opacity-0 group-hover/branch:opacity-100"><i className={`${branch.is_archived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'} text-xs`} /></button>}
       </div>)}
       {pendingAction?.action === 'rewind_continue' && <div className="mt-1 flex items-center gap-1 rounded-lg border border-dashed border-teal/30 bg-mist/40 px-2 py-1.5 text-teal-deep">
@@ -478,7 +545,7 @@ export function BranchingChatPanel({
             {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'generating' ? '生成中' : message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
           </div></div>
           {!sending && message.role !== 'system' && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
-            {message.state_recoverable && index < visibleMessages.length - 1 && <button type="button" title="在新窗口创建分支" aria-label="在新窗口创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
+            {message.state_recoverable && index < visibleMessages.length - 1 && <button type="button" title="在助手内创建分支" aria-label="在助手内创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
             {message.role === 'user' && <button type="button" title="编辑当前消息" aria-label="编辑当前消息" onClick={() => prepareEdit(message)} className={MESSAGE_ICON_ACTION}><i className="ri-edit-line" /></button>}
             {message.match_run && <button type="button" title={`完整排名（${message.match_run.total}）`} aria-label={`完整排名，共 ${message.match_run.total} 位`} onClick={() => void loadMatch(message)} className={MESSAGE_ICON_ACTION}><i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin' : 'ri-list-ordered-2'} /></button>}
           </div>}

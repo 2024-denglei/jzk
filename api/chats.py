@@ -6,7 +6,7 @@ from functools import partial
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 import config
@@ -74,21 +74,7 @@ class ChatPatch(BaseModel):
 
 class BranchPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    name: str | None = Field(default=None, min_length=1, max_length=100)
-    is_archived: bool | None = None
-
-    @field_validator("name")
-    @classmethod
-    def name_not_blank(cls, value: str | None) -> str | None:
-        if value is not None and not value.strip():
-            raise ValueError("分支名称不能为空")
-        return value
-
-    @model_validator(mode="after")
-    def require_change(self):
-        if self.name is None and self.is_archived is None:
-            raise ValueError("至少提交一个修改字段")
-        return self
+    is_archived: bool
 
 
 class ChatDeleteBody(BaseModel):
@@ -215,7 +201,6 @@ async def patch_branch(
                 user_id,
                 chat_id,
                 branch_id,
-                name=body.name,
                 is_archived=body.is_archived,
             )
         )

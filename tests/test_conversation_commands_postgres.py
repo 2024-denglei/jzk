@@ -150,6 +150,9 @@ def test_edit_rewrites_current_line_while_explicit_branch_preserves_its_path(v2_
         root.branch_id,
         rewind.branch_id,
     }
+    names = {branch.id: branch.name for branch in user_view.branches}
+    assert names[root.branch_id] == "主线"
+    assert names[rewind.branch_id] == "分支1"
 
     root_path = ConversationQueryService().get_message_path(
         v2_user, root.chat_id, root.branch_id, limit=20

@@ -155,7 +155,6 @@ export function DonorsPage() {
   const parsedChatId = chatIdParam ? Number(chatIdParam) : NaN
   const resumeChatId = Number.isFinite(parsedChatId) ? parsedChatId : null
   const resumeBranchId = searchParams.get('branchId')
-  const resumeForkFromMessageId = searchParams.get('forkFrom')
 
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('jzk_filter_collapsed') === '1')
   const [filters, setFilters] = useState<FilterState>({ ...EMPTY_FILTERS })
@@ -423,14 +422,12 @@ export function DonorsPage() {
     onSeedConsumed: () => setSeedMessage(null),
     resumeChatId,
     resumeBranchId,
-    resumeForkFromMessageId,
     onConversationChange: (chatId: number | null, branchId: string | null) => {
       const next = new URLSearchParams(searchParams)
       if (chatId === null) next.delete('chatId')
       else next.set('chatId', String(chatId))
       if (branchId === null) next.delete('branchId')
       else next.set('branchId', branchId)
-      next.delete('forkFrom')
       setSearchParams(next, { replace: true })
     },
     onCandidates: (cands: Candidate[], result?: MatchResultDescriptor) => {

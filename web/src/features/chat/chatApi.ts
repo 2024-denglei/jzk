@@ -51,7 +51,7 @@ export const chatApi = {
   rename(chatId: number, title: string) {
     return api.patch<{ ok: boolean; title: string }>(`/api/chats/${chatId}`, { title })
   },
-  updateBranch(chatId: number, branchId: string, body: { name?: string; is_archived?: boolean }) {
+  updateBranch(chatId: number, branchId: string, body: { is_archived: boolean }) {
     return api.patch<{ ok: boolean }>(
       `/api/chats/${chatId}/branches/${encodeURIComponent(branchId)}`,
       body,

@@ -46,18 +46,9 @@ def _title_from_content(content: str) -> str:
     return compact[:40] or "对话"
 
 
-def _branch_name(reason: ForkReason, source: dict[str, Any] | None = None) -> str:
-    preview = " ".join(str((source or {}).get("content") or "").split())[:18]
-    if reason == ForkReason.ROOT:
-        return "主分支"
-    labels = {
-        ForkReason.REWIND_CONTINUE: "从此处继续",
-        ForkReason.EDIT_RESEND: "编辑消息后创建",
-        ForkReason.REGENERATE: "重新生成的回复",
-        ForkReason.CONCURRENT_SEND: "多窗口继续",
-    }
-    label = labels[reason]
-    return f"{label} · {preview}" if preview else label
+def _branch_name(branch_count: int) -> str:
+    """根线路计入 branch_count，因此下一条显式分支从 1 开始编号。"""
+    return f"分支{max(1, branch_count)}"
 
 
 def _require_message(
@@ -144,8 +135,8 @@ def _create_turn(
                 parent_branch_id=None,
                 forked_from_message_id=None,
                 derived_from_message_id=None,
-                name="主分支",
-                system_name="主分支",
+                name="主线",
+                system_name="主线",
                 fork_reason=fork_reason,
                 head_message_id=None,
                 created_by="system",
@@ -245,7 +236,7 @@ def _create_turn(
                         "会话分支数量已达上限",
                     )
                 branch_id = uuid4()
-                system_name = _branch_name(fork_reason, source_message or parent_message)
+                system_name = _branch_name(int(chat["branch_count"]))
                 chats_repo.insert_branch(
                     conn,
                     branch_id=branch_id,

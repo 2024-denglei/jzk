@@ -139,8 +139,12 @@ def test_v2_api_branch_lifecycle_ownership_and_irreversible_delete(v2_client):
     assert client.patch(f"/api/chats/{chat_id}", json={"title": "新标题"}).status_code == 200
     assert client.patch(
         f"/api/chats/{chat_id}/branches/{root_branch}",
-        json={"name": "旧主线", "is_archived": True},
+        json={"is_archived": True},
     ).status_code == 200
+    assert client.patch(
+        f"/api/chats/{chat_id}/branches/{root_branch}",
+        json={"name": "自定义名称", "is_archived": True},
+    ).status_code == 422
     active_archive = client.patch(
         f"/api/chats/{chat_id}/branches/{fork['branch_id']}",
         json={"is_archived": True},

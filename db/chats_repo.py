@@ -408,8 +408,7 @@ def update_branch_metadata(
     chat_id: int,
     branch_id: UUID,
     *,
-    name: str | None = None,
-    is_archived: bool | None = None,
+    is_archived: bool,
 ) -> bool:
     with db_session() as conn:
         chat = lock_chat(conn, user_id, chat_id)
@@ -420,24 +419,13 @@ def update_branch_metadata(
             return False
         if is_archived is True and UUID(str(chat["active_branch_id"])) == branch_id:
             raise ValueError("当前活跃分支不能归档")
-        sets = []
-        params: list[Any] = []
-        if name is not None:
-            sets.append("name = %s")
-            params.append(name.strip())
-        if is_archived is not None:
-            sets.append("is_archived = %s")
-            params.append(is_archived)
-        if not sets:
-            return True
-        params.extend([chat_id, branch_id])
         conn.execute(
-            f"""
+            """
             UPDATE app.chat_branches
-            SET {", ".join(sets)}, updated_at = now()
+            SET is_archived = %s, updated_at = now()
             WHERE chat_id = %s AND id = %s
             """,
-            params,
+            (is_archived, chat_id, branch_id),
         )
     return True
 

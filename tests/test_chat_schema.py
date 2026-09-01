@@ -13,6 +13,7 @@ MIGRATION_14 = ROOT / "db" / "postgres" / "14_enforce_chat_match_snapshot.sql"
 MIGRATION_15 = ROOT / "db" / "postgres" / "15_harden_generation_runs.sql"
 MIGRATION_16 = ROOT / "db" / "postgres" / "16_drop_legacy_chat_storage.sql"
 MIGRATION_17 = ROOT / "db" / "postgres" / "17_allow_current_line_message_edits.sql"
+MIGRATION_18 = ROOT / "db" / "postgres" / "18_normalize_branch_names.sql"
 
 
 def test_branching_chat_migration_declares_core_tables_and_constraints():
@@ -82,6 +83,13 @@ def test_current_line_edit_migration_keeps_terminal_content_immutable_but_allows
     assert "terminal chat messages are immutable" in sql
 
 
+def test_branch_name_migration_uses_short_sequential_labels():
+    sql = MIGRATION_18.read_text(encoding="utf-8")
+    assert "THEN '主线'" in sql
+    assert "ELSE '分支' || row_number()" in sql
+    assert "ORDER BY created_at, id" in sql
+
+
 def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
     class Conn:
         def execute(self, _sql, _params=()):
@@ -105,7 +113,7 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
 
     pg.ensure_schema()
 
-    assert called[-8:] == [
+    assert called[-9:] == [
         "10_add_match_runs.sql",
         "11_add_branching_chat_storage.sql",
         "12_add_match_run_items.sql",
@@ -114,4 +122,5 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
         "15_harden_generation_runs.sql",
         "16_drop_legacy_chat_storage.sql",
         "17_allow_current_line_message_edits.sql",
+        "18_normalize_branch_names.sql",
     ]

@@ -24,17 +24,3 @@ export function buildTurnCommand(input: {
     client_request_id: input.requestId,
   }
 }
-
-export function buildBranchWorkspacePath(
-  currentSearch: string,
-  chatId: number,
-  branchId: string,
-  forkFromMessageId?: string,
-): string {
-  const query = new URLSearchParams(currentSearch)
-  query.set('chatId', String(chatId))
-  query.set('branchId', branchId)
-  if (forkFromMessageId) query.set('forkFrom', forkFromMessageId)
-  else query.delete('forkFrom')
-  return `/donors?${query.toString()}`
-}
