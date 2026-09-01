@@ -121,6 +121,7 @@ def test_v2_api_branch_lifecycle_ownership_and_irreversible_delete(v2_client):
     )
     assert path.status_code == 200
     assert [item["content"] for item in path.json()["items"]][-2] == "从这里建立分支"
+    assert path.json()["items"][-1]["generation_id"] == fork["generation_id"]
 
     assert client.patch(f"/api/chats/{chat_id}", json={"title": "新标题"}).status_code == 200
     assert client.patch(

@@ -91,6 +91,7 @@ def test_message_path_returns_chronological_page_and_lazy_match_summary(monkeypa
             "content_format": "markdown",
             "depth": depth,
             "state_recoverable": True,
+            "generation_id": uuid4() if depth == 3 else None,
             "created_at": now + timedelta(seconds=depth),
             "completed_at": now + timedelta(seconds=depth),
             "match_total": 25 if depth == 3 else None,
@@ -122,6 +123,7 @@ def test_message_path_returns_chronological_page_and_lazy_match_summary(monkeypa
 
     assert [item.depth for item in page.items] == [1, 2, 3]
     assert page.items[-1].match_run and page.items[-1].match_run.total == 25
+    assert page.items[-1].generation_id == rows[0]["generation_id"]
     assert page.has_more and page.next_before
     assert decode_message_cursor(page.next_before, 5, 10, branch_id) == message_ids[0]
 

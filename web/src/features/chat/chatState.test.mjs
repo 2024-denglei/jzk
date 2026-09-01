@@ -1,0 +1,89 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  branchChildren,
+  createChatClientState,
+  mergeMessagePage,
+  messagesForSelectedBranch,
+  patchMessage,
+  selectConversation,
+} from './chatState.ts'
+
+const branch = (id, parent = null, active = false) => ({
+  id,
+  parent_branch_id: parent,
+  forked_from_message_id: null,
+  derived_from_message_id: null,
+  name: id,
+  system_name: id,
+  fork_reason: parent ? 'rewind_continue' : 'root',
+  head_message_id: null,
+  message_count: 0,
+  last_message_preview: '',
+  is_active: active,
+  is_archived: false,
+  created_at: '2026-01-01',
+  updated_at: '2026-01-01',
+})
+
+const message = (id, depth, parent = null) => ({
+  id,
+  parent_message_id: parent,
+  derived_from_message_id: null,
+  created_in_branch_id: 'root',
+  role: depth % 2 ? 'assistant' : 'user',
+  status: 'completed',
+  content: id,
+  content_format: 'markdown',
+  depth,
+  state_recoverable: true,
+  generation_id: null,
+  match_run: null,
+  created_at: '2026-01-01',
+  completed_at: '2026-01-01',
+})
+
+test('分支路径复用公共祖先且向上分页不产生重复消息', () => {
+  const tree = {
+    chat: { id: 1, active_branch_id: 'root' },
+    branches: [branch('root', null, true), branch('fork', 'root')],
+  }
+  let state = selectConversation(createChatClientState(), tree, 'fork')
+  state = mergeMessagePage(state, {
+    chat_id: 1,
+    branch_id: 'fork',
+    items: [message('m2', 2, 'm1'), message('m3', 3, 'm2')],
+    next_before: 'cursor-1',
+    has_more: true,
+  })
+  state = mergeMessagePage(state, {
+    chat_id: 1,
+    branch_id: 'fork',
+    items: [message('m0', 0), message('m1', 1, 'm0'), message('m2', 2, 'm1')],
+    next_before: null,
+    has_more: false,
+  }, true)
+
+  assert.deepEqual(messagesForSelectedBranch(state).map((item) => item.id), ['m0', 'm1', 'm2', 'm3'])
+  assert.equal(Object.keys(state.messagesById).length, 4)
+  assert.equal(state.pathsByBranch.fork.hasMore, false)
+})
+
+test('指定分支优先于活跃分支且生成 token 只更新目标消息', () => {
+  const branches = [branch('root', null, true), branch('fork', 'root')]
+  let state = selectConversation(createChatClientState(), {
+    chat: { id: 1, active_branch_id: 'root' }, branches,
+  }, 'fork')
+  state = mergeMessagePage(state, {
+    chat_id: 1,
+    branch_id: 'fork',
+    items: [message('m0', 0)],
+    next_before: null,
+    has_more: false,
+  })
+  state = patchMessage(state, 'm0', { content: '流式内容', status: 'generating' })
+
+  assert.equal(state.selectedBranchId, 'fork')
+  assert.equal(state.messagesById.m0.content, '流式内容')
+  assert.deepEqual(branchChildren(branches).get('root').map((item) => item.id), ['fork'])
+})

@@ -136,6 +136,141 @@ export interface ChatMessage {
   snapshot?: ChatSnapshot
 }
 
+export type ChatTurnAction = 'append' | 'rewind_continue' | 'edit_resend' | 'regenerate'
+export type ChatForkReason =
+  | 'root'
+  | 'rewind_continue'
+  | 'edit_resend'
+  | 'regenerate'
+  | 'concurrent_send'
+export type ChatMessageStatus = 'generating' | 'completed' | 'stopped' | 'failed'
+export type GenerationStatus = 'queued' | 'running' | 'completed' | 'stopped' | 'failed'
+
+export interface ChatV2Summary {
+  id: number
+  title: string
+  active_branch_id: string | null
+  active_branch_name: string | null
+  branch_count: number
+  message_count: number
+  last_message_preview: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatBranchSummary {
+  id: string
+  parent_branch_id: string | null
+  forked_from_message_id: string | null
+  derived_from_message_id: string | null
+  name: string
+  system_name: string
+  fork_reason: ChatForkReason
+  head_message_id: string | null
+  message_count: number
+  last_message_preview: string
+  is_active: boolean
+  is_archived: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatMatchRunSummary {
+  message_id: string
+  total: number
+  model_version: string
+  dataset_version: string
+  snapshot_schema_version: number
+  snapshot_source: 'native' | 'legacy_backfill'
+  created_at: string
+}
+
+export interface ChatMessageNode {
+  id: string
+  parent_message_id: string | null
+  derived_from_message_id: string | null
+  created_in_branch_id: string
+  role: 'user' | 'assistant' | 'system'
+  status: ChatMessageStatus
+  content: string
+  content_format: string
+  depth: number
+  state_recoverable: boolean
+  generation_id: string | null
+  match_run: ChatMatchRunSummary | null
+  created_at: string
+  completed_at: string | null
+}
+
+export interface ChatConversationTree {
+  chat: ChatV2Summary
+  branches: ChatBranchSummary[]
+}
+
+export interface ChatMessagePathPage {
+  chat_id: number
+  branch_id: string
+  items: ChatMessageNode[]
+  next_before: string | null
+  has_more: boolean
+}
+
+export interface ChatTurnCommand {
+  branch_id?: string | null
+  parent_message_id?: string | null
+  action: ChatTurnAction
+  derived_from_message_id?: string | null
+  content: string
+  client_request_id: string
+}
+
+export interface ChatTurnCreationResult {
+  chat_id: number
+  branch_id: string
+  user_message_id: string
+  assistant_message_id: string
+  generation_id: string
+  branch_created: boolean
+  fork_reason: ChatForkReason
+  idempotent_replay: boolean
+}
+
+export interface GenerationRun {
+  id: string
+  chat_id: number
+  branch_id: string
+  user_message_id: string
+  assistant_message_id: string
+  status: GenerationStatus
+  cancel_requested_at: string | null
+  attempt_count: number
+  error_type: string | null
+  error_message_safe: string | null
+}
+
+export interface FrozenMatchPage {
+  result_set_id: string
+  total: number
+  page: number
+  page_size: number
+  returned_count: number
+  items: Array<{
+    rank: number
+    score: number
+    donor_info: DonorInfo & { status_snapshot?: string }
+    match_explanation: {
+      reason?: string
+      match_pct?: number | null
+      match_level?: string
+      field_match?: Candidate['field_match']
+      field_scores?: FieldScore[]
+    }
+    current_status: string
+    currently_selectable: boolean
+  }>
+  has_more: boolean
+}
+
 export const DEFAULT_PRIORITY = [
   '学历',
   '身高',

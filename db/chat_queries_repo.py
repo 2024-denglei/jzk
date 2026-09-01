@@ -157,13 +157,16 @@ def get_message_path(
         SELECT p.id, p.parent_message_id, p.derived_from_message_id,
                p.created_in_branch_id, p.role, p.status, p.content,
                p.content_format, p.depth, p.state_recoverable,
-               p.created_at, p.completed_at,
+               p.created_at, p.completed_at, generation.id AS generation_id,
                mr.total AS match_total, mr.model_version,
                mr.dataset_version, mr.snapshot_schema_version,
                mr.snapshot_source, mr.created_at AS match_created_at
         FROM path p
         LEFT JOIN app.match_runs mr
           ON mr.id = p.match_run_id AND mr.status = 'ready'
+        LEFT JOIN app.ai_generation_runs generation
+          ON generation.chat_id = p.chat_id
+         AND generation.assistant_message_id = p.id
         ORDER BY p.depth DESC, p.created_at DESC, p.id DESC
         LIMIT %s
         """,

@@ -66,6 +66,7 @@ def _message_view(row: dict[str, Any]) -> ChatMessageView:
             "content_format",
             "depth",
             "state_recoverable",
+            "generation_id",
             "created_at",
             "completed_at",
         )

@@ -1,0 +1,106 @@
+import type {
+  ChatBranchSummary,
+  ChatConversationTree,
+  ChatMessageNode,
+  ChatMessagePathPage,
+  GenerationStatus,
+} from '../../types'
+
+export interface BranchPathState {
+  ids: string[]
+  nextBefore: string | null
+  hasMore: boolean
+}
+
+export interface ChatClientState {
+  tree: ChatConversationTree | null
+  selectedBranchId: string | null
+  messagesById: Record<string, ChatMessageNode>
+  pathsByBranch: Record<string, BranchPathState>
+}
+
+export function createChatClientState(): ChatClientState {
+  return {
+    tree: null,
+    selectedBranchId: null,
+    messagesById: {},
+    pathsByBranch: {},
+  }
+}
+
+export function selectConversation(
+  state: ChatClientState,
+  tree: ChatConversationTree,
+  requestedBranchId?: string | null,
+): ChatClientState {
+  const requested = tree.branches.find((branch) => branch.id === requestedBranchId)
+  const active = tree.branches.find((branch) => branch.id === tree.chat.active_branch_id)
+  const selected = requested || active || tree.branches.find((branch) => !branch.is_archived) || tree.branches[0]
+  return { ...state, tree, selectedBranchId: selected?.id || null }
+}
+
+export function mergeMessagePage(
+  state: ChatClientState,
+  page: ChatMessagePathPage,
+  older = false,
+): ChatClientState {
+  const messagesById = { ...state.messagesById }
+  for (const message of page.items) messagesById[message.id] = message
+
+  const previous = state.pathsByBranch[page.branch_id]?.ids || []
+  const combined = older ? [...page.items.map((item) => item.id), ...previous] : page.items.map((item) => item.id)
+  const ids = [...new Set(combined)].sort((left, right) => {
+    const a = messagesById[left]
+    const b = messagesById[right]
+    return (a?.depth ?? 0) - (b?.depth ?? 0) || left.localeCompare(right)
+  })
+  return {
+    ...state,
+    messagesById,
+    pathsByBranch: {
+      ...state.pathsByBranch,
+      [page.branch_id]: {
+        ids,
+        nextBefore: page.next_before,
+        hasMore: page.has_more,
+      },
+    },
+  }
+}
+
+export function patchMessage(
+  state: ChatClientState,
+  messageId: string,
+  patch: Partial<ChatMessageNode>,
+): ChatClientState {
+  const current = state.messagesById[messageId]
+  if (!current) return state
+  return {
+    ...state,
+    messagesById: {
+      ...state.messagesById,
+      [messageId]: { ...current, ...patch },
+    },
+  }
+}
+
+export function messagesForSelectedBranch(state: ChatClientState): ChatMessageNode[] {
+  if (!state.selectedBranchId) return []
+  return (state.pathsByBranch[state.selectedBranchId]?.ids || [])
+    .map((id) => state.messagesById[id])
+    .filter((message): message is ChatMessageNode => Boolean(message))
+}
+
+export function branchChildren(branches: ChatBranchSummary[]): Map<string | null, ChatBranchSummary[]> {
+  const children = new Map<string | null, ChatBranchSummary[]>()
+  for (const branch of branches) {
+    const siblings = children.get(branch.parent_branch_id) || []
+    siblings.push(branch)
+    children.set(branch.parent_branch_id, siblings)
+  }
+  return children
+}
+
+export function isTerminalGeneration(status: GenerationStatus): boolean {
+  return status === 'completed' || status === 'stopped' || status === 'failed'
+}

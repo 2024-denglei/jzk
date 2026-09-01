@@ -188,6 +188,7 @@ class ChatMessageView(BaseModel):
     content_format: str = "markdown"
     depth: int = Field(ge=0)
     state_recoverable: bool = True
+    generation_id: UUID | None = None
     match_run: MatchRunSummary | None = None
     created_at: datetime
     completed_at: datetime | None = None
