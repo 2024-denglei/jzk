@@ -102,6 +102,23 @@ export function agentTranscriptEvents(steps: TraceStepLike[]): AgentTranscriptEv
   })
 }
 
+export function finalAgentContextEvents(steps: TraceStepLike[]): AgentTranscriptEvent[] {
+  const events = agentTranscriptEvents(steps)
+  const attempts = events.flatMap((event) => event.attemptCount === null ? [] : [event.attemptCount])
+  const finalAttemptEvents = attempts.length
+    ? events.filter((event) => event.attemptCount === null || event.attemptCount === Math.max(...attempts))
+    : events
+  const lastSystemIndex = finalAttemptEvents.findLastIndex((event) => event.role === 'system')
+  return lastSystemIndex < 0 ? finalAttemptEvents : finalAttemptEvents.slice(lastSystemIndex)
+}
+
+export function latestAssistantMessage<T extends { role: string; depth: number }>(messages: T[]): T | null {
+  return messages.reduce<T | null>((latest, message) => {
+    if (message.role !== 'assistant') return latest
+    return latest === null || message.depth > latest.depth ? message : latest
+  }, null)
+}
+
 export function flattenBranchTree(branches: ChatBranchSummary[]): BranchTreeRow[] {
   const children = new Map<string | null, ChatBranchSummary[]>()
   for (const branch of branches) {
