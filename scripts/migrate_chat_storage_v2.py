@@ -85,7 +85,15 @@ def run(args: argparse.Namespace, *, database_url: str | None = None) -> Migrati
                         report.verified += 1
                     continue
                 if args.dry_run:
-                    warnings = migrate_legacy_chat(None, row, report, dry_run=True)
+                    simulated = MigrationReport()
+                    with psycopg.connect(url, row_factory=dict_row) as conn:
+                        with conn.transaction(force_rollback=True):
+                            warnings = migrate_legacy_chat(conn, row, simulated)
+                            conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+                    report.would_legacy_backfills += simulated.legacy_backfills
+                    report.missing_match_runs += simulated.missing_match_runs
+                    report.missing_donors += simulated.missing_donors
+                    report.skipped += simulated.skipped
                     report.partial += int(bool(warnings))
                     report.would_migrate += 1
                     if warnings:

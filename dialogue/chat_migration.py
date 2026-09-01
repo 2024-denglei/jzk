@@ -23,6 +23,7 @@ class MigrationReport:
     scanned: int = 0
     migrated: int = 0
     would_migrate: int = 0
+    would_legacy_backfills: int = 0
     skipped: int = 0
     partial: int = 0
     failed: int = 0

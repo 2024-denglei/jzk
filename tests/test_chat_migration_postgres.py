@@ -128,10 +128,18 @@ def test_migration_builds_complete_tree_and_match_snapshot_idempotently(legacy_s
     assert TEST_DATABASE_URL
     dry = run(_args(dry_run=True, chat_id=chat_id), database_url=TEST_DATABASE_URL)
     assert dry.would_migrate == 1 and dry.migrated == 0
+    assert dry.would_legacy_backfills == 1 and dry.legacy_backfills == 0
     with psycopg.connect(TEST_DATABASE_URL, row_factory=dict_row) as conn:
         assert conn.execute(
             "SELECT storage_version FROM app.chats WHERE id = %s", (chat_id,)
         ).fetchone()["storage_version"] == 1
+        assert conn.execute(
+            "SELECT status FROM app.match_runs WHERE id = %s", (match_id,)
+        ).fetchone()["status"] == "building"
+        assert conn.execute(
+            "SELECT COUNT(*) AS count FROM app.match_run_items WHERE match_run_id = %s",
+            (match_id,),
+        ).fetchone()["count"] == 0
     user_tree = ConversationQueryService().get_conversation(user_id, chat_id)
     admin_tree = ConversationQueryService(admin=True).get_conversation(user_id, chat_id)
     assert user_tree.model_dump() == admin_tree.model_dump()
