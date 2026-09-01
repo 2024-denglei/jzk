@@ -4,7 +4,7 @@ import { ChatMatchCards } from '../../components/ChatMatchCards'
 import { useAuth } from '../../context/AuthContext'
 import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } from '../../lib/speech'
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
-import { buildTurnCommand, type PendingChatAction } from './chatActions'
+import { buildTurnCommand, pendingActionComposerBanner, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
 import { canCreateBranchAfterMessage, candidateSyncAction, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
 import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
@@ -95,6 +95,7 @@ export function BranchingChatPanel({
   const selectedBranch = tree?.branches.find((branch) => branch.id === chatState.selectedBranchId) || null
   const activeTab = workspaceTabs.find((tab) => tab.key === activeTabKey) || null
   const pendingAction = activeTab?.pendingAction || null
+  const composerBanner = pendingActionComposerBanner(pendingAction)
   const input = inputsByTab[activeTabKey] || ''
   const messages = useMemo(() => messagesForSelectedBranch(chatState), [chatState])
   const messagePreview = useMemo(
@@ -415,7 +416,7 @@ export function BranchingChatPanel({
     }])
     setInputsByTab((current) => ({ ...current, [key]: '' }))
     setActiveTabKey(key)
-    setNotice('已在 AI 助手内打开新分支标签，原线路保持不变。')
+    setNotice('')
     window.requestAnimationFrame(() => inputRef.current?.focus())
   }
 
@@ -570,7 +571,7 @@ export function BranchingChatPanel({
 
     <footer className="shrink-0 border-t border-line/70 bg-white p-3">
       {(error || notice) && <div className={`mb-2 rounded-lg px-2 py-1.5 text-[10px] ${error ? 'bg-rose-50 text-rose-700' : 'bg-mist text-teal-deep'}`}>{error || notice}</div>}
-      {pendingAction && <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-teal/20 bg-mist/50 px-2.5 py-2 text-[10px] text-teal-deep"><span>{pendingAction.label}</span><button type="button" onClick={cancelPendingAction}>取消</button></div>}
+      {composerBanner && <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-teal/20 bg-mist/50 px-2.5 py-2 text-[10px] text-teal-deep"><span>{composerBanner}</span><button type="button" onClick={cancelPendingAction}>取消</button></div>}
       <div className="flex items-end gap-2 rounded-xl border border-line/80 bg-sand/50 px-2 py-1.5 focus-within:border-teal/40">
         <textarea ref={inputRef} value={input} disabled={selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction?.action === 'rewind_continue' ? '输入新分支的第一条消息…' : pendingAction?.action === 'edit_resend' ? '修改这条消息…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
         <button type="button" title={ttsOn ? '关闭语音播报' : '开启语音播报'} onClick={() => { if (ttsOn) stopSpeaking(); setTtsOn((value) => !value) }} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg ${ttsOn ? 'bg-mist text-teal-deep' : 'text-ink-soft/45'}`}><i className={ttsOn ? 'ri-volume-up-line' : 'ri-volume-mute-line'} /></button>
