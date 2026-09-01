@@ -8,7 +8,7 @@ from uuid import UUID
 from psycopg.types.json import Jsonb
 
 from db.chat_models import ForkReason, GenerationStatus, MessageRole, MessageStatus
-from db.pg import fetchone
+from db.pg import db_session, fetchall, fetchone
 
 
 def find_turn_by_request(conn, user_id: int, request_id: UUID) -> dict[str, Any] | None:
@@ -283,3 +283,142 @@ def update_chat_after_turn(
         """,
         (branch_id, message_delta, branch_delta, chat_id),
     )
+
+
+def rename_chat(user_id: int, chat_id: int, title: str) -> bool:
+    with db_session() as conn:
+        cur = conn.execute(
+            """
+            UPDATE app.chats SET title = %s, updated_at = now()
+            WHERE id = %s AND user_id = %s AND storage_version = 2
+            """,
+            (title.strip(), chat_id, user_id),
+        )
+    return cur.rowcount == 1
+
+
+def update_branch_metadata(
+    user_id: int,
+    chat_id: int,
+    branch_id: UUID,
+    *,
+    name: str | None = None,
+    is_archived: bool | None = None,
+) -> bool:
+    with db_session() as conn:
+        chat = lock_chat(conn, user_id, chat_id)
+        if chat is None or int(chat.get("storage_version") or 1) != 2:
+            return False
+        branch = lock_branch(conn, chat_id, branch_id)
+        if branch is None:
+            return False
+        if is_archived is True and UUID(str(chat["active_branch_id"])) == branch_id:
+            raise ValueError("当前活跃分支不能归档")
+        sets = []
+        params: list[Any] = []
+        if name is not None:
+            sets.append("name = %s")
+            params.append(name.strip())
+        if is_archived is not None:
+            sets.append("is_archived = %s")
+            params.append(is_archived)
+        if not sets:
+            return True
+        params.extend([chat_id, branch_id])
+        conn.execute(
+            f"""
+            UPDATE app.chat_branches
+            SET {", ".join(sets)}, updated_at = now()
+            WHERE chat_id = %s AND id = %s
+            """,
+            params,
+        )
+    return True
+
+
+def hard_delete_chat(
+    user_id: int,
+    chat_id: int,
+    request_id: UUID,
+) -> dict[str, Any] | None:
+    """不可恢复整会话删除；审计和 Outbox 不保存任何正文。"""
+    with db_session() as conn:
+        replay = fetchone(
+            conn,
+            """
+            SELECT chat_id, branch_count, message_count, match_run_count, deleted_at
+            FROM app.chat_deletion_audit
+            WHERE user_id = %s AND request_id = %s
+            """,
+            (user_id, request_id),
+        )
+        if replay is not None:
+            if int(replay["chat_id"]) != int(chat_id):
+                raise ValueError("request_id 已用于其他会话删除")
+            return {**replay, "idempotent_replay": True}
+        chat = lock_chat(conn, user_id, chat_id)
+        if chat is None or int(chat.get("storage_version") or 1) != 2:
+            return None
+        counts = fetchone(
+            conn,
+            """
+            SELECT
+              (SELECT COUNT(*) FROM app.chat_branches WHERE chat_id = %s) AS branches,
+              (SELECT COUNT(*) FROM app.chat_messages WHERE chat_id = %s) AS messages,
+              (SELECT COUNT(DISTINCT match_run_id) FROM app.chat_messages
+               WHERE chat_id = %s AND match_run_id IS NOT NULL) AS matches
+            """,
+            (chat_id, chat_id, chat_id),
+        ) or {}
+        match_rows = fetchall(
+            conn,
+            "SELECT DISTINCT match_run_id FROM app.chat_messages WHERE chat_id = %s AND match_run_id IS NOT NULL",
+            (chat_id,),
+        )
+        generation_rows = fetchall(
+            conn,
+            "SELECT id FROM app.ai_generation_runs WHERE chat_id = %s",
+            (chat_id,),
+        )
+        branch_count = int(counts.get("branches") or 0)
+        message_count = int(counts.get("messages") or 0)
+        match_count = int(counts.get("matches") or 0)
+        conn.execute(
+            """
+            INSERT INTO app.chat_deletion_audit
+                (user_id, chat_id, branch_count, message_count, match_run_count, request_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (user_id, chat_id, branch_count, message_count, match_count, request_id),
+        )
+        conn.execute("DELETE FROM app.chats WHERE id = %s", (chat_id,))
+        match_ids = [row["match_run_id"] for row in match_rows]
+        if match_ids:
+            conn.execute(
+                "DELETE FROM app.match_runs WHERE user_id = %s AND id = ANY(%s)",
+                (user_id, match_ids),
+            )
+        generation_ids = [str(row["id"]) for row in generation_rows]
+        conn.execute(
+            """
+            INSERT INTO app.outbox_events
+                (topic, aggregate_type, aggregate_id, dedupe_key, payload_json)
+            VALUES ('chat_deleted', 'chat', %s, %s, %s)
+            ON CONFLICT (dedupe_key) DO NOTHING
+            """,
+            (
+                str(chat_id),
+                f"chat_deleted:{request_id}",
+                Jsonb({"generation_ids": generation_ids}),
+            ),
+        )
+        audit = fetchone(
+            conn,
+            """
+            SELECT chat_id, branch_count, message_count, match_run_count, deleted_at
+            FROM app.chat_deletion_audit WHERE request_id = %s
+            """,
+            (request_id,),
+        )
+    assert audit is not None
+    return {**audit, "idempotent_replay": False}
