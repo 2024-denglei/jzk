@@ -17,21 +17,23 @@
 - 匹配逻辑仍对全部候选人完成排序，不丢失第 101 名之后的结果。
 - 全量结果仅保存紧凑的 `donor_id + rank + score`，不保存完整候选详情。
 - Redis 保存绑定用户的临时匹配结果集，支持稳定分页、成员校验和自动过期。
+- PostgreSQL 使用紧凑数组持久保存严格排名快照，Redis 过期后仍能恢复当时的排名和得分。
 - 首次匹配和后续分页只为当前页候选人组装卡片详情。
 - 聊天侧展示真实总人数，并允许用户分页浏览全部结果。
 - 反馈接口允许反馈结果集中任意候选人，而不是只允许前 100 人。
-- Redis 结果过期后能够安全地重新执行匹配，不影响 PostgreSQL 中的长期对话。
+- Redis 结果过期后能够从 PostgreSQL 严格快照恢复，不需要重新运行模型。
 
 ## 非目标
 
 - 本阶段不修改模型算法、特征权重或排序结果。
 - 本阶段不把捐精人主数据迁入 Redis。
 - 本阶段不允许客户端提交任意候选 ID 批量查询详情。
-- 第一版不永久保存每一次匹配的全部排名快照；如有合规审计要求，再增加 PostgreSQL 匹配快照表。
+- 本阶段不为每次匹配保存候选人的完整字段快照；历史页面仍按候选 ID 加载当前允许展示的详情。
+- 本阶段不保证还原候选人当时的学历、库存、状态等可变字段，只保证排名、ID、得分和决策上下文可复现。
 
 ## 核心设计结论
 
-不让匹配模型把全部完整候选详情返回给 API 或前端。模型层输出紧凑排名引用，应用层将完整排名存入 Redis，并按页从 PostgreSQL 加载当前需要展示的候选详情。
+不让匹配模型把全部完整候选详情返回给 API 或前端。模型层输出紧凑排名引用，应用层将同一份排名以两种生命周期保存：PostgreSQL 保存严格排名快照，Redis 提供低延迟在线分页。页面只从 PostgreSQL 主数据加载当前页候选详情。
 
 ```text
 PreferenceProfile
@@ -44,8 +46,12 @@ PreferenceProfile
       └─ 紧凑引用：[{donor_id, rank, score}, ...]
                        │
                        ▼
-              Redis MatchResultStore
-                       │ result_set_id
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+PostgreSQL MatchRunSnapshot    Redis MatchResultStore
+严格保存 ID[] + score[]        在线分页、成员校验、TTL
+        │                             │
+        └──────────── result_set_id ──┘
                        ▼
 分页接口读取 20 个 donor_id ──► PostgreSQL 批量加载卡片详情
                        │
@@ -63,6 +69,8 @@ PreferenceProfile
 - 结果过期、候选人停用和权限校验难以集中处理。
 
 因此浏览器只获得当前页详情、总数、结果集 ID 和下一页游标。
+
+结果集 ID 与 PostgreSQL `match_runs.id` 使用同一个 UUID。Redis 丢失时，应用可以用该 ID 从 PostgreSQL 快照重建在线结果集。
 
 ## 数据模型
 
@@ -113,6 +121,54 @@ jzk:match-result-subject:{user_id}
 - meta 必须保存 `owner_user_id`，读取时同时校验 key、meta 和当前登录用户。
 - 创建结果集使用 pipeline/Lua，确保 meta、rank、scores 和 TTL 不出现部分写入。
 
+### PostgreSQL 严格排名快照
+
+新增迁移和表 `app.match_runs`。排名由数组位置表示，因此不需要为每位候选单独保存 `rank`，也不需要每次匹配插入数千行。
+
+```sql
+CREATE TABLE IF NOT EXISTS app.match_runs (
+    id               UUID PRIMARY KEY,
+    user_id          BIGINT NOT NULL REFERENCES app.users(id),
+    profile_json     JSONB NOT NULL,
+    profile_hash     TEXT NOT NULL,
+    model_version    TEXT NOT NULL,
+    dataset_version  TEXT NOT NULL,
+    total            INTEGER NOT NULL CHECK (total >= 0),
+    donor_ids        BIGINT[] NOT NULL,
+    scores           REAL[] NOT NULL,
+    prefer_hits      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (cardinality(donor_ids) = total),
+    CHECK (cardinality(scores) = total)
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_runs_user_created
+    ON app.match_runs (user_id, created_at DESC);
+```
+
+约束与语义：
+
+- `donor_ids[n]`、`scores[n]` 表示第 `n` 名候选及其得分。
+- 得分在写入前统一量化到小数点后 6 位，使不同语言和数据库浮点表示保持一致；严格快照以量化后的值为准。
+- `profile_json`、模型版本和数据集版本每次运行只保存一份。
+- 不保存 `donor_info`、`field_scores` 或候选完整字段，避免重复敏感数据和存储膨胀。
+- 快照中的候选后来被停用时，历史排名仍保留其 ID，但页面加载时不再展示该候选。
+- 历史页面分别显示“当时匹配总数”和“当前可查看数量”，不能把被停用候选静默计入当前展示数。
+- 通过 `id + user_id` 查询快照，跨用户请求统一返回 404。
+- 第一版使用单表和 `(user_id, created_at)` 索引；达到容量阈值后再迁移为按月分区，避免过早增加分区主键和运维复杂度。
+
+### 快照容量估算
+
+以 4,303 位候选计算，`BIGINT[] + REAL[]` 的原始元素数据约 52 KB，加上画像、JSONB、数组和行开销后，单次目标控制在 60～120 KB。
+
+| 匹配频率 | 30 天原始快照估算 | 180 天原始快照估算 |
+|---|---:|---:|
+| 100 次/天 | 0.18～0.36 GB | 1.1～2.2 GB |
+| 1,000 次/天 | 1.8～3.6 GB | 11～22 GB |
+| 10,000 次/天 | 18～36 GB | 110～220 GB |
+
+容量规划还需考虑 WAL、备份和副本，生产磁盘预算按原始快照的 2～4 倍评估。默认在线保留 180 天；超过保留期的数据按合规要求删除或归档到冷存储。
+
 ### 容量与生命周期
 
 建议默认值：
@@ -125,11 +181,15 @@ jzk:match-result-subject:{user_id}
 | `MATCH_RESULT_MAX_CANDIDATES` | 20000 |
 | `MATCH_RESULT_PAGE_SIZE_DEFAULT` | 20 |
 | `MATCH_RESULT_PAGE_SIZE_MAX` | 50 |
+| `MATCH_SNAPSHOT_ENABLED` | true |
+| `MATCH_SNAPSHOT_RETENTION_DAYS` | 180 |
 
 - 用户访问结果时可以刷新空闲 TTL，但不得超过绝对最大生命周期。
 - 新建结果集前清理用户索引中的过期成员。
 - 超过每用户上限时删除最旧结果集，或返回明确的容量异常；第一版建议删除最旧结果集。
-- Redis 不可用时匹配结果创建和分页失败关闭，返回 503，不退回全量详情响应。
+- Redis 是结果分页缓存而不是排名权威来源；Redis 不可用时从当前用户的 PostgreSQL 快照分页，禁止退回全量详情响应，并记录降级指标。
+- PostgreSQL 快照写入必须在接口返回成功前提交；写入失败时不得声称已生成严格快照。
+- Redis 与 PostgreSQL 无法做跨存储事务：先以幂等 UUID 写入 PostgreSQL，再写 Redis。Redis 写入失败时保留快照，重试可按同一 UUID 重建 Redis，不重复运行模型。
 
 ## API 设计
 
@@ -158,6 +218,7 @@ jzk:match-result-subject:{user_id}
 - 迁移期同时返回 `items` 和旧字段 `candidates`，两者都只包含第一页。
 - `filtered_count` 和新增 `total` 表示全部匹配数。
 - `returned_count` 表示当前响应详情数。
+- `result_set_id` 同时标识 PostgreSQL 严格快照和 Redis 在线结果集。
 - 旧 `top_k` 暂时保留；新聊天调用改用 `page_size`，不再把 `top_k` 当业务总量。
 - 前端迁移完成后删除 `candidates` 兼容字段和聊天专用 `CHAT_MATCH_TOP_K` 止血逻辑。
 
@@ -185,13 +246,14 @@ GET /api/match/results/{result_set_id}?cursor={cursor}&limit=20
 
 - cursor 包含结果集 ID、下一个 rank offset 和版本，并使用服务端密钥签名，客户端不能修改页码绕过限制。
 - `limit` 最大 50。
-- 结果集不存在或不属于当前用户统一返回 404。
-- 属于当前用户但已过期可以返回 410，并附带可重新匹配的稳定错误码 `MATCH_RESULT_EXPIRED`。
+- PostgreSQL 快照不存在或不属于当前用户统一返回 404。
+- Redis 结果已过期但 PostgreSQL 快照仍存在时，服务端从快照数组读取当前页，并异步或按需重建 Redis 在线结果集，用户不需要重新匹配。
+- PostgreSQL 快照已超过保留期时返回 410，并附带稳定错误码 `MATCH_SNAPSHOT_EXPIRED`；此时前端才提供“重新匹配”动作。
 - PostgreSQL 查询必须包含 `status = 'active'`；已停用候选不再返回。
 - 当前页有停用候选时继续向后读取少量排名，尽量补足页面，并返回实际 `items` 数量。
 - 批量查询后按照 Redis rank 重新排序，不能依赖 SQL 默认顺序。
 
-### 重新生成结果集
+### 主动重新匹配
 
 新增或复用匹配接口：
 
@@ -199,11 +261,32 @@ GET /api/match/results/{result_set_id}?cursor={cursor}&limit=20
 POST /api/match/results/{result_set_id}/refresh
 ```
 
-仅当前用户可操作。服务端读取旧 meta 中的画像，重新运行当前模型并返回新的 `result_set_id`。旧结果集保持到 TTL 到期，避免并发页面立即失效。
+仅当前用户可操作。服务端从 PostgreSQL 快照读取旧画像，使用当前模型和当前有效候选重新运行，并创建新的严格快照与 `result_set_id`。旧快照按保留策略继续存在，界面应明确这是一次新的匹配运行，而不是覆盖历史结果。
 
 ## 后端实施阶段
 
-### 阶段一：MatchResultStore（P0）
+### 阶段一：PostgreSQL 严格排名快照（P0）
+
+**主要文件：**
+
+- 新增：`db/postgres/10_add_match_runs.sql`
+- 新增：`db/match_runs_repo.py`
+- 修改：`db/pg.py`
+- 修改：`config.py`
+- 修改：`.env.example`
+- 新增：`tests/test_match_runs_repo.py`
+
+- [ ] 新增 `app.match_runs` 表、用户时间索引和可重复执行迁移。
+- [ ] 使用应用生成的 UUID 作为 `match_run_id/result_set_id`。
+- [ ] 实现幂等创建、按用户读取、数组分页、成员校验和按保留期删除。
+- [ ] 使用 `BIGINT[]` 保存排名 ID，使用 `REAL[]` 保存得分，数组位置代表 rank。
+- [ ] 写入时校验数组长度、总数、候选上限和得分有限值。
+- [ ] 保存画像 hash、模型版本、数据集版本和 `prefer_hits`，不保存完整候选详情。
+- [ ] 快照写入成功后才允许接口返回成功。
+- [ ] 增加按批次清理 180 天以前快照的管理命令，避免长事务一次删除全部历史。
+- [ ] 记录每日新增快照数、表大小、索引大小和清理进度。
+
+### 阶段二：Redis MatchResultStore（P0）
 
 **主要文件：**
 
@@ -218,10 +301,12 @@ POST /api/match/results/{result_set_id}/refresh
 - [ ] 使用 Lua/pipeline 原子写入并设置所有 key TTL。
 - [ ] 所有读取校验 `owner_user_id`。
 - [ ] 实现每用户结果集数量和单结果集候选数量限制。
-- [ ] Redis 异常转换为统一 503 错误。
+- [ ] Redis 异常触发 PostgreSQL 快照降级读取；只有 PostgreSQL 快照也不可用时才返回 503。
+- [ ] Redis miss 时从当前用户的 PostgreSQL 快照恢复结果集，不重新运行模型。
+- [ ] PostgreSQL 快照和 Redis 结果集使用同一个 UUID。
 - [ ] 记录结果集条数、字节估算、创建耗时和分页耗时，不记录画像明文敏感值。
 
-### 阶段二：拆分排序引用与详情组装（P0）
+### 阶段三：拆分排序引用与详情组装（P0）
 
 **主要文件：**
 
@@ -237,9 +322,10 @@ POST /api/match/results/{result_set_id}/refresh
 - [ ] 后续页通过 PostgreSQL `WHERE id = ANY(...)` 一次批量加载。
 - [ ] 批量详情结果按 Redis rank 恢复顺序。
 - [ ] 保留模型版本、画像 hash 和耗时字段。
+- [ ] 排序完成后先写 PostgreSQL 严格快照，再创建 Redis 在线结果集。
 - [ ] 测试确保匹配 4,303 人时详情组装函数只调用当前页次数，而不是 4,303 次。
 
-### 阶段三：分页 API 与权限隔离（P0）
+### 阶段四：分页 API 与权限隔离（P0）
 
 **主要文件：**
 
@@ -252,11 +338,11 @@ POST /api/match/results/{result_set_id}/refresh
 - [ ] 实现分页、刷新和主动删除接口。
 - [ ] cursor 签名并校验 result ID、offset、版本和有效期。
 - [ ] 用户 A 读取用户 B 结果集时返回 404。
-- [ ] 结果过期返回稳定错误码，前端可触发重新匹配。
+- [ ] Redis 过期时透明回源 PostgreSQL 快照；只有快照过期才返回稳定错误码。
 - [ ] 候选停用后分页接口不再返回该候选。
-- [ ] Redis 不可用时返回 503，不返回未受控全量详情。
+- [ ] Redis 不可用时安全降级到 PostgreSQL 数组分页，不返回未受控全量详情。
 
-### 阶段四：聊天会话、回滚与反馈（P1）
+### 阶段五：聊天会话、回滚与反馈（P1）
 
 **主要文件：**
 
@@ -276,10 +362,11 @@ POST /api/match/results/{result_set_id}/refresh
 - [ ] SSE `candidates` 事件返回第一页、总数、result ID 和 cursor。
 - [ ] 反馈接口通过结果集成员关系校验候选，而不是检查 `session.candidates` 预览数组。
 - [ ] 结果集仍必须属于当前会话用户。
-- [ ] 长期聊天保存画像、总数、模型版本和少量预览，不依赖 Redis 永久存在。
-- [ ] 恢复长期聊天时，结果仍有效则继续分页；已过期则提供“重新生成结果”动作。
+- [ ] 长期聊天保存 `match_run_id`、总数和少量预览；严格排名由 `app.match_runs` 保存。
+- [ ] 恢复长期聊天时从 PostgreSQL 严格快照继续分页，并按需重建 Redis。
+- [ ] 只有严格快照超过保留期时才提供“重新生成结果”动作。
 
-### 阶段五：React 懒加载分页（P1）
+### 阶段六：React 懒加载分页（P1）
 
 **主要文件：**
 
@@ -295,22 +382,27 @@ POST /api/match/results/{result_set_id}/refresh
 - [ ] 中间候选区切页时调用后端分页接口。
 - [ ] 按 `result_set_id + cursor` 缓存已加载页面，避免重复请求。
 - [ ] 翻页期间显示局部 loading，不清空已显示页面。
-- [ ] 结果过期时显示“结果已过期，重新匹配”按钮。
+- [ ] Redis 缓存过期对前端透明；严格快照超过保留期时显示“结果已归档或过期，重新匹配”按钮。
 - [ ] 文案明确“共 4,303 位，当前显示第 1～20 位”，不再声称本地已持有全部数据。
 - [ ] 新对话、回溯、恢复历史和退出登录时清理无用页面缓存。
 
-### 阶段六：移除止血兼容与优化（P2）
+### 阶段七：移除止血兼容与优化（P2）
 
 - [ ] 前后端稳定后移除聊天固定前 100 的业务限制。
 - [ ] 停止在 `/api/match` 返回重复的 `items`/`candidates` 兼容字段。
 - [ ] 删除 `matchBagsRef` 中保存全量候选的旧逻辑。
 - [ ] 对 Redis 结果集启用压缩前先通过真实数据评估；没有收益时不增加复杂度。
 - [ ] 根据指标调整 TTL、每用户结果集上限和页大小。
+- [ ] 根据实际增长决定是否将 `app.match_runs` 改为按月分区或迁移冷快照。
 
 ## 测试计划
 
 ### 单元测试
 
+- [ ] PostgreSQL `donor_ids[]` 与 `scores[]` 长度一致，数组位置严格代表排名。
+- [ ] 4,303 条快照写入、分页、成员查询和幂等重试正确。
+- [ ] 快照只能由所属用户读取，跨用户按不存在处理。
+- [ ] Redis miss 能从 PostgreSQL 快照恢复且不重新运行模型。
 - [ ] 4,303 条引用创建后顺序、总数和得分保持正确。
 - [ ] 相同 score 的候选仍严格按 rank 稳定分页。
 - [ ] 页边界无重复、无遗漏。
@@ -325,8 +417,10 @@ POST /api/match/results/{result_set_id}/refresh
 - [ ] 连续翻页可以遍历完整结果集。
 - [ ] 用户 A 不能访问用户 B 的结果集和候选详情。
 - [ ] 已停用候选不会在后续页中出现。
-- [ ] Redis 故障时创建、分页、反馈全部失败关闭。
-- [ ] 结果集过期后能够使用保存画像重新匹配。
+- [ ] Redis 故障时创建、分页和反馈从 PostgreSQL 严格快照安全降级，且不会返回全量详情。
+- [ ] Redis 过期后从 PostgreSQL 快照恢复原始排名和得分。
+- [ ] 严格快照超过保留期后返回稳定错误码，并可主动创建一次新匹配。
+- [ ] 候选详情变化不会修改历史快照中的 ID、排名和得分。
 
 ### 前端测试
 
@@ -334,7 +428,7 @@ POST /api/match/results/{result_set_id}/refresh
 - [ ] 中间区域按页加载并缓存。
 - [ ] 总数与当前返回数量分别显示。
 - [ ] 分页失败可以重试，不丢失当前页。
-- [ ] 结果过期可重新匹配。
+- [ ] Redis 缓存过期时分页无感恢复，严格快照过期时可重新匹配。
 - [ ] 快速切页时旧请求不会覆盖新页面。
 
 ### 性能验收
@@ -345,6 +439,7 @@ POST /api/match/results/{result_set_id}/refresh
 - [ ] 首次响应候选详情不超过 20～50 条。
 - [ ] 首次 JSON/SSE 响应目标小于 200 KB。
 - [ ] 4,303 条紧凑 Redis 结果集目标小于 500 KB。
+- [ ] 4,303 条 PostgreSQL 严格快照目标控制在 60～120 KB。
 - [ ] Redis 临时会话本身目标小于 200 KB。
 - [ ] 分页接口 P95 目标小于 300 ms（以预发布环境实测为准）。
 - [ ] 连续翻页期间后端内存不随累计页数无界增长。
@@ -361,20 +456,27 @@ POST /api/match/results/{result_set_id}/refresh
 - `match_result_owner_denied_total`
 - `match_result_redis_error_total`
 - `match_detail_hydrated_count`
+- `match_snapshot_write_ms`
+- `match_snapshot_bytes`
+- `match_snapshot_restore_total`
+- `match_snapshot_expired_total`
+- `match_snapshot_table_bytes`
 
 日志只记录 result ID 的短摘要、用户内部 ID、数量、耗时和模型版本，不记录完整画像、手机号或候选敏感详情。
 
 ## 发布与兼容顺序
 
-1. **发布 A：结果集 Store 和指标**
-   - 后端写入 Redis 结果集，但继续返回当前前 100 兼容响应。
-2. **发布 B：分页 API**
+1. **发布 A：严格快照表与双写**
+   - 部署新增表和索引；后端写 PostgreSQL 紧凑快照，同时继续返回当前前 100 兼容响应。
+2. **发布 B：Redis 结果集与快照回源**
+   - 写入 Redis 在线结果集，并验证 Redis miss 可以从 PostgreSQL 恢复。
+3. **发布 C：分页 API**
    - 增加分页读取，旧前端不受影响。
-3. **发布 C：新前端**
+4. **发布 D：新前端**
    - 聊天和中间列表改用 result ID + cursor。
-4. **发布 D：反馈和会话切换**
+5. **发布 E：反馈和会话切换**
    - 成员校验改用结果集，Redis 会话移除全量候选。
-5. **发布 E：移除旧兼容**
+6. **发布 F：移除旧兼容**
    - 删除固定前 100、全量 match bag 和重复响应字段。
 
 每一步使用独立提交并可单独回滚。
@@ -382,28 +484,37 @@ POST /api/match/results/{result_set_id}/refresh
 ## 回滚策略
 
 - 增加 `MATCH_RESULT_PAGING_ENABLED` 功能开关。
+- 增加独立 `MATCH_SNAPSHOT_ENABLED` 开关；关闭分页时仍可保留已写入快照，不删除历史数据。
 - 新后端在兼容期继续返回旧 `candidates` 第一页字段。
 - 新前端若没有收到 `result_set_id`，回退到当前前 100 展示逻辑。
 - 回滚不得重新启用“把全部完整候选写入 Redis 会话”的旧行为。
-- Redis 结果集是临时数据，回滚时可以让其自然过期，无需数据迁移。
-- PostgreSQL 主数据和现有长期聊天结构保持向前兼容。
+- Redis 结果集是临时数据，回滚时可以让其自然过期。
+- `app.match_runs` 是只新增的向前兼容表；应用回滚不得删除表或已写快照。
+- PostgreSQL 快照写入已经成功但 Redis 写入失败时，允许后续重建 Redis，不回滚快照。
+- 快照保留期清理一旦执行不可恢复；清理任务需独立开关并支持 dry-run 统计。
 
-## 需要产品确认的决策
+## 已确认的历史恢复语义
 
-实施前需要确认一个产品语义：历史聊天恢复时，是否必须还原当时完全一致的全部排名。
+本计划采用严格排名与决策快照：
 
-- **建议方案：重新匹配。** PostgreSQL 保存画像、模型版本、总数和前 20 位预览；Redis 过期后使用当前有效候选和当前模型重新生成结果，界面提示“结果已更新”。存储成本低，也能自动排除已停用候选。
-- **严格快照方案：永久保留。** 新增 PostgreSQL `match_runs` 与 `match_run_items`，保存每次运行的全部 donor ID、rank、score 和模型版本。可审计、可复现，但数据量和治理成本明显更高。
+- PostgreSQL 保存完整有序的候选 ID 数组、得分数组、画像、模型版本和数据集版本。
+- Redis 过期后恢复同一个快照，不重新运行模型，因此历史排名和得分保持一致。
+- 候选详情不做重复快照，历史查看时从当前 PostgreSQL 主表加载，并过滤已停用候选。
+- 界面同时显示“当时匹配总数”和“当前可查看数量”，避免把当前详情误认为完整历史数据快照。
+- 用户主动点击“重新匹配”时创建新的 `match_run_id`，旧运行记录不被覆盖。
 
-如果没有明确合规要求，第一版采用“重新匹配”，严格快照作为后续增强。
+默认在线保留 180 天。是否需要超过 180 天的冷归档由后续合规与运营要求决定，但不影响当前表结构和结果集 API。
 
 ## 完成定义
 
 - [ ] 匹配 4,303 人时不再生成或传输 4,303 份完整候选详情。
 - [ ] 用户可以分页浏览完整排名，而不是被限制在前 100 人。
 - [ ] Redis 只保存紧凑排名引用，并绑定用户、TTL 和容量限制。
+- [ ] PostgreSQL 以紧凑数组保存严格排名快照，不重复保存完整候选详情。
+- [ ] Redis 过期后能够恢复同一排名快照，不重新运行模型。
 - [ ] 反馈、回溯和恢复流程支持第 101 名之后的候选。
 - [ ] 两个用户之间结果集完全隔离。
 - [ ] 候选停用后不会通过历史结果继续展示。
 - [ ] API、前端、性能和 Redis 故障测试通过。
+- [ ] 快照增长、WAL、备份容量和 180 天清理任务通过预发布评估。
 - [ ] 新旧接口兼容发布和回滚演练完成。
