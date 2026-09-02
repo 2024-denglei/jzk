@@ -11,6 +11,7 @@ import {
   patchMessage,
   previewMessagesAtBranchPoint,
   selectConversation,
+  visibleMessagesForPendingAction,
 } from './chatState.ts'
 
 test('消息反馈支持选择、切换和再次点击取消', () => {
@@ -94,6 +95,27 @@ test('待创建分支只预览到分支点且取消所需原消息不被删除',
   const editFirstMessage = previewMessagesAtBranchPoint(messages, null)
   assert.deepEqual(editFirstMessage.items, [])
   assert.equal(editFirstMessage.hiddenCount, 4)
+})
+
+test('内联编辑保留完整消息列表，回溯分叉仍截断到分支点', () => {
+  const messages = [
+    message('m0', 0),
+    message('m1', 1, 'm0'),
+    message('m2', 2, 'm1'),
+  ]
+  const editing = visibleMessagesForPendingAction(messages, {
+    action: 'edit_resend',
+    parentMessageId: null,
+  })
+  assert.deepEqual(editing.items.map((item) => item.id), ['m0', 'm1', 'm2'])
+  assert.equal(editing.hiddenCount, 0)
+
+  const rewind = visibleMessagesForPendingAction(messages, {
+    action: 'rewind_continue',
+    parentMessageId: 'm1',
+  })
+  assert.deepEqual(rewind.items.map((item) => item.id), ['m0', 'm1'])
+  assert.equal(rewind.hiddenCount, 1)
 })
 
 test('分支入口只出现在历史中的完整 AI 回复单元之后', () => {

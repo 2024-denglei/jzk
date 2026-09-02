@@ -7,7 +7,7 @@ import { WORKBENCH_HEADER_HEIGHT_CLASS } from '../../lib/workbenchLayout'
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor, MessageFeedbackRating } from '../../types'
 import { buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
-import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, nextFeedbackRating, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
+import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, nextFeedbackRating, patchMessage, selectConversation, visibleMessagesForPendingAction } from './chatState'
 import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
 import { followGeneration, generationProgressFromEvent, type GenerationEvent, type GenerationProgress } from './generationStream'
 
@@ -110,8 +110,10 @@ export function BranchingChatPanel({
   const [matchLoadingId, setMatchLoadingId] = useState<string | null>(null)
   const [recording, setRecording] = useState(false)
   const [ttsOn, setTtsOn] = useState(true)
+  const [editDraft, setEditDraft] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const editInputRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<ReturnType<typeof createSpeechRecognizer>>(null)
   const generationAbortRef = useRef<AbortController | null>(null)
   /** 用户主动停止的 generation，避免 reload 仍为 generating 时再次拉起 SSE */
@@ -132,13 +134,17 @@ export function BranchingChatPanel({
   const pendingAction = activeTab?.pendingAction || null
   const input = inputsByTab[activeTabKey] || ''
   const messages = useMemo(() => messagesForSelectedBranch(chatState), [chatState])
+  const editingMessageId = pendingAction?.action === 'edit_resend'
+    ? pendingAction.derivedFromMessageId || null
+    : null
   const messagePreview = useMemo(
-    () => pendingAction
-      ? previewMessagesAtBranchPoint(messages, pendingAction.parentMessageId ?? null)
-      : { items: messages, hiddenCount: 0 },
+    () => visibleMessagesForPendingAction(messages, pendingAction),
     [messages, pendingAction],
   )
   const visibleMessages = messagePreview.items
+  const editingMessageIndex = editingMessageId
+    ? visibleMessages.findIndex((message) => message.id === editingMessageId)
+    : -1
   const selectedPath = chatState.selectedBranchId ? chatState.pathsByBranch[chatState.selectedBranchId] : undefined
   const generatingMessage = [...messages].reverse().find((message) => message.status === 'generating' && message.generation_id)
 
@@ -340,6 +346,7 @@ export function BranchingChatPanel({
     setWorkspaceTabs([])
     setActiveTabKey('new')
     setInputsByTab({ new: '' })
+    setEditDraft('')
     workspaceChatIdRef.current = null
     setError('')
     setNotice('')
@@ -435,12 +442,13 @@ export function BranchingChatPanel({
       if (generatingMessage?.generation_id) await stopGeneration(generatingMessage.generation_id)
       return
     }
-    const text = (textOverride ?? input).trim()
+    const editingInline = pendingAction?.action === 'edit_resend'
+    const text = (textOverride ?? (editingInline ? editDraft : input)).trim()
     if (!text) return
     setSending(true)
     setGenerationProgress({ stage: 'queued' })
     setError('')
-    setInput('')
+    if (!editingInline) setInput('')
     let created = false
     try {
       const result = await chatApi.turn(currentChatId, buildTurnCommand({
@@ -467,10 +475,12 @@ export function BranchingChatPanel({
         setActiveTabKey(result.branch_id)
       } else {
         setPendingAction(null)
+        setEditDraft('')
       }
       await loadConversation(result.chat_id, result.branch_id, true, result.branch_id)
     } catch (cause) {
-      setInput(text)
+      if (editingInline) setEditDraft(text)
+      else setInput(text)
       setGenerationProgress(null)
       setError(cause instanceof Error ? cause.message : '发送失败，请稍后重试')
     } finally { if (!created) setSending(false) }
@@ -532,16 +542,27 @@ export function BranchingChatPanel({
   }
 
   function prepareEdit(message: ChatMessageNode) {
-    setPendingAction({ action: 'edit_resend', parentMessageId: message.parent_message_id,
-      derivedFromMessageId: message.id, label: '正在编辑当前线路' })
-    setInput(message.content)
+    setPendingAction({
+      action: 'edit_resend',
+      parentMessageId: message.parent_message_id,
+      derivedFromMessageId: message.id,
+      label: '正在编辑当前线路',
+    })
+    setEditDraft(message.content)
     setNotice('')
     setError('')
-    window.requestAnimationFrame(() => inputRef.current?.focus())
+    window.requestAnimationFrame(() => {
+      const el = editInputRef.current
+      if (!el) return
+      el.focus()
+      const len = el.value.length
+      el.setSelectionRange(len, len)
+    })
   }
 
   function cancelPendingAction() {
     setNotice('')
+    setEditDraft('')
     if (pendingAction?.action === 'rewind_continue') closeWorkspaceTab(activeTabKey)
     else setPendingAction(null)
   }
@@ -654,21 +675,68 @@ export function BranchingChatPanel({
         const match = matchesByMessage[message.id]
         const canBranch = canCreateBranchAfterMessage(message, index, visibleMessages.length)
         const canFeedback = message.role === 'assistant' && message.status === 'completed'
-        return <article key={message.id} className="animate-msg-in group/msg">
-          <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>{message.role === 'assistant' && message.status === 'generating'
-            ? <GenerationStatusLine progress={generationProgress} content={message.content} />
-            : <div className={`relative max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${message.role === 'user' ? 'rounded-br-md bg-teal-deep text-white' : message.role === 'system' ? 'border border-amber-200 bg-amber-50 text-amber-900/80' : 'rounded-bl-md border border-line/70 bg-white text-ink/90'}`}>
-              {message.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: fmtMd(message.content) }} /> : message.content}
-              {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
-            </div>}</div>
-          {message.match_run && !match?.items.length && <button type="button" onClick={() => void loadMatch(message)} className="mt-2 flex w-full max-w-[92%] items-center gap-2 rounded-xl border border-line/70 bg-white px-3 py-2 text-left text-[11px] text-ink-soft/65 hover:border-teal/30 hover:bg-mist/30">
+        const isEditing = message.id === editingMessageId
+        const dimmedByEdit = editingMessageIndex >= 0 && index > editingMessageIndex
+        return <article key={message.id} className={`animate-msg-in group/msg ${dimmedByEdit ? 'opacity-45' : ''}`}>
+          <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {isEditing ? (
+              <div className="w-full max-w-[92%] rounded-2xl border border-line bg-white p-3 shadow-[0_1px_2px_rgba(15,61,68,0.04)]">
+                <textarea
+                  ref={editInputRef}
+                  value={editDraft}
+                  disabled={sending}
+                  onChange={(event) => setEditDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      cancelPendingAction()
+                      return
+                    }
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      void send(editDraft)
+                    }
+                  }}
+                  rows={Math.min(8, Math.max(3, editDraft.split('\n').length + 1))}
+                  className="w-full resize-none bg-transparent text-[12.5px] leading-relaxed text-ink outline-none disabled:opacity-50"
+                  aria-label="编辑消息"
+                />
+                <div className="mt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={sending}
+                    onClick={cancelPendingAction}
+                    className="rounded-lg border border-line bg-white px-3 py-1.5 text-[12px] text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep disabled:opacity-40"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    disabled={sending || !editDraft.trim()}
+                    onClick={() => void send(editDraft)}
+                    className="rounded-lg bg-teal-deep px-3 py-1.5 text-[12px] font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+                  >
+                    发送
+                  </button>
+                </div>
+              </div>
+            ) : message.role === 'assistant' && message.status === 'generating' ? (
+              <GenerationStatusLine progress={generationProgress} content={message.content} />
+            ) : (
+              <div className={`relative max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${message.role === 'user' ? 'rounded-br-md bg-teal-deep text-white' : message.role === 'system' ? 'border border-amber-200 bg-amber-50 text-amber-900/80' : 'rounded-bl-md border border-line/70 bg-white text-ink/90'}`}>
+                {message.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: fmtMd(message.content) }} /> : message.content}
+                {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
+              </div>
+            )}
+          </div>
+          {!isEditing && !dimmedByEdit && message.match_run && !match?.items.length && <button type="button" onClick={() => void loadMatch(message)} className="mt-2 flex w-full max-w-[92%] items-center gap-2 rounded-xl border border-line/70 bg-white px-3 py-2 text-left text-[11px] text-ink-soft/65 hover:border-teal/30 hover:bg-mist/30">
             <i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin text-teal-deep' : 'ri-group-line text-teal-deep'} />
             <span className="font-medium">候选人结果</span>
             <span className="tabular-nums">{message.match_run.total} 位</span>
             <i className="ri-arrow-right-s-line ml-auto text-ink-soft/35" />
           </button>}
-          {match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
-          {((!sending && message.role !== 'system' && (canBranch || message.role === 'user' || message.match_run)) || canFeedback) && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
+          {!isEditing && !dimmedByEdit && match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
+          {!isEditing && !dimmedByEdit && ((!sending && message.role !== 'system' && (canBranch || message.role === 'user' || message.match_run)) || canFeedback) && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
             {!sending && canBranch && <button type="button" title="在完整回复后创建分支" aria-label="在完整回复后创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
             {!sending && message.role === 'user' && <button type="button" title="编辑当前消息" aria-label="编辑当前消息" onClick={() => prepareEdit(message)} className={MESSAGE_ICON_ACTION}><i className="ri-edit-line" /></button>}
             {!sending && message.match_run && <button type="button" title={`完整排名（${message.match_run.total}）`} aria-label={`完整排名，共 ${message.match_run.total} 位`} onClick={() => void loadMatch(message)} className={MESSAGE_ICON_ACTION}><i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin' : 'ri-list-ordered-2'} /></button>}
@@ -688,16 +756,41 @@ export function BranchingChatPanel({
 
     <footer className="shrink-0 border-t border-line/70 bg-white p-3">
       {(error || notice) && <div className={`mb-2 rounded-lg px-2 py-1.5 text-[10px] ${error ? 'bg-rose-50 text-rose-700' : 'bg-mist text-teal-deep'}`}>{error || notice}</div>}
-      {pendingAction?.action === 'edit_resend' && (
-        <div className="mb-2 flex items-center justify-end">
-          <button type="button" onClick={cancelPendingAction} className="text-[11px] text-ink-soft/50 transition hover:text-teal-deep">取消编辑</button>
-        </div>
-      )}
       <div className="flex items-end gap-2 rounded-xl border border-line/80 bg-sand/50 px-2 py-1.5 focus-within:border-teal/40">
-        <textarea ref={inputRef} value={input} disabled={selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction?.action === 'rewind_continue' ? '输入新分支的第一条消息…' : pendingAction?.action === 'edit_resend' ? '修改这条消息…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
+        <textarea
+          ref={inputRef}
+          value={input}
+          disabled={selectedBranch?.is_archived || Boolean(editingMessageId)}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              void send()
+            }
+          }}
+          rows={2}
+          placeholder={
+            selectedBranch?.is_archived
+              ? '该分支已归档，请先恢复后继续'
+              : editingMessageId
+                ? '正在编辑上方消息…'
+                : pendingAction?.action === 'rewind_continue'
+                  ? '输入新分支的第一条消息…'
+                  : '描述您的条件或继续对话…'
+          }
+          className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50"
+        />
         <button type="button" title={ttsOn ? '关闭语音播报' : '开启语音播报'} onClick={() => { if (ttsOn) stopSpeaking(); setTtsOn((value) => !value) }} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg ${ttsOn ? 'bg-mist text-teal-deep' : 'text-ink-soft/45'}`}><i className={ttsOn ? 'ri-volume-up-line' : 'ri-volume-mute-line'} /></button>
-        <button type="button" title="语音输入" disabled={sending} onClick={toggleVoice} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg disabled:opacity-40 ${recording ? 'bg-red-100 text-red-500' : 'bg-mist text-ink-soft/70'}`}><i className={recording ? 'ri-mic-fill' : 'ri-mic-line'} /></button>
-        <button type="button" disabled={!sending && !input.trim()} onClick={() => void send()} title={sending ? '停止生成' : pendingAction?.action === 'rewind_continue' ? '发送并创建分支' : pendingAction?.action === 'edit_resend' ? '保存编辑并发送' : '发送'} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-white disabled:opacity-40 ${sending ? 'bg-red-500' : 'bg-teal-deep'}`}><i className={sending ? 'ri-stop-fill' : 'ri-arrow-up-line'} /></button>
+        <button type="button" title="语音输入" disabled={sending || Boolean(editingMessageId)} onClick={toggleVoice} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg disabled:opacity-40 ${recording ? 'bg-red-100 text-red-500' : 'bg-mist text-ink-soft/70'}`}><i className={recording ? 'ri-mic-fill' : 'ri-mic-line'} /></button>
+        <button
+          type="button"
+          disabled={(!sending && !input.trim()) || Boolean(editingMessageId && !sending)}
+          onClick={() => void send()}
+          title={sending ? '停止生成' : pendingAction?.action === 'rewind_continue' ? '发送并创建分支' : '发送'}
+          className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg text-white disabled:opacity-40 ${sending ? 'bg-red-500' : 'bg-teal-deep'}`}
+        >
+          <i className={sending ? 'ri-stop-fill' : 'ri-arrow-up-line'} />
+        </button>
       </div>
     </footer>
   </aside>

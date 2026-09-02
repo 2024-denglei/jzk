@@ -115,6 +115,16 @@ export function previewMessagesAtBranchPoint(
   return { items, hiddenCount: messages.length - items.length }
 }
 
+/** 内联编辑时保留完整列表；回溯分叉仍截断到分支点。 */
+export function visibleMessagesForPendingAction(
+  messages: ChatMessageNode[],
+  pending: { action: string; parentMessageId?: string | null } | null | undefined,
+): BranchPreview {
+  if (!pending) return { items: messages, hiddenCount: 0 }
+  if (pending.action === 'edit_resend') return { items: messages, hiddenCount: 0 }
+  return previewMessagesAtBranchPoint(messages, pending.parentMessageId ?? null)
+}
+
 export function canCreateBranchAfterMessage(
   message: ChatMessageNode,
   index: number,
