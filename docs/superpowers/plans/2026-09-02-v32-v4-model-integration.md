@@ -3,7 +3,7 @@
 ## 文档状态
 
 - 日期：2026-09-02
-- 状态：待实施
+- 状态：已实施（2026-09-02）
 - 本次修订：由“主应用进程内加载模型”改为“主应用编排 + 独立评分服务”
 - 目标：用独立服务承载 `best_mae_model_v4.pt`、训练一致编码器和排序算法，今后替换模型时不改 LLM 工具契约和主业务流程
 - 数据源：继续使用现有 PostgreSQL `donor.donors`
@@ -516,3 +516,23 @@ checkpoint 注册 47 个字段，但随包提供的 5,000 条训练 Profile 实�
 4. `接入 must 过滤并区分模型排名池快照`
 5. `保持工具契约并补充跨服务状态反馈`
 6. `补齐端到端回归和显式 v2 回滚`
+
+## 实施结果
+
+- 已建立无数据库权限的独立 `services.match_scorer` 服务，并加载指定的
+  `best_mae_model_v4.pt`；实际模型身份、epoch 与 SHA-256 均通过校验。
+- 主应用保留 PostgreSQL must 过滤，通过最小候选契约调用 HTTP 评分客户端；
+  `MATCH_SCORING_BACKEND=local_v2` 仅作为显式重启回滚选项。
+- 评分服务按规则分预选最多 300 人，V4 使用 `ranking_score` 排序、
+  `match_score` 展示，并返回字段解释、模型身份和分阶段耗时。
+- 快照保存真实模型版本与 checkpoint SHA-256；分页只读取冻结展示快照，
+  不重复评分。API 和工具回执已区分 `filtered_count` 与 `ranked_count/total`。
+- 已增加认证、请求体上限、稳定错误码、模型 readiness、主应用依赖 readiness、
+  非敏感运行指标和生产 token 校验。
+- 全量 Python 回归：230 passed、22 skipped；跳过项是需要独立 PostgreSQL 测试库的
+  集成用例和原有条件性用例。
+- 真实 HTTP 冒烟测试通过：独立进程成功加载 checkpoint，`/readyz`、`/v1/model`
+  和 `/v1/rank` 均返回 200；两条虚构候选的热推理 `model_ms` 约 20.9 ms。
+- 已验证但未采用 `asyncio.to_thread` / AnyIO 线程池包装持久生成任务：当前
+  Python 3.14 测试进程在线程池回收阶段会卡住。`/api/match` 已改为 FastAPI 同步路由，
+  可由框架隔离阻塞调用；持久生成 worker 仍保持原同步执行方式，待运行时线程模型升级。

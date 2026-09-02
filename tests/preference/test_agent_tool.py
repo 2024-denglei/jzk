@@ -50,6 +50,8 @@ def test_invalid_profile_keeps_previous():
 
 
 def test_valid_profile_replaces_and_matches():
+    from core.preference.scorer import HeuristicRanker
+
     session = SessionContext(owner_user_id=1)
     rows = [{"code": "T", "abo_blood": "O", "height_cm": 180, "specimen_count": 2}]
     candidates, payload = run_preference_match(
@@ -61,6 +63,7 @@ def test_valid_profile_replaces_and_matches():
             },
         },
         fetch_rows=lambda s, p: rows,
+        ranker=HeuristicRanker(),
         log=False,
     )
     assert payload["ok"] is True

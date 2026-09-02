@@ -1,4 +1,3 @@
-import asyncio
 from uuid import uuid4
 
 import pytest
@@ -9,7 +8,7 @@ from core.preference.pipeline import MatchResult
 
 
 def _match(payload: dict):
-    return asyncio.run(match_donors(MatchRequest.model_validate(payload), user_id=42))
+    return match_donors(MatchRequest.model_validate(payload), user_id=42)
 
 
 VALID_PROFILE = {
@@ -44,16 +43,32 @@ def test_illegal_enum_is_400():
 
 def test_match_returns_503_when_ranker_unavailable(monkeypatch):
     from api import match as match_mod
-    from core.preference.v2_ranker import V2RankerUnavailable
+    from core.preference.scoring_contract import RankerUnavailable
 
     def boom(*args, **kwargs):
-        raise V2RankerUnavailable("找不到模型文件")
+        raise RankerUnavailable("找不到评分服务")
 
     monkeypatch.setattr(match_mod, "match_profile", boom)
     with pytest.raises(HTTPException) as exc_info:
         _match({"profile": VALID_PROFILE})
     assert exc_info.value.status_code == 503
     assert "找不到" in str(exc_info.value.detail)
+
+
+def test_match_scoring_readiness_maps_dependency_failure(monkeypatch):
+    from api import match as match_mod
+    from core.preference import ranker_factory
+    from core.preference.scoring_contract import RankerUnavailable
+
+    monkeypatch.setattr(
+        ranker_factory,
+        "get_scoring_readiness",
+        lambda: (_ for _ in ()).throw(RankerUnavailable("连接失败")),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        match_mod.match_scoring_readiness()
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail["code"] == "MATCH_SCORER_NOT_READY"
 
 
 def test_match_ranks_and_returns_field_scores(monkeypatch):

@@ -39,6 +39,7 @@ class MatchResultMeta:
     model_version: str
     dataset_version: str
     prefer_hits: list[dict[str, Any]] = field(default_factory=list)
+    model_checkpoint_sha256: str = ""
     status: str = "ready"
     snapshot_schema_version: int = 1
     snapshot_source: str = "native"

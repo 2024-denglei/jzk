@@ -63,6 +63,7 @@ def get_frozen_match_page(
         "items": items,
         "has_more": offset + len(items) < meta.total,
         "model_version": meta.model_version,
+        "model_checkpoint_sha256": meta.model_checkpoint_sha256,
         "dataset_version": meta.dataset_version,
         "snapshot_schema_version": meta.snapshot_schema_version,
         "snapshot_source": meta.snapshot_source,

@@ -96,8 +96,8 @@ class FieldScorePayload(BaseModel):
     field: str
     actual: Any
     target: Any
-    s: float
-    weight: float
+    s: float = Field(ge=0.0, le=1.0)
+    weight: float = Field(ge=0.0, le=1.0)
     constraint: Literal["must", "prefer"]
 
 
@@ -106,9 +106,9 @@ class RankedItem(BaseModel):
 
     donor_id: int
     rank: int = Field(gt=0)
-    match_score: float
-    ranking_score: float
-    heuristic_score: float
+    match_score: float = Field(ge=0.0, le=1.0)
+    ranking_score: float = Field(ge=0.0, le=1.0)
+    heuristic_score: float = Field(ge=0.0, le=1.0)
     field_scores: list[FieldScorePayload]
 
 

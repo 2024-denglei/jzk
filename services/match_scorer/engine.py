@@ -94,6 +94,12 @@ class MatchScoringEngine:
         missing = sorted(required - set(checkpoint))
         if missing:
             raise ValueError(f"Checkpoint 缺少字段：{missing}")
+        model_name = str(checkpoint.get("model_name") or "")
+        checkpoint_role = str(checkpoint.get("checkpoint_role") or "")
+        if model_name != settings.expected_model_name:
+            raise ValueError("Checkpoint model_name 与配置不一致")
+        if checkpoint_role != settings.expected_checkpoint_role:
+            raise ValueError("Checkpoint checkpoint_role 与配置不一致")
 
         state = checkpoint["model_state"]
         field_to_id = checkpoint["field_to_id"]
@@ -130,9 +136,9 @@ class MatchScoringEngine:
             numeric_token_dim=cfg.numeric_token_dim,
         )
         self.manifest = ModelManifest(
-            name=str(checkpoint.get("model_name") or "unknown"),
+            name=model_name,
             version=settings.model_version,
-            checkpoint_role=str(checkpoint.get("checkpoint_role") or "unknown"),
+            checkpoint_role=checkpoint_role,
             checkpoint_epoch=(
                 int(checkpoint["best_epoch"])
                 if checkpoint.get("best_epoch") is not None

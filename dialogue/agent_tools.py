@@ -60,7 +60,7 @@ AGENT_SYSTEM_PROMPT = """你是智能生育匹配系统的顾问助手。
 3. 人数、代号、匹配度只能来自工具返回的 count / top_preview / prefer_hits。禁止虚构。禁止输出捐精人 Markdown 表格。匹配结果由系统在回复下方展示卡片，引导用户看卡片。
 4. 若工具返回 ok=false，根据 error / allowed_values 修正 parameters，再次调用同一工具，直到成功或确认无法修正。修正期间不要向用户编造成果。
 5. 闲聊、问候、明确说「没了/没有了」且不改条件 → 不调用工具。
-6. 若工具返回 prefer_hits 非空：这些字段只重排、未做硬过滤。count / filtered_count 是必要条件过滤后的人数，可以与上一轮相同。总结必须说明「人数未因该偏好减少，已按偏好重排」，并引用各字段 hits/of（例如：仍是 554 位；已按籍贯偏好重排，其中 230 位更符合，已排在列表前部）。禁止把 prefer 说成筛掉了人。
+6. filtered_count 是满足 must 硬条件的总人数；count / ranked_count 是模型生成的可浏览排名人数（最多 300），两者可能不同。若工具返回 prefer_hits 非空：这些字段只重排、未做硬过滤，hits/of 的分母是模型排名池。总结必须说明「硬条件人数未因该偏好减少，已按偏好重排」，并引用各字段 hits/of。filtered_count 大于 ranked_count 时必须同时说清两个数字，禁止把 300 说成全部合格人数，也禁止把 prefer 说成筛掉了人。
 
 【画像规则】
 - 每轮提交完整 attributes，不是增量。取消某条件 = 该字段从 attributes 中消失
@@ -103,8 +103,22 @@ def tool_failure_payload(error: Any, **extra: Any) -> dict[str, Any]:
     return payload
 
 
-def _match_success_note(prefer_hits: list | None) -> str:
+def _match_success_note(
+    prefer_hits: list | None,
+    *,
+    filtered_count: int | None = None,
+    ranked_count: int | None = None,
+) -> str:
     base = "请根据 count/match_level 总结，引导用户查看下方卡片，勿虚构人数与代号。"
+    if (
+        filtered_count is not None
+        and ranked_count is not None
+        and filtered_count > ranked_count
+    ):
+        base += (
+            f" 共有 {filtered_count} 人满足 must 硬条件；"
+            f"模型对预选的 {ranked_count} 人生成可浏览排名。"
+        )
     if not prefer_hits:
         return base
     return (
@@ -122,6 +136,7 @@ SUBMIT_PROFILE_TOOL = {
         "description": (
             "提交当前完整 PreferenceProfile 并匹配捐精人。"
             "有偏好或改条件时必须调用。arguments 必须符合 JSON Schema。"
+            "除 specimen_count 外最多提交 11 个属性。"
             "若返回 ok=false，按 error 修正后重试本工具。"
         ),
         "parameters": openai_tool_schema(),
@@ -438,6 +453,7 @@ def run_preference_match(
     raw_profile: dict,
     fetch_rows=None,
     count_rows=None,
+    ranker=None,
     log: bool = True,
 ):
     """校验完整画像并匹配。非法则不改 session。返回 (candidates, payload)。"""
@@ -472,6 +488,7 @@ def run_preference_match(
         profile,
         fetch_rows=fetch_rows,
         count_rows=count_rows,
+        ranker=ranker,
         log=log,
         session_id=getattr(session, "session_id", ""),
     )
@@ -490,14 +507,19 @@ def run_preference_match(
         })
     payload = {
         "ok": True,
-        "count": len(result.candidates),
+        "count": result.ranked_count or len(result.candidates),
+        "ranked_count": result.ranked_count or len(result.candidates),
         "match_level": result.match_level,
         "filtered_count": result.filtered_count,
         "feature_summary": build_profile_summary(profile),
         "bottlenecks": result.bottlenecks,
         "top_preview": top,
         "prefer_hits": list(result.prefer_hits or []),
-        "note": _match_success_note(result.prefer_hits),
+        "note": _match_success_note(
+            result.prefer_hits,
+            filtered_count=result.filtered_count,
+            ranked_count=result.ranked_count or len(result.candidates),
+        ),
     }
     return result.candidates, payload
 
@@ -551,6 +573,7 @@ def apply_match_api_response(session, raw_profile: dict, status: int, data: dict
     payload = {
         "ok": True,
         "count": total_count,
+        "ranked_count": total_count,
         "match_level": data.get("match_level"),
         "filtered_count": data.get("filtered_count"),
         "feature_summary": build_profile_summary(profile),
@@ -559,7 +582,11 @@ def apply_match_api_response(session, raw_profile: dict, status: int, data: dict
         "prefer_hits": prefer_hits,
         "result_set_id": session.match_result_id,
         "next_cursor": session.match_next_cursor,
-        "note": _match_success_note(prefer_hits),
+        "note": _match_success_note(
+            prefer_hits,
+            filtered_count=data.get("filtered_count"),
+            ranked_count=total_count,
+        ),
     }
     if data.get("skipped"):
         payload["skipped"] = True

@@ -10,6 +10,7 @@ from uuid import UUID
 
 import config
 from api.match import execute_match
+from core.preference.scoring_contract import RankerUnavailable
 from core.preference.validate import ProfileValidationError, parse_profile
 from dialogue.agent_tools import (
     AGENT_SYSTEM_PROMPT,
@@ -218,11 +219,19 @@ class AgentGenerationProcessor:
                         tool_payload = {
                             "ok": True,
                             "count": total,
+                            "ranked_count": total,
+                            "filtered_count": int(
+                                match_data.get("filtered_count") or 0
+                            ),
                             "match_level": match_data.get("match_level"),
                             "prefer_hits": match_data.get("prefer_hits") or [],
                             "bottlenecks": match_data.get("bottlenecks") or [],
                             "result_set_id": result_set_id,
-                            "note": "匹配卡片由客户端按消息快照分页加载。",
+                            "note": (
+                                "匹配卡片由客户端按消息快照分页加载。"
+                                f"共有 {int(match_data.get('filtered_count') or 0)} 人满足 must 硬条件；"
+                                f"模型生成 {total} 人的可浏览排名。"
+                            ),
                         }
                         match_ok = True
                         if match_run_id:
@@ -235,6 +244,15 @@ class AgentGenerationProcessor:
                                     "total": total,
                                 },
                             )
+                    except RankerUnavailable as exc:
+                        tool_payload = tool_failure_payload(
+                            exc,
+                            retry=False,
+                            note=(
+                                "匹配评分服务暂时不可用。请明确告知用户稍后重试，"
+                                "不要修改偏好条件，也不要编造匹配人数、代号或卡片。"
+                            ),
+                        )
                     except (ProfileValidationError, ValueError) as exc:
                         tool_payload = tool_failure_payload(exc)
                 timings[f"tool_{round_index}_ms"] = round(

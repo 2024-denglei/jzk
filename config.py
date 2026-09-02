@@ -143,7 +143,23 @@ MATCH_RESULT_PAGE_SIZE_DEFAULT = int(os.getenv("MATCH_RESULT_PAGE_SIZE_DEFAULT",
 MATCH_RESULT_PAGE_SIZE_MAX = int(os.getenv("MATCH_RESULT_PAGE_SIZE_MAX", "50"))
 MATCH_SNAPSHOT_RETENTION_DAYS = int(os.getenv("MATCH_SNAPSHOT_RETENTION_DAYS", "180"))
 MATCH_CURSOR_TTL_SECONDS = int(os.getenv("MATCH_CURSOR_TTL_SECONDS", "86400"))
-MATCH_MODEL_VERSION = os.getenv("MATCH_MODEL_VERSION", "v2")
+MATCH_MODEL_VERSION = os.getenv("MATCH_MODEL_VERSION", "v32-v4-best-mae")
+MATCH_SCORING_BACKEND = os.getenv("MATCH_SCORING_BACKEND", "http").strip().lower()
+MATCH_SCORER_URL = os.getenv(
+    "MATCH_SCORER_URL", "http://127.0.0.1:8020"
+).strip().rstrip("/")
+MATCH_SCORER_CONTRACT_VERSION = os.getenv(
+    "MATCH_SCORER_CONTRACT_VERSION", "1"
+).strip()
+MATCH_SCORER_TIMEOUT_SECONDS = float(
+    os.getenv("MATCH_SCORER_TIMEOUT_SECONDS", "15")
+)
+MATCH_SCORER_MAX_CANDIDATES = int(
+    os.getenv("MATCH_SCORER_MAX_CANDIDATES", "20000")
+)
+MATCH_SCORER_TOKEN = os.getenv(
+    "MATCH_SCORER_TOKEN", "dev-match-scorer-token-change-me"
+)
 COSINE_WEIGHT = 0.6
 EUCLIDEAN_WEIGHT = 0.4
 
@@ -188,6 +204,7 @@ _INSECURE_JWT_SECRETS = {
 def validate_security_config() -> None:
     """在生产启动前拒绝已知不安全的开发配置。"""
     validate_chat_v2_config()
+    validate_match_scoring_config()
     if ENVIRONMENT not in {"development", "test", "production"}:
         raise SecurityConfigError("ENVIRONMENT 仅支持 development、test 或 production")
     if ENVIRONMENT != "production":
@@ -216,9 +233,38 @@ def validate_security_config() -> None:
         errors.append("REDIS_URL 必须使用 redis:// 或 rediss://")
     elif not redis_url.password:
         errors.append("生产 Redis 必须配置认证凭证")
+    if (
+        MATCH_SCORING_BACKEND == "http"
+        and (
+            MATCH_SCORER_TOKEN == "dev-match-scorer-token-change-me"
+            or len(MATCH_SCORER_TOKEN.encode("utf-8")) < 32
+        )
+    ):
+        errors.append("生产环境必须设置至少32字节的 MATCH_SCORER_TOKEN")
 
     if errors:
         raise SecurityConfigError("生产安全配置校验失败：" + "；".join(errors))
+
+
+def validate_match_scoring_config() -> None:
+    """Validate the selected model-scoring transport before serving traffic."""
+    errors: list[str] = []
+    if MATCH_SCORING_BACKEND not in {"http", "local_v2"}:
+        errors.append("MATCH_SCORING_BACKEND 仅支持 http 或 local_v2")
+    if MATCH_SCORING_BACKEND == "http":
+        parsed = urlparse(MATCH_SCORER_URL)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            errors.append("MATCH_SCORER_URL 必须是有效的 http/https URL")
+        if not MATCH_SCORER_TOKEN:
+            errors.append("MATCH_SCORER_TOKEN 不能为空")
+    if MATCH_SCORER_CONTRACT_VERSION != "1":
+        errors.append("MATCH_SCORER_CONTRACT_VERSION 当前仅支持 1")
+    if MATCH_SCORER_TIMEOUT_SECONDS <= 0:
+        errors.append("MATCH_SCORER_TIMEOUT_SECONDS 必须大于0")
+    if MATCH_SCORER_MAX_CANDIDATES <= 0:
+        errors.append("MATCH_SCORER_MAX_CANDIDATES 必须大于0")
+    if errors:
+        raise SecurityConfigError("匹配评分配置校验失败：" + "；".join(errors))
 
 
 def validate_chat_v2_config() -> None:

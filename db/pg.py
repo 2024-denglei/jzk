@@ -137,6 +137,7 @@ def ensure_schema() -> None:
             "17_allow_current_line_message_edits.sql",
             "18_normalize_branch_names.sql",
             "19_add_chat_message_feedback.sql",
+            "20_add_match_model_identity.sql",
         ):
             path = _SCHEMA_DIR / name
             if path.exists():

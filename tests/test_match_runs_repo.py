@@ -12,7 +12,8 @@ def _meta(total=2):
     return MatchResultMeta(
         result_set_id=str(uuid4()), owner_user_id=7, total=total,
         profile={"schema_version": "1.0", "attributes": {}}, profile_hash="",
-        model_version="v2", dataset_version="donors:2", prefer_hits=[],
+        model_version="v32-v4-best-mae", dataset_version="donors:2", prefer_hits=[],
+        model_checkpoint_sha256="a" * 64,
     )
 
 
@@ -50,6 +51,7 @@ def test_create_snapshot_writes_only_versioned_items(monkeypatch):
     ])
     executed_many = []
     sql_calls = []
+    params_calls = []
 
     class Cursor:
         def __enter__(self): return self
@@ -67,6 +69,7 @@ def test_create_snapshot_writes_only_versioned_items(monkeypatch):
 
     def fake_fetchone(_conn, sql, _params):
         sql_calls.append(sql)
+        params_calls.append(_params)
         return next(fetched)
 
     monkeypatch.setattr(match_runs_repo, "db_session", fake_session)
@@ -78,6 +81,8 @@ def test_create_snapshot_writes_only_versioned_items(monkeypatch):
     )
 
     assert "donor_ids" not in sql_calls[0] and "scores" not in sql_calls[0]
+    assert "model_checkpoint_sha256" in sql_calls[0]
+    assert params_calls[0][5] == "a" * 64
     assert [row[1:4] for row in executed_many] == [(1, 91, 0.123457), (2, 92, 0.9)]
     assert result.status == "ready" and result.ready_at == ready_at
 

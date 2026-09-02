@@ -15,6 +15,7 @@ MIGRATION_16 = ROOT / "db" / "postgres" / "16_drop_legacy_chat_storage.sql"
 MIGRATION_17 = ROOT / "db" / "postgres" / "17_allow_current_line_message_edits.sql"
 MIGRATION_18 = ROOT / "db" / "postgres" / "18_normalize_branch_names.sql"
 MIGRATION_19 = ROOT / "db" / "postgres" / "19_add_chat_message_feedback.sql"
+MIGRATION_20 = ROOT / "db" / "postgres" / "20_add_match_model_identity.sql"
 
 
 def test_branching_chat_migration_declares_core_tables_and_constraints():
@@ -102,6 +103,12 @@ def test_message_feedback_migration_links_completed_assistant_messages():
     assert "ON DELETE CASCADE" in sql
 
 
+def test_model_identity_migration_records_checkpoint_hash():
+    sql = MIGRATION_20.read_text(encoding="utf-8")
+    assert "model_checkpoint_sha256" in sql
+    assert "NOT NULL" in sql
+
+
 def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
     class Conn:
         def execute(self, _sql, _params=()):
@@ -125,7 +132,7 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
 
     pg.ensure_schema()
 
-    assert called[-10:] == [
+    assert called[-11:] == [
         "10_add_match_runs.sql",
         "11_add_branching_chat_storage.sql",
         "12_add_match_run_items.sql",
@@ -136,4 +143,5 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
         "17_allow_current_line_message_edits.sql",
         "18_normalize_branch_names.sql",
         "19_add_chat_message_feedback.sql",
+        "20_add_match_model_identity.sql",
     ]

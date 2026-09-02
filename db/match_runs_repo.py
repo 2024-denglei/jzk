@@ -86,10 +86,10 @@ def create_match_run(
             """
             INSERT INTO app.match_runs (
                 id, user_id, profile_json, profile_hash, model_version,
-                dataset_version, total, prefer_hits,
+                model_checkpoint_sha256, dataset_version, total, prefer_hits,
                 status, snapshot_schema_version, snapshot_source
             )
-            VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s::jsonb,
+            VALUES (%s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s::jsonb,
                     'building', 1, 'native')
             ON CONFLICT (id) DO NOTHING
             RETURNING created_at
@@ -100,6 +100,7 @@ def create_match_run(
                 profile_json,
                 digest,
                 meta.model_version,
+                meta.model_checkpoint_sha256,
                 meta.dataset_version,
                 meta.total,
                 json.dumps(meta.prefer_hits, ensure_ascii=False, separators=(",", ":")),
@@ -210,6 +211,7 @@ def get_match_run(result_set_id: str, owner_user_id: int) -> MatchResultMeta | N
             conn,
             """
             SELECT id, user_id, profile_json, profile_hash, model_version,
+                   model_checkpoint_sha256,
                    dataset_version, total, prefer_hits, status,
                    snapshot_schema_version, snapshot_source, created_at, ready_at
             FROM app.match_runs WHERE id = %s AND user_id = %s AND status = 'ready'
@@ -225,6 +227,7 @@ def get_match_run(result_set_id: str, owner_user_id: int) -> MatchResultMeta | N
         profile=dict(row["profile_json"] or {}),
         profile_hash=str(row["profile_hash"]),
         model_version=str(row["model_version"]),
+        model_checkpoint_sha256=str(row.get("model_checkpoint_sha256") or ""),
         dataset_version=str(row["dataset_version"]),
         prefer_hits=list(row["prefer_hits"] or []),
         status=str(row.get("status") or "ready"),
@@ -249,6 +252,7 @@ def get_match_run_page(
             conn,
             """
             SELECT id, user_id, profile_json, profile_hash, model_version,
+                   model_checkpoint_sha256,
                    dataset_version, total, prefer_hits, status,
                    snapshot_schema_version, snapshot_source, created_at, ready_at
             FROM app.match_runs WHERE id = %s AND user_id = %s AND status = 'ready'
@@ -270,6 +274,7 @@ def get_match_run_page(
         result_set_id=str(row["id"]), owner_user_id=int(row["user_id"]),
         total=int(row["total"]), profile=dict(row["profile_json"] or {}),
         profile_hash=str(row["profile_hash"]), model_version=str(row["model_version"]),
+        model_checkpoint_sha256=str(row.get("model_checkpoint_sha256") or ""),
         dataset_version=str(row["dataset_version"]), prefer_hits=list(row["prefer_hits"] or []),
         status=str(row.get("status") or "ready"),
         snapshot_schema_version=int(row.get("snapshot_schema_version") or 1),
@@ -291,6 +296,7 @@ def get_all_match_run_refs(
             conn,
             """
             SELECT id, user_id, profile_json, profile_hash, model_version,
+                   model_checkpoint_sha256,
                    dataset_version, total, prefer_hits, status,
                    snapshot_schema_version, snapshot_source, created_at, ready_at
             FROM app.match_runs WHERE id = %s AND user_id = %s AND status = 'ready'
@@ -311,6 +317,7 @@ def get_all_match_run_refs(
         result_set_id=str(row["id"]), owner_user_id=int(row["user_id"]),
         total=int(row["total"]), profile=dict(row["profile_json"] or {}),
         profile_hash=str(row["profile_hash"]), model_version=str(row["model_version"]),
+        model_checkpoint_sha256=str(row.get("model_checkpoint_sha256") or ""),
         dataset_version=str(row["dataset_version"]), prefer_hits=list(row["prefer_hits"] or []),
         status=str(row.get("status") or "ready"),
         snapshot_schema_version=int(row.get("snapshot_schema_version") or 1),
@@ -341,6 +348,7 @@ def get_match_run_items_page(
             conn,
             """
             SELECT id, user_id, profile_json, profile_hash, model_version,
+                   model_checkpoint_sha256,
                    dataset_version, total, prefer_hits, status,
                    snapshot_schema_version, snapshot_source, created_at, ready_at
             FROM app.match_runs
@@ -370,6 +378,7 @@ def get_match_run_items_page(
         profile=dict(meta_row["profile_json"] or {}),
         profile_hash=str(meta_row["profile_hash"]),
         model_version=str(meta_row["model_version"]),
+        model_checkpoint_sha256=str(meta_row.get("model_checkpoint_sha256") or ""),
         dataset_version=str(meta_row["dataset_version"]),
         prefer_hits=list(meta_row["prefer_hits"] or []),
         status=str(meta_row["status"]),

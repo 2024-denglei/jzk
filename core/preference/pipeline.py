@@ -37,6 +37,9 @@ class MatchResult:
     bottlenecks: list[dict[str, Any]]
     skipped: bool
     filtered_count: int
+    ranked_count: int | None = None
+    model_version: str = ""
+    checkpoint_sha256: str = ""
     timings: dict[str, float] = field(default_factory=dict)
     prefer_hits: list[dict[str, Any]] = field(default_factory=list)
     ranked_refs: list[RankedCandidateRef] = field(default_factory=list)
@@ -179,7 +182,7 @@ def hydrate_ranked_candidates(
     if not refs or not rows:
         return []
     if ranker is None:
-        from core.preference.v2_ranker import get_default_ranker
+        from core.preference.ranker_factory import get_default_ranker
 
         ranker = get_default_ranker()
     scored = ranker.rank(profile, rows)
@@ -235,7 +238,7 @@ def match_profile(
         )
 
     if ranker is None:
-        from core.preference.v2_ranker import get_default_ranker
+        from core.preference.ranker_factory import get_default_ranker
 
         t_load = time.perf_counter()
         ranker = get_default_ranker()
@@ -245,6 +248,8 @@ def match_profile(
     t1 = time.perf_counter()
     ranked = ranker.rank(profile, rows)
     rank_ms = (time.perf_counter() - t1) * 1000
+    metadata_getter = getattr(ranker, "metadata", None)
+    scoring_metadata = metadata_getter() if callable(metadata_getter) else None
     ranked_refs = [
         RankedCandidateRef(
             donor_id=_internal_donor_id(row, i + 1),
@@ -319,6 +324,17 @@ def match_profile(
         bottlenecks=[],
         skipped=False,
         filtered_count=len(rows),
+        ranked_count=len(ranked),
+        model_version=(
+            str(getattr(scoring_metadata, "model_version", ""))
+            if scoring_metadata is not None
+            else ""
+        ),
+        checkpoint_sha256=(
+            str(getattr(scoring_metadata, "checkpoint_sha256", ""))
+            if scoring_metadata is not None
+            else ""
+        ),
         timings=timings,
         prefer_hits=compute_prefer_hits_from_ranked(profile, ranked),
         ranked_refs=ranked_refs,
