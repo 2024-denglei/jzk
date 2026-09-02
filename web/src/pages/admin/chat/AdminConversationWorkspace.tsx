@@ -268,7 +268,11 @@ function HorizontalBranchTree({ layout, selectedBranchId, onSelect }: {
   selectedBranchId: string | null
   onSelect: (branch: ChatBranchSummary) => void
 }) {
+  const onlyRoot = layout.nodes.length <= 1
   return <div className="max-h-[250px] overflow-auto bg-[#f8fafc] px-4 py-3">
+    {onlyRoot && (
+      <div className="mb-2 text-[9px] text-[#929dac]">暂无子分支（仅主线）。编辑消息会改写当前线路，不会产生新分支；只有「回溯后继续」才会分叉。</div>
+    )}
     <div className="relative" style={{ width: `${layout.width}px`, height: `${layout.height}px` }}>
       <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
         {layout.edges.map((edge) => {
@@ -278,7 +282,7 @@ function HorizontalBranchTree({ layout, selectedBranchId, onSelect }: {
       </svg>
       {layout.nodes.map((node) => <button key={node.branch.id} type="button" onClick={() => onSelect(node.branch)} style={{ left: `${node.x}px`, top: `${node.y}px` }} className={`absolute h-[52px] w-[170px] rounded-xl border bg-white px-3 py-2 text-left shadow-[0_3px_9px_rgba(38,55,78,0.05)] transition ${node.branch.id === selectedBranchId ? 'border-[#5b97ea] bg-[#eaf2ff] ring-2 ring-[#1677ff]/10' : 'border-[#d8e0eb] hover:border-[#9fc2f4]'}`}>
         <div className="flex items-center gap-1.5 text-[10px] font-semibold text-[#33445c]"><i className={node.branch.fork_reason === 'root' ? 'ri-chat-3-line text-[#1677ff]' : 'ri-git-branch-line text-[#1677ff]'} /><span className="truncate">{node.branch.name}</span>{node.branch.is_active && <span className="ml-auto rounded bg-emerald-50 px-1 py-0.5 text-[7px] text-emerald-700">用户活跃</span>}</div>
-        <div className="mt-1 truncate text-[8.5px] text-[#8995a7]">{branchOriginLabel(node.branch)} · {node.branch.message_count} 条</div>
+        <div className="mt-1 truncate text-[8.5px] text-[#8995a7]">{branchOriginLabel(node.branch)} · {node.branch.message_count} 条消息</div>
       </button>)}
     </div>
   </div>

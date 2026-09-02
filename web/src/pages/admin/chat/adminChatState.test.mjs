@@ -162,3 +162,11 @@ test('横向分支树按深度向右展开并让父节点位于子节点中间',
   assert.ok(byId.get('root').y > Math.min(byId.get('one').y, byId.get('two').y))
   assert.ok(layout.width >= 678)
 })
+
+test('仅主线时画布不强制留出大块空白', () => {
+  const layout = layoutHorizontalBranchTree([makeBranch('root', null, 'root')])
+  assert.equal(layout.nodes.length, 1)
+  assert.equal(layout.edges.length, 0)
+  assert.ok(layout.width < 420)
+  assert.ok(layout.width >= 170)
+})

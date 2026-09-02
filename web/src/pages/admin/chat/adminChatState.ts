@@ -197,10 +197,14 @@ export function layoutHorizontalBranchTree(branches: ChatBranchSummary[]): Horiz
     }]
   })
   const leafRows = Math.max(1, nextLeaf)
+  const contentWidth = 18 + (maxDepth + 1) * BRANCH_DEPTH_GAP
   return {
     nodes,
     edges,
-    width: Math.max(420, 18 + (maxDepth + 1) * BRANCH_DEPTH_GAP),
+    // 单根时不要强行撑到 420，避免右侧大块空白被误认为「丢了子分支」
+    width: maxDepth === 0
+      ? Math.max(BRANCH_NODE_WIDTH + 36, contentWidth)
+      : Math.max(420, contentWidth),
     height: Math.max(112, 36 + (leafRows - 1) * BRANCH_ROW_GAP + BRANCH_NODE_HEIGHT),
   }
 }
