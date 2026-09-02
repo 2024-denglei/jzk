@@ -42,7 +42,7 @@ def test_to_card_donor_info_keeps_only_card_keys():
         "age": 28,
         "ethnicity": "汉族",
         "hometown": "四川",
-        "figure": "匀称型",
+        "figure": "一般",
         "personality": "开朗",
         "occupation": "工程师",
         "specimen_count": 12,

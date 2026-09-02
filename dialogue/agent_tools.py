@@ -67,7 +67,7 @@ AGENT_SYSTEM_PROMPT = """你是智能生育匹配系统的顾问助手。
 - 「必须/一定要/不要（某项）」→ must 且 weight=1.0；「最好/希望」→ prefer；未说强度时 must=1.0、prefer=0.5
 - 「也可以/也行」表示放宽：把新值并入该字段（如籍贯 keywords 同时含重庆和四川），不要丢掉旧值
 - 数值字段用 range.min/max（height_cm、weight_kg、bmi、age、specimen_count）；单边范围另一侧填 null
-- 枚举字段用 values，且必须是该字段允许值
+- 枚举字段用 values，且必须严格使用下方 catalog 列出的库内实际取值；用户口语先映射到最近允许值，禁止自造近义词（如把「瘦点的」写成偏瘦型）
 - 其余文本字段用 keywords + match(any|all)
 - 调用时 arguments 必须是完整 JSON（schema_version=1.0 与 attributes），禁止空参数
 - 禁止输出 SQL，禁止编造代号
@@ -173,10 +173,10 @@ MATCH_DONORS_TOOL = {
                 },
                 "blood_type": {"type": "string", "description": "A/B/O/AB"},
                 "rh_blood": {"type": "string", "description": "阳性/阴性"},
-                "figure": {"type": "string", "description": "匀称型/精壮型/偏瘦型"},
-                "skin_color": {"type": "string", "description": "偏白/一般"},
-                "face_shape": {"type": "string"},
-                "eyelid": {"type": "string", "description": "单/双/内双"},
+                "figure": {"type": "string", "description": "一般/瘦弱/强壮/肥胖"},
+                "skin_color": {"type": "string", "description": "偏白/一般/偏黑"},
+                "face_shape": {"type": "string", "description": "长方/长/椭圆/瓜子"},
+                "eyelid": {"type": "string", "description": "单/双"},
                 "appearance": {
                     "type": "string",
                     "description": "形象气质：文艺型/阳光型/成熟型/绅士型。口语「帅/帅气/长得帅」请填阳光型",

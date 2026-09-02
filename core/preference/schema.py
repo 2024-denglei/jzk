@@ -18,14 +18,15 @@ class FieldSpec:
     ordered_ranks: dict[str, int] | None = None
 
 
+# 枚举必须与 donor.donors 当前实际取值对齐；禁止写入库中不存在的值。
 EDUCATION_ENUM = ("大专", "本科", "硕士", "博士")
 ABO_ENUM = ("A", "B", "O", "AB")
 RH_ENUM = ("阳性", "阴性")
-FIGURE_ENUM = ("一般", "瘦弱", "强壮", "肥胖", "匀称型", "精壮型", "偏瘦型")
+FIGURE_ENUM = ("一般", "瘦弱", "强壮", "肥胖")
 SKIN_ENUM = ("偏白", "一般", "偏黑")
-FACE_ENUM = ("长方", "长", "椭圆", "瓜子", "圆", "方", "菱形")
-EYELID_ENUM = ("单", "双", "内双")
-LIP_ENUM = ("一般", "厚", "薄", "厚唇", "薄唇", "适中")
+FACE_ENUM = ("长方", "长", "椭圆", "瓜子")
+EYELID_ENUM = ("单", "双")
+LIP_ENUM = ("一般", "厚", "薄")
 CONST_ENUM = (
     "白羊座", "金牛座", "双子座", "巨蟹座", "狮子座", "处女座",
     "天秤座", "天蝎座", "射手座", "摩羯座", "水瓶座", "双鱼座",
@@ -81,14 +82,14 @@ FIELD_GUIDE: dict[str, str] = {
     "bmi": "BMI。单边或区间，写法同身高",
     "age": "年龄（周岁，由出生日期计算）。30 岁以下 → range.max=30",
     "specimen_count": "冻存标本管数。至少 5 管 → range.min=5",
-    "education": "学历",
+    "education": "学历。「学历高/成绩好」→本科及以上（本科/硕士/博士）",
     "abo_blood": "ABO 血型，不要写「型」字",
     "rh_blood": "Rh 血型，用「阳性/阴性」不要用 +/-",
-    "figure": "体型",
-    "skin_color": "肤色",
-    "face_shape": "脸型",
-    "eyelid": "眼皮",
-    "lip_shape": "唇型",
+    "figure": "体型。口语映射：瘦/偏瘦/瘦点/苗条→瘦弱；胖/偏胖→肥胖；壮/精壮→强壮；匀称/标准/正常→一般。禁止编造偏瘦型/匀称型/精壮型",
+    "skin_color": "肤色。「白皙」→偏白，「正常」→一般",
+    "face_shape": "脸型。仅长方/长/椭圆/瓜子；圆脸→椭圆，方脸→长方",
+    "eyelid": "眼皮。「双眼皮」→双，「单眼皮」→单。禁止写内双",
+    "lip_shape": "唇型。厚唇→厚，薄唇/适中→薄/一般。禁止写厚唇/薄唇/适中字面值",
     "constellation": "星座",
     "ethnicity": "民族，如 汉族",
     "hometown": "籍贯。重庆或四川都可以 → keywords:[重庆,四川], match:any",

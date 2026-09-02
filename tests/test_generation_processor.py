@@ -130,7 +130,7 @@ def test_agent_processor_creates_match_snapshot_ref_and_streams_summary(monkeypa
     }
     assert control.events[2][1]["total"] == 12
     assert control.events[3][1]["stage"] == "summarizing"
-    assert control.metadata["prompt_version"] == "agent-v2"
+    assert control.metadata["prompt_version"] == "agent-v3"
     assert all("content" not in payload for _step, payload in control.trace.steps)
     transcript = [payload for step, payload in control.trace.steps if step == "agent_message"]
     assert [item["role"] for item in transcript] == [

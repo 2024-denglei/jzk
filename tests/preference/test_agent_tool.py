@@ -32,6 +32,36 @@ def test_field_catalog_is_generated_from_registry():
     assert text in AGENT_SYSTEM_PROMPT
 
 
+def test_enum_catalog_matches_donor_db_values():
+    """枚举 catalog / 工具 schema 只能暴露库内实际取值，避免硬过滤被幽灵枚举打成 0。"""
+    from core.preference.schema import (
+        EYELID_ENUM,
+        FACE_ENUM,
+        FIGURE_ENUM,
+        LIP_ENUM,
+        openai_tool_schema,
+    )
+
+    assert FIGURE_ENUM == ("一般", "瘦弱", "强壮", "肥胖")
+    assert FACE_ENUM == ("长方", "长", "椭圆", "瓜子")
+    assert EYELID_ENUM == ("单", "双")
+    assert LIP_ENUM == ("一般", "厚", "薄")
+
+    attrs = openai_tool_schema()["properties"]["attributes"]["properties"]
+    assert attrs["figure"]["properties"]["values"]["items"]["enum"] == list(FIGURE_ENUM)
+    assert attrs["face_shape"]["properties"]["values"]["items"]["enum"] == list(FACE_ENUM)
+    assert attrs["eyelid"]["properties"]["values"]["items"]["enum"] == list(EYELID_ENUM)
+    assert attrs["lip_shape"]["properties"]["values"]["items"]["enum"] == list(LIP_ENUM)
+
+    text = field_catalog_text()
+    assert "可选值：一般、瘦弱、强壮、肥胖" in text
+    assert "可选值：长方、长、椭圆、瓜子" in text
+    assert "可选值：单、双" in text
+    assert "可选值：一般、厚、薄" in text
+    assert "禁止自造近义词" in AGENT_SYSTEM_PROMPT
+    assert "瘦/偏瘦/瘦点/苗条→瘦弱" in AGENT_SYSTEM_PROMPT
+
+
 def test_invalid_profile_keeps_previous():
     session = SessionContext(owner_user_id=1)
     good = {"schema_version": "1.0", "attributes": {"abo_blood": {"constraint": "must", "weight": 1, "values": ["O"]}}}

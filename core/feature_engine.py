@@ -8,12 +8,12 @@ from sklearn.preprocessing import MinMaxScaler
 
 EDUCATION_MAP = {"大专": 1, "本科": 2, "硕士": 3, "博士": 4}
 
-FIGURE_CATEGORIES = ["一般", "瘦弱", "强壮", "肥胖", "匀称型", "精壮型", "偏瘦型"]
+FIGURE_CATEGORIES = ["一般", "瘦弱", "强壮", "肥胖"]
 SKIN_COLOR_CATEGORIES = ["偏白", "一般", "偏黑"]
 BLOOD_TYPE_CATEGORIES = ["A", "B", "O", "AB"]
-FACE_SHAPE_CATEGORIES = ["长方", "长", "椭圆", "瓜子", "圆", "方", "菱形"]
-EYELID_CATEGORIES = ["单", "双", "内双"]
-LIP_SHAPE_CATEGORIES = ["一般", "厚", "薄", "厚唇", "薄唇", "适中"]
+FACE_SHAPE_CATEGORIES = ["长方", "长", "椭圆", "瓜子"]
+EYELID_CATEGORIES = ["单", "双"]
+LIP_SHAPE_CATEGORIES = ["一般", "厚", "薄"]
 CONSTELLATION_CATEGORIES = [
     "白羊座", "金牛座", "双子座", "巨蟹座", "狮子座", "处女座",
     "天秤座", "天蝎座", "射手座", "摩羯座", "水瓶座", "双鱼座",

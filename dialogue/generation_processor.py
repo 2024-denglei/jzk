@@ -113,7 +113,7 @@ class AgentGenerationProcessor:
         initial_prompt_hash = _prompt_hash(messages)
         await control.set_model_metadata(
             model=self.model,
-            prompt_version="agent-v2",
+            prompt_version="agent-v3",
             prompt_hash=initial_prompt_hash,
         )
         final_reply = ""
