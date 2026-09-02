@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } from '../../lib/speech'
 import { WORKBENCH_HEADER_HEIGHT_CLASS } from '../../lib/workbenchLayout'
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor, MessageFeedbackRating } from '../../types'
-import { buildTurnCommand, pendingActionComposerBanner, type PendingChatAction } from './chatActions'
+import { buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
 import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, nextFeedbackRating, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
 import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
@@ -130,7 +130,6 @@ export function BranchingChatPanel({
   const selectedBranch = tree?.branches.find((branch) => branch.id === chatState.selectedBranchId) || null
   const activeTab = workspaceTabs.find((tab) => tab.key === activeTabKey) || null
   const pendingAction = activeTab?.pendingAction || null
-  const composerBanner = pendingActionComposerBanner(pendingAction)
   const input = inputsByTab[activeTabKey] || ''
   const messages = useMemo(() => messagesForSelectedBranch(chatState), [chatState])
   const messagePreview = useMemo(
@@ -534,9 +533,10 @@ export function BranchingChatPanel({
 
   function prepareEdit(message: ChatMessageNode) {
     setPendingAction({ action: 'edit_resend', parentMessageId: message.parent_message_id,
-      derivedFromMessageId: message.id, label: '正在编辑当前线路；发送后将替换这条消息及其后续内容' })
+      derivedFromMessageId: message.id, label: '正在编辑当前线路' })
     setInput(message.content)
-    setNotice('请修改消息并发送。当前线路后续内容将被新回复替换，不会创建分支。')
+    setNotice('')
+    setError('')
     window.requestAnimationFrame(() => inputRef.current?.focus())
   }
 
@@ -679,18 +679,20 @@ export function BranchingChatPanel({
           </div>}
         </article>
       })}
-      {pendingAction && <div className="rounded-xl border border-dashed border-teal/25 bg-white/75 px-3 py-2 text-center text-[10px] text-ink-soft/55">
-        <i className={`${pendingAction.action === 'edit_resend' ? 'ri-edit-line' : 'ri-git-branch-line'} mr-1 text-teal-deep`} />
-        {pendingAction.action === 'edit_resend'
-          ? `当前线路后续 ${messagePreview.hiddenCount} 条消息将在发送后被替换`
-          : `已定位到分支点，原路径后续 ${messagePreview.hiddenCount} 条消息会完整保留`}
+      {pendingAction?.action === 'rewind_continue' && <div className="rounded-xl border border-dashed border-teal/25 bg-white/75 px-3 py-2 text-center text-[10px] text-ink-soft/55">
+        <i className="ri-git-branch-line mr-1 text-teal-deep" />
+        已定位到分支点，原路径后续 {messagePreview.hiddenCount} 条消息会完整保留
       </div>}
       <div ref={bottomRef} />
     </main>
 
     <footer className="shrink-0 border-t border-line/70 bg-white p-3">
       {(error || notice) && <div className={`mb-2 rounded-lg px-2 py-1.5 text-[10px] ${error ? 'bg-rose-50 text-rose-700' : 'bg-mist text-teal-deep'}`}>{error || notice}</div>}
-      {composerBanner && <div className="mb-2 flex items-start justify-between gap-2 rounded-lg border border-teal/20 bg-mist/50 px-2.5 py-2 text-[10px] text-teal-deep"><span>{composerBanner}</span><button type="button" onClick={cancelPendingAction}>取消</button></div>}
+      {pendingAction?.action === 'edit_resend' && (
+        <div className="mb-2 flex items-center justify-end">
+          <button type="button" onClick={cancelPendingAction} className="text-[11px] text-ink-soft/50 transition hover:text-teal-deep">取消编辑</button>
+        </div>
+      )}
       <div className="flex items-end gap-2 rounded-xl border border-line/80 bg-sand/50 px-2 py-1.5 focus-within:border-teal/40">
         <textarea ref={inputRef} value={input} disabled={selectedBranch?.is_archived} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} rows={2} placeholder={selectedBranch?.is_archived ? '该分支已归档，请先恢复后继续' : pendingAction?.action === 'rewind_continue' ? '输入新分支的第一条消息…' : pendingAction?.action === 'edit_resend' ? '修改这条消息…' : '描述您的条件或继续对话…'} className="min-h-[40px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[12.5px] outline-none disabled:opacity-50" />
         <button type="button" title={ttsOn ? '关闭语音播报' : '开启语音播报'} onClick={() => { if (ttsOn) stopSpeaking(); setTtsOn((value) => !value) }} className={`mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg ${ttsOn ? 'bg-mist text-teal-deep' : 'text-ink-soft/45'}`}><i className={ttsOn ? 'ri-volume-up-line' : 'ri-volume-mute-line'} /></button>

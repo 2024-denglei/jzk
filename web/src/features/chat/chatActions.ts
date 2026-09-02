@@ -7,10 +7,6 @@ export type PendingChatAction = {
   label: string
 }
 
-export function pendingActionComposerBanner(pending?: PendingChatAction | null): string | null {
-  return pending?.action === 'edit_resend' ? pending.label : null
-}
-
 export function buildTurnCommand(input: {
   selectedBranchId?: string | null
   branchHeadMessageId?: string | null
