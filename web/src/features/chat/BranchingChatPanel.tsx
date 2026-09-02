@@ -20,6 +20,8 @@ const MESSAGE_ICON_ACTION = 'inline-flex h-7 w-7 items-center justify-center rou
 
 type Props = {
   onCandidates: (items: Candidate[], result?: MatchResultDescriptor) => void
+  /** 无对话快照可展示时回退中间栏（通常为全部捐献者），勿传空数组进 onCandidates */
+  onClearCandidates?: () => void
   seedMessage?: string | null
   onSeedConsumed?: () => void
   resumeChatId?: number | null
@@ -82,7 +84,7 @@ function GenerationStatusLine({ progress, content }: { progress: GenerationProgr
 }
 
 export function BranchingChatPanel({
-  onCandidates, seedMessage, onSeedConsumed, resumeChatId, resumeBranchId,
+  onCandidates, onClearCandidates, seedMessage, onSeedConsumed, resumeChatId, resumeBranchId,
   onConversationChange, drawer = false, onClose, className = '',
 }: Props) {
   const { user, loading: authLoading } = useAuth()
@@ -112,6 +114,8 @@ export function BranchingChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<ReturnType<typeof createSpeechRecognizer>>(null)
   const generationAbortRef = useRef<AbortController | null>(null)
+  /** 用户主动停止的 generation，避免 reload 仍为 generating 时再次拉起 SSE */
+  const userStoppedGenerationsRef = useRef(new Set<string>())
   const loadedLocationRef = useRef('')
   const workspaceChatIdRef = useRef<number | null>(null)
   const ttsOnRef = useRef(ttsOn)
@@ -153,9 +157,18 @@ export function BranchingChatPanel({
     startTransition(() => onCandidates(result?.items || [], result))
   }
 
+  function clearCandidates() {
+    if (onClearCandidates) {
+      startTransition(() => onClearCandidates())
+      return
+    }
+    // 兼容未传入回调的调用方：至少不要把中间栏锁进空的对话结果
+    startTransition(() => onCandidates([]))
+  }
+
   async function loadMatch(message: ChatMessageNode, show = true) {
     if (!message.match_run) {
-      if (show) publishCandidates()
+      if (show) clearCandidates()
       return
     }
     const cached = matchesByMessage[message.id]
@@ -218,7 +231,7 @@ export function BranchingChatPanel({
       if (notify) changeLocationRef.current?.(chatId, selected.id)
       const candidateAction = candidateSyncAction(page.items)
       if (candidateAction.kind === 'load') await loadMatch(candidateAction.message)
-      else if (candidateAction.kind === 'clear') publishCandidates()
+      else if (candidateAction.kind === 'clear') clearCandidates()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '无法加载历史对话')
     } finally {
@@ -262,6 +275,11 @@ export function BranchingChatPanel({
       setGenerationProgress(null)
       return
     }
+    // 用户已点终止：即使服务端短暂仍为 generating，也不再拉起 SSE
+    if (userStoppedGenerationsRef.current.has(generationId)) {
+      setSending(false)
+      return
+    }
     const messageId = assistantId
     generationAbortRef.current?.abort()
     const controller = new AbortController()
@@ -271,6 +289,7 @@ export function BranchingChatPanel({
     setGenerationProgress({ stage: 'connecting' })
 
     function onEvent(event: GenerationEvent) {
+      if (userStoppedGenerationsRef.current.has(generationId)) return
       const progress = generationProgressFromEvent(event)
       if (progress) setGenerationProgress(progress)
       if (event.event === 'token') {
@@ -283,9 +302,10 @@ export function BranchingChatPanel({
       onEvent,
       onReconnect: (attempt) => setGenerationProgress({ stage: 'reconnecting', detail: `第 ${attempt} 次重连` }),
     }).then(async (status) => {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted || userStoppedGenerationsRef.current.has(generationId)) return
       if (status === 'stopped' || status === 'failed') setGenerationProgress({ stage: status })
       if (status === 'completed' && ttsOnRef.current && streamedText) speakText(streamedText)
+      userStoppedGenerationsRef.current.delete(generationId)
       await loadRef.current?.(currentChatId, branchId, false)
     }).catch((cause) => {
       if (!isAbortError(cause)) setError(cause instanceof Error ? cause.message : '生成事件连接失败')
@@ -313,6 +333,8 @@ export function BranchingChatPanel({
 
   function startNewChat() {
     generationAbortRef.current?.abort()
+    userStoppedGenerationsRef.current.clear()
+    setSending(false)
     setGenerationProgress(null)
     setChatState(createChatClientState())
     setMatchesByMessage({})
@@ -324,7 +346,7 @@ export function BranchingChatPanel({
     setNotice('')
     setHistoryOpen(false)
     loadedLocationRef.current = ''
-    publishCandidates()
+    clearCandidates()
     changeLocationRef.current?.(null, null)
   }
 
@@ -341,10 +363,40 @@ export function BranchingChatPanel({
   loadOlderRef.current = loadOlderMessages
 
   async function stopGeneration(generationId: string) {
+    const assistantId = generatingMessage?.id
+    const chatId = currentChatId
+    const branchId = selectedBranch?.id
+    // 立刻断开本地流并乐观更新 UI，不等服务端 worker 收尾
+    userStoppedGenerationsRef.current.add(generationId)
+    generationAbortRef.current?.abort()
+    generationAbortRef.current = null
+    setSending(false)
+    setGenerationProgress({ stage: 'stopping' })
+    if (assistantId) {
+      setChatState((state) => patchMessage(state, assistantId, { status: 'stopped' }))
+    }
     try {
       await chatApi.stop(generationId)
-      setGenerationProgress({ stage: 'stopping' })
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '停止生成失败') }
+      setGenerationProgress({ stage: 'stopped' })
+      if (chatId && branchId) {
+        await loadRef.current?.(chatId, branchId, false)
+        // reload 后若服务端仍短暂为 generating，保持本地 stopped；
+        // generationId 留在 userStoppedGenerationsRef，直到新对话才清理。
+        if (assistantId) {
+          setChatState((state) => {
+            const node = state.messagesById[assistantId]
+            if (node?.generation_id === generationId && node.status === 'generating') {
+              return patchMessage(state, assistantId, { status: 'stopped' })
+            }
+            return state
+          })
+        }
+      }
+    } catch (cause) {
+      userStoppedGenerationsRef.current.delete(generationId)
+      setGenerationProgress(null)
+      setError(cause instanceof Error ? cause.message : '停止生成失败')
+    }
   }
 
   async function toggleFeedback(message: ChatMessageNode, rating: MessageFeedbackRating) {

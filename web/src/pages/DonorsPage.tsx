@@ -417,6 +417,10 @@ export function DonorsPage() {
       else next.set('branchId', branchId)
       setSearchParams(next, { replace: true })
     },
+    // 新对话 / 终止后无匹配快照：回到全部捐献者，避免空的「对话结果」
+    onClearCandidates: () => {
+      void loadFeatured(1)
+    },
     onCandidates: (cands: Candidate[], result?: MatchResultDescriptor) => {
       matchRequestSeq.current += 1
       startTransition(() => {

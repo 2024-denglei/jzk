@@ -65,6 +65,20 @@ test('生成中保留当前候选，完成后才加载最新完整快照', () =>
   assert.deepEqual(candidateSyncAction([message('m0', 0)]), { kind: 'clear' })
 })
 
+test('终止后无快照则 clear，有历史快照则回退到上一轮匹配', () => {
+  const stoppedOnly = [
+    message('u1', 0),
+    { ...message('a1', 1, 'u1'), status: 'stopped', match_run: null },
+  ]
+  assert.deepEqual(candidateSyncAction(stoppedOnly), { kind: 'clear' })
+
+  const previous = { ...message('a0', 1, 'u0'), match_run: { total: 42 } }
+  const stopped = { ...message('a2', 3, 'u2'), status: 'stopped', match_run: null }
+  const action = candidateSyncAction([message('u0', 0), previous, message('u2', 2, 'a0'), stopped])
+  assert.equal(action.kind, 'load')
+  assert.equal(action.message.id, 'a0')
+})
+
 test('待创建分支只预览到分支点且取消所需原消息不被删除', () => {
   const messages = [
     message('m0', 0),

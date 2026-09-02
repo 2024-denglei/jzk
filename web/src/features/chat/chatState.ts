@@ -136,6 +136,7 @@ export function candidateSyncAction(messages: ChatMessageNode[]): CandidateSyncA
   // 此时保留中间候选区，避免先清空一次、生成完成后又刷新一次。
   if (messages.some((message) => message.status === 'generating')) return { kind: 'preserve' }
   const latestMatch = [...messages].reverse().find((message) => message.match_run)
+  // clear：无可用对话快照。调用方应回到「全部捐献者」，不要展示空的对话结果。
   return latestMatch ? { kind: 'load', message: latestMatch } : { kind: 'clear' }
 }
 
