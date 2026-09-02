@@ -37,3 +37,20 @@ test('结构化 API 错误保留稳定错误码', async () => {
   assert.equal(error.code, 'MATCH_SNAPSHOT_EXPIRED')
   assert.equal(error.message, '匹配快照已过期')
 })
+
+test('PUT 请求以 JSON 提交消息反馈', async () => {
+  let captured = null
+  globalThis.fetch = async (path, init) => {
+    captured = { path, init }
+    return new Response('{"rating":"like"}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  const { api } = await import('./api.ts')
+  const result = await api.put('/api/messages/m1/feedback', { rating: 'like' })
+  assert.deepEqual(result, { rating: 'like' })
+  assert.equal(captured.path, '/api/messages/m1/feedback')
+  assert.equal(captured.init.method, 'PUT')
+  assert.equal(captured.init.body, '{"rating":"like"}')
+})

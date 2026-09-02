@@ -58,6 +58,11 @@ class MessageStatus(StrEnum):
     FAILED = "failed"
 
 
+class MessageFeedbackRating(StrEnum):
+    LIKE = "like"
+    DISLIKE = "dislike"
+
+
 class GenerationStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -168,6 +173,14 @@ class MatchRunSummary(BaseModel):
     created_at: datetime
 
 
+class MessageFeedbackView(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    message_id: UUID
+    rating: MessageFeedbackRating
+    updated_at: datetime
+
+
 class ChatMessageView(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -182,11 +195,10 @@ class ChatMessageView(BaseModel):
     depth: int = Field(ge=0)
     state_recoverable: bool = True
     generation_id: UUID | None = None
+    feedback: MessageFeedbackView | None = None
     match_run: MatchRunSummary | None = None
     created_at: datetime
     completed_at: datetime | None = None
-
-
 class BranchSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

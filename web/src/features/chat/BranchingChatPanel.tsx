@@ -4,10 +4,10 @@ import { ChatMatchCards } from '../../components/ChatMatchCards'
 import { useAuth } from '../../context/AuthContext'
 import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } from '../../lib/speech'
 import { WORKBENCH_HEADER_HEIGHT_CLASS } from '../../lib/workbenchLayout'
-import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
+import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor, MessageFeedbackRating } from '../../types'
 import { buildTurnCommand, pendingActionComposerBanner, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
-import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
+import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, nextFeedbackRating, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
 import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
 import { followGeneration, generationProgressFromEvent, type GenerationEvent, type GenerationProgress } from './generationStream'
 
@@ -95,6 +95,7 @@ export function BranchingChatPanel({
   const [loadingConversation, setLoadingConversation] = useState(false)
   const [sending, setSending] = useState(false)
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null)
+  const [feedbackBusy, setFeedbackBusy] = useState<Record<string, boolean>>({})
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -346,6 +347,34 @@ export function BranchingChatPanel({
     } catch (cause) { setError(cause instanceof Error ? cause.message : '停止生成失败') }
   }
 
+  async function toggleFeedback(message: ChatMessageNode, rating: MessageFeedbackRating) {
+    if (!selectedBranch || feedbackBusy[message.id]) return
+    const previous = message.feedback
+    const next = nextFeedbackRating(previous?.rating || null, rating)
+    setFeedbackBusy((current) => ({ ...current, [message.id]: true }))
+    setError('')
+    setChatState((state) => patchMessage(state, message.id, {
+      feedback: next ? { message_id: message.id, rating: next, updated_at: new Date().toISOString() } : null,
+    }))
+    try {
+      if (next) {
+        const saved = await chatApi.setFeedback(message.id, selectedBranch.id, next)
+        setChatState((state) => patchMessage(state, message.id, { feedback: saved }))
+      } else {
+        await chatApi.deleteFeedback(message.id)
+      }
+    } catch (cause) {
+      setChatState((state) => patchMessage(state, message.id, { feedback: previous }))
+      setError(cause instanceof Error ? cause.message : '反馈保存失败，请稍后重试')
+    } finally {
+      setFeedbackBusy((current) => {
+        const nextBusy = { ...current }
+        delete nextBusy[message.id]
+        return nextBusy
+      })
+    }
+  }
+
   async function send(textOverride?: string) {
     if (!user) {
       navigate(`/login?next=${encodeURIComponent(location.pathname + location.search)}`)
@@ -572,6 +601,7 @@ export function BranchingChatPanel({
       {visibleMessages.map((message, index) => {
         const match = matchesByMessage[message.id]
         const canBranch = canCreateBranchAfterMessage(message, index, visibleMessages.length)
+        const canFeedback = message.role === 'assistant' && message.status === 'completed'
         return <article key={message.id} className="animate-msg-in group/msg">
           <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>{message.role === 'assistant' && message.status === 'generating'
             ? <GenerationStatusLine progress={generationProgress} content={message.content} />
@@ -586,10 +616,14 @@ export function BranchingChatPanel({
             <i className="ri-arrow-right-s-line ml-auto text-ink-soft/35" />
           </button>}
           {match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
-          {!sending && message.role !== 'system' && (canBranch || message.role === 'user' || message.match_run) && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
-            {canBranch && <button type="button" title="在完整回复后创建分支" aria-label="在完整回复后创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
-            {message.role === 'user' && <button type="button" title="编辑当前消息" aria-label="编辑当前消息" onClick={() => prepareEdit(message)} className={MESSAGE_ICON_ACTION}><i className="ri-edit-line" /></button>}
-            {message.match_run && <button type="button" title={`完整排名（${message.match_run.total}）`} aria-label={`完整排名，共 ${message.match_run.total} 位`} onClick={() => void loadMatch(message)} className={MESSAGE_ICON_ACTION}><i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin' : 'ri-list-ordered-2'} /></button>}
+          {((!sending && message.role !== 'system' && (canBranch || message.role === 'user' || message.match_run)) || canFeedback) && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
+            {!sending && canBranch && <button type="button" title="在完整回复后创建分支" aria-label="在完整回复后创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
+            {!sending && message.role === 'user' && <button type="button" title="编辑当前消息" aria-label="编辑当前消息" onClick={() => prepareEdit(message)} className={MESSAGE_ICON_ACTION}><i className="ri-edit-line" /></button>}
+            {!sending && message.match_run && <button type="button" title={`完整排名（${message.match_run.total}）`} aria-label={`完整排名，共 ${message.match_run.total} 位`} onClick={() => void loadMatch(message)} className={MESSAGE_ICON_ACTION}><i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin' : 'ri-list-ordered-2'} /></button>}
+            {canFeedback && <span className="ml-1 flex items-center gap-0.5 border-l border-line/60 pl-1">
+              <button type="button" title="喜欢这条回复" aria-label="喜欢这条回复" aria-pressed={message.feedback?.rating === 'like'} disabled={feedbackBusy[message.id]} onClick={() => void toggleFeedback(message, 'like')} className={`${MESSAGE_ICON_ACTION} ${message.feedback?.rating === 'like' ? 'bg-emerald-50 text-emerald-600' : ''} disabled:opacity-40`}><i className={message.feedback?.rating === 'like' ? 'ri-thumb-up-fill' : 'ri-thumb-up-line'} /></button>
+              <button type="button" title="不喜欢这条回复" aria-label="不喜欢这条回复" aria-pressed={message.feedback?.rating === 'dislike'} disabled={feedbackBusy[message.id]} onClick={() => void toggleFeedback(message, 'dislike')} className={`${MESSAGE_ICON_ACTION} ${message.feedback?.rating === 'dislike' ? 'bg-rose-50 text-rose-500' : ''} disabled:opacity-40`}><i className={message.feedback?.rating === 'dislike' ? 'ri-thumb-down-fill' : 'ri-thumb-down-line'} /></button>
+            </span>}
           </div>}
         </article>
       })}

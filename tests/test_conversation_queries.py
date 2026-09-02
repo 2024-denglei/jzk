@@ -9,8 +9,10 @@ from dialogue import conversation_queries
 from dialogue.conversation_cursors import (
     InvalidConversationCursor,
     decode_chat_list_cursor,
+    decode_admin_feedback_cursor,
     decode_message_cursor,
     encode_chat_list_cursor,
+    encode_admin_feedback_cursor,
     encode_message_cursor,
 )
 from dialogue.conversation_queries import ConversationQueryError, ConversationQueryService
@@ -45,6 +47,14 @@ def test_conversation_cursors_reject_tampering_and_cross_resource_use(monkeypatc
     message_cursor = encode_message_cursor(7, 12, branch_id, uuid4(), now=100)
     with pytest.raises(InvalidConversationCursor):
         decode_message_cursor(message_cursor, 7, 12, uuid4(), now=101)
+
+    feedback_cursor = encode_admin_feedback_cursor("dislike|all", now, uuid4(), now=100)
+    decoded_at, _decoded_message = decode_admin_feedback_cursor(
+        feedback_cursor, "dislike|all", now=101
+    )
+    assert decoded_at == now
+    with pytest.raises(InvalidConversationCursor):
+        decode_admin_feedback_cursor(feedback_cursor, "like|all", now=101)
 
 
 def test_chat_list_uses_stable_keyset_cursor_and_same_admin_service(monkeypatch):

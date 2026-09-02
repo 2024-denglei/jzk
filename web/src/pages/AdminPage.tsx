@@ -11,6 +11,7 @@ import type { AdminInfo } from './admin/types'
 import { UserProfileView } from './admin/UserProfileView'
 import { UsersView } from './admin/UsersView'
 import { RequestsView } from './admin/RequestsView'
+import { ChatFeedbackView } from './admin/ChatFeedbackView'
 import { ADMIN_PERMISSIONS, firstAllowedAdminPath, hasAdminPermission } from './admin/adminPermissions'
 
 export function AdminPage() {
@@ -48,6 +49,7 @@ export function AdminPage() {
   else if (location.pathname.startsWith('/admin/admins')) content = allowed(ADMIN_PERMISSIONS.adminsView) ? <AdminsView currentAdminId={admin.id} permissions={admin.permissions} /> : <ForbiddenView />
   else if (location.pathname.startsWith('/admin/requests/review')) content = allowed(ADMIN_PERMISSIONS.requestsReview) ? <RequestsView mode="review" /> : <ForbiddenView />
   else if (location.pathname.startsWith('/admin/requests/mine')) content = allowed(ADMIN_PERMISSIONS.requestsViewOwn) ? <RequestsView mode="mine" /> : <ForbiddenView />
+  else if (location.pathname.startsWith('/admin/chat-feedback')) content = allowed(ADMIN_PERMISSIONS.usersView) ? <ChatFeedbackView /> : <ForbiddenView />
   else if (userMatch) content = allowed(ADMIN_PERMISSIONS.usersView) ? <UserProfileView userId={Number(userMatch[1])} permissions={admin.permissions} /> : <ForbiddenView />
   else if (location.pathname.startsWith('/admin/users')) content = allowed(ADMIN_PERMISSIONS.usersView) ? <UsersView permissions={admin.permissions} /> : <ForbiddenView />
   else if (location.pathname.startsWith('/admin/donors')) content = allowed(ADMIN_PERMISSIONS.donorsView) ? <DonorsView permissions={admin.permissions} /> : <ForbiddenView />

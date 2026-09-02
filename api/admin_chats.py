@@ -155,6 +155,33 @@ def get_admin_message_match(
     return result
 
 
+@router.get("/{chat_id}/branches/{branch_id}/messages/{message_id}/context")
+def get_admin_message_context(
+    user_id: int,
+    chat_id: int,
+    branch_id: UUID,
+    message_id: UUID,
+    admin: dict = Depends(require_permission(USERS_VIEW)),
+):
+    _require_read()
+    try:
+        page = ConversationQueryService(admin=True).get_message_context(
+            user_id, chat_id, branch_id, message_id
+        )
+    except ConversationQueryError as exc:
+        _raise_query_error(exc)
+    _audit(
+        user_id,
+        admin,
+        "view_chat_message_context",
+        "message_context",
+        str(message_id),
+        chat_id=chat_id,
+        metadata={"branch_id": str(branch_id)},
+    )
+    return page
+
+
 @router.get("/{chat_id}/generations/{generation_id}")
 def get_admin_generation_trace(
     user_id: int,

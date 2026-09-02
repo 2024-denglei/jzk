@@ -11,8 +11,8 @@ from starlette.concurrency import run_in_threadpool
 
 import config
 from api.auth_utils import get_current_user_id
-from db import chats_repo
-from db.chat_models import ChatErrorCode, TurnCommand
+from db import chat_feedback_repo, chats_repo
+from db.chat_models import ChatErrorCode, MessageFeedbackRating, MessageFeedbackView, TurnCommand
 from dialogue.conversation_commands import ConversationCommandError, create_turn
 from dialogue.conversation_queries import ConversationQueryError, ConversationQueryService
 from dialogue.chat_rollout import user_can_write_v2
@@ -81,6 +81,12 @@ class ChatDeleteBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirm_irreversible: bool
     request_id: UUID
+
+
+class MessageFeedbackBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    branch_id: UUID
+    rating: MessageFeedbackRating
 
 
 @router.get("")
@@ -171,6 +177,36 @@ async def get_message_match_results(
         )
     except ConversationQueryError as exc:
         _raise_query_error(exc)
+
+
+@message_router.put("/{message_id}/feedback", response_model=MessageFeedbackView)
+async def set_message_feedback(
+    message_id: UUID,
+    body: MessageFeedbackBody,
+    user_id: int = Depends(get_current_user_id),
+):
+    _require_read()
+    try:
+        row = await run_in_threadpool(
+            chat_feedback_repo.set_message_feedback,
+            user_id,
+            message_id,
+            body.branch_id,
+            body.rating.value,
+        )
+    except chat_feedback_repo.MessageFeedbackTargetError as exc:
+        raise _error(409, "INVALID_MESSAGE_FEEDBACK_TARGET", str(exc)) from exc
+    return MessageFeedbackView.model_validate(row)
+
+
+@message_router.delete("/{message_id}/feedback")
+async def delete_message_feedback(
+    message_id: UUID,
+    user_id: int = Depends(get_current_user_id),
+):
+    _require_read()
+    await run_in_threadpool(chat_feedback_repo.delete_message_feedback, user_id, message_id)
+    return {"ok": True}
 
 
 @router.patch("/{chat_id}")

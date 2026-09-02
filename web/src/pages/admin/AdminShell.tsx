@@ -12,7 +12,10 @@ const NAV_SECTIONS = [
   {
     label: '用户管理',
     icon: 'ri-user-settings-line',
-    items: [{ to: '/admin/users', label: '用户档案', icon: 'ri-user-3-line', permission: ADMIN_PERMISSIONS.usersView }],
+    items: [
+      { to: '/admin/users', label: '用户档案', icon: 'ri-user-3-line', permission: ADMIN_PERMISSIONS.usersView },
+      { to: '/admin/chat-feedback', label: '对话反馈', icon: 'ri-chat-heart-line', permission: ADMIN_PERMISSIONS.usersView },
+    ],
   },
   {
     label: '捐精人管理',

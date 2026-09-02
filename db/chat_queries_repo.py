@@ -163,6 +163,7 @@ def get_message_path(
     chat_id: int,
     start_message_id: UUID,
     *,
+    user_id: int | None = None,
     limit: int,
 ) -> list[dict[str, Any]]:
     return fetchall(
@@ -181,6 +182,9 @@ def get_message_path(
                p.created_in_branch_id, p.role, p.status, p.content,
                p.content_format, p.depth, p.state_recoverable,
                p.created_at, p.completed_at, generation.id AS generation_id,
+               feedback.message_id AS feedback_message_id,
+               feedback.rating AS feedback_rating,
+               feedback.updated_at AS feedback_updated_at,
                mr.total AS match_total, mr.model_version,
                mr.dataset_version, mr.snapshot_schema_version,
                mr.snapshot_source, mr.created_at AS match_created_at
@@ -190,10 +194,70 @@ def get_message_path(
         LEFT JOIN app.ai_generation_runs generation
           ON generation.chat_id = p.chat_id
          AND generation.assistant_message_id = p.id
+        LEFT JOIN app.chat_message_feedback feedback
+          ON feedback.message_id = p.id AND feedback.user_id = %s
         ORDER BY p.depth DESC, p.created_at DESC, p.id DESC
         LIMIT %s
         """,
-        (chat_id, start_message_id, chat_id, limit, limit),
+        (chat_id, start_message_id, chat_id, limit, user_id, limit),
+    )
+
+
+def get_message_context(
+    conn,
+    user_id: int,
+    chat_id: int,
+    branch_id: UUID,
+    message_id: UUID,
+    *,
+    radius: int = 25,
+) -> list[dict[str, Any]]:
+    """返回目标消息在指定分支父链中的有界上下文。"""
+    return fetchall(
+        conn,
+        """
+        WITH RECURSIVE source AS (
+          SELECT branch.head_message_id
+          FROM app.chat_branches branch
+          JOIN app.chats chat ON chat.id = branch.chat_id
+          WHERE branch.chat_id = %s AND branch.id = %s
+            AND chat.user_id = %s AND chat.storage_version = 2
+        ), path AS (
+          SELECT message.*
+          FROM app.chat_messages message
+          JOIN source ON source.head_message_id = message.id
+          WHERE message.chat_id = %s
+          UNION ALL
+          SELECT parent.*
+          FROM app.chat_messages parent
+          JOIN path child ON child.parent_message_id = parent.id
+          WHERE parent.chat_id = %s
+        ), target AS (
+          SELECT depth FROM path WHERE id = %s
+        )
+        SELECT p.id, p.parent_message_id, p.derived_from_message_id,
+               p.created_in_branch_id, p.role, p.status, p.content,
+               p.content_format, p.depth, p.state_recoverable,
+               p.created_at, p.completed_at, generation.id AS generation_id,
+               feedback.message_id AS feedback_message_id,
+               feedback.rating AS feedback_rating,
+               feedback.updated_at AS feedback_updated_at,
+               mr.total AS match_total, mr.model_version,
+               mr.dataset_version, mr.snapshot_schema_version,
+               mr.snapshot_source, mr.created_at AS match_created_at
+        FROM path p
+        CROSS JOIN target
+        LEFT JOIN app.match_runs mr
+          ON mr.id = p.match_run_id AND mr.status = 'ready'
+        LEFT JOIN app.ai_generation_runs generation
+          ON generation.chat_id = p.chat_id
+         AND generation.assistant_message_id = p.id
+        LEFT JOIN app.chat_message_feedback feedback
+          ON feedback.message_id = p.id AND feedback.user_id = %s
+        WHERE p.depth BETWEEN GREATEST(0, target.depth - %s) AND target.depth + %s
+        ORDER BY p.depth, p.created_at, p.id
+        """,
+        (chat_id, branch_id, user_id, chat_id, chat_id, message_id, user_id, radius, radius),
     )
 
 

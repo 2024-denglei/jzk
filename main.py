@@ -28,6 +28,7 @@ from api.match import router as match_router
 from api.chats import router as chats_v2_router, message_router as messages_v2_router
 from api.generation_events import router as generation_events_router
 from api.admin_chats import router as admin_chats_v2_router
+from api.admin_chat_feedback import router as admin_chat_feedback_router
 from db.database import close_pools, init_db, initialize_pools
 from redis_client import close_redis_pool
 
@@ -141,6 +142,7 @@ app.include_router(chats_v2_router)
 app.include_router(messages_v2_router)
 app.include_router(generation_events_router)
 app.include_router(admin_chats_v2_router)
+app.include_router(admin_chat_feedback_router)
 
 # 静态文件服务
 docs_dir = os.path.join(os.path.dirname(__file__), "docs")

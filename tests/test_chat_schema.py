@@ -14,6 +14,7 @@ MIGRATION_15 = ROOT / "db" / "postgres" / "15_harden_generation_runs.sql"
 MIGRATION_16 = ROOT / "db" / "postgres" / "16_drop_legacy_chat_storage.sql"
 MIGRATION_17 = ROOT / "db" / "postgres" / "17_allow_current_line_message_edits.sql"
 MIGRATION_18 = ROOT / "db" / "postgres" / "18_normalize_branch_names.sql"
+MIGRATION_19 = ROOT / "db" / "postgres" / "19_add_chat_message_feedback.sql"
 
 
 def test_branching_chat_migration_declares_core_tables_and_constraints():
@@ -90,6 +91,17 @@ def test_branch_name_migration_uses_short_sequential_labels():
     assert "ORDER BY created_at, id" in sql
 
 
+def test_message_feedback_migration_links_completed_assistant_messages():
+    sql = MIGRATION_19.read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS app.chat_message_feedback" in sql
+    assert "PRIMARY KEY" in sql
+    assert "rating IN ('like', 'dislike')" in sql
+    assert "message.role = 'assistant'" in sql
+    assert "message.status = 'completed'" in sql
+    assert "WITH RECURSIVE path" in sql
+    assert "ON DELETE CASCADE" in sql
+
+
 def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
     class Conn:
         def execute(self, _sql, _params=()):
@@ -113,7 +125,7 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
 
     pg.ensure_schema()
 
-    assert called[-9:] == [
+    assert called[-10:] == [
         "10_add_match_runs.sql",
         "11_add_branching_chat_storage.sql",
         "12_add_match_run_items.sql",
@@ -123,4 +135,5 @@ def test_ensure_schema_runs_v2_migrations_after_match_runs(monkeypatch):
         "16_drop_legacy_chat_storage.sql",
         "17_allow_current_line_message_edits.sql",
         "18_normalize_branch_names.sql",
+        "19_add_chat_message_feedback.sql",
     ]

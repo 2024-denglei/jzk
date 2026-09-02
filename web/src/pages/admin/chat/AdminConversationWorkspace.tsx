@@ -41,7 +41,17 @@ function statusLabel(status: ChatMessageNode['status']) {
   return { generating: '生成中', completed: '已完成', stopped: '已停止', failed: '失败' }[status]
 }
 
-export function AdminConversationWorkspace({ userId }: { userId: number }) {
+export function AdminConversationWorkspace({
+  userId,
+  initialChatId,
+  initialBranchId,
+  initialMessageId,
+}: {
+  userId: number
+  initialChatId?: number
+  initialBranchId?: string
+  initialMessageId?: string
+}) {
   const [chats, setChats] = useState<ChatV2Summary[]>([])
   const [chatCursor, setChatCursor] = useState<string | null>(null)
   const [chatHasMore, setChatHasMore] = useState(false)
@@ -52,6 +62,7 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
   const [listState, setListState] = useState<LoadState>({ loading: true, error: '' })
   const [treeState, setTreeState] = useState<LoadState>(IDLE)
   const [pathState, setPathState] = useState<LoadState>(IDLE)
+  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(initialMessageId || null)
   const branchRequestRef = useRef(0)
 
   const branchLayout = useMemo(() => layoutHorizontalBranchTree(tree?.branches || []), [tree])
@@ -72,7 +83,8 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
       setChatCursor(page.next_cursor)
       setChatHasMore(page.has_more)
       setListState(IDLE)
-      if (reset && page.items[0]) await openChat(page.items[0].id)
+      if (reset && initialChatId) await openChat(initialChatId, initialBranchId, initialMessageId)
+      else if (reset && page.items[0]) await openChat(page.items[0].id)
     } catch (error) {
       setListState({ loading: false, error: error instanceof Error ? error.message : '会话列表加载失败' })
     }
@@ -81,9 +93,16 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
   useEffect(() => {
     void loadChats(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
+  }, [userId, initialChatId, initialBranchId, initialMessageId])
 
-  async function openChat(chatId: number) {
+  useEffect(() => {
+    if (!focusedMessageId || !messages.some((message) => message.id === focusedMessageId)) return
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-message-id="${focusedMessageId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [focusedMessageId, messages])
+
+  async function openChat(chatId: number, requestedBranchId?: string, requestedMessageId?: string) {
     const request = ++branchRequestRef.current
     setTreeState({ loading: true, error: '' })
     setTree(null)
@@ -93,24 +112,29 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
       const loaded = await adminChatApi.tree(userId, chatId)
       if (request !== branchRequestRef.current) return
       setTree(loaded)
+      setChats((current) => current.some((chat) => chat.id === loaded.chat.id) ? current : [loaded.chat, ...current])
       setTreeState(IDLE)
-      const selected = loaded.branches.find((branch) => branch.id === loaded.chat.active_branch_id)
+      const selected = loaded.branches.find((branch) => branch.id === requestedBranchId)
+        || loaded.branches.find((branch) => branch.id === loaded.chat.active_branch_id)
         || loaded.branches[0]
-      if (selected) await openBranch(chatId, selected)
+      if (selected) await openBranch(chatId, selected, requestedMessageId)
     } catch (error) {
       if (request !== branchRequestRef.current) return
       setTreeState({ loading: false, error: error instanceof Error ? error.message : '分支树加载失败' })
     }
   }
 
-  async function openBranch(chatId: number, branch: ChatBranchSummary) {
+  async function openBranch(chatId: number, branch: ChatBranchSummary, targetMessageId?: string) {
     const request = ++branchRequestRef.current
     setBranchId(branch.id)
     setPathState({ loading: true, error: '' })
     setMessages([])
     setArtifacts({})
+    setFocusedMessageId(targetMessageId || null)
     try {
-      const page = await adminChatApi.messages(userId, chatId, branch.id)
+      const page = targetMessageId
+        ? await adminChatApi.messageContext(userId, chatId, branch.id, targetMessageId)
+        : await adminChatApi.messages(userId, chatId, branch.id)
       if (request !== branchRequestRef.current) return
       setMessages(page.items)
       setPathState(IDLE)
@@ -226,6 +250,7 @@ export function AdminConversationWorkspace({ userId }: { userId: number }) {
             messages={messages}
             artifacts={artifacts}
             systemEvent={systemEvent}
+            focusedMessageId={focusedMessageId}
             onMatchPage={(message, page) => void loadMatchPage(message, page)}
           />}
         </section>
@@ -259,10 +284,11 @@ function HorizontalBranchTree({ layout, selectedBranchId, onSelect }: {
   </div>
 }
 
-function BranchExecutionTimeline({ messages, artifacts, systemEvent, onMatchPage }: {
+function BranchExecutionTimeline({ messages, artifacts, systemEvent, focusedMessageId, onMatchPage }: {
   messages: ChatMessageNode[]
   artifacts: Record<string, AssistantArtifacts>
   systemEvent: AgentTranscriptEvent | null
+  focusedMessageId: string | null
   onMatchPage: (message: ChatMessageNode, page: number) => void
 }) {
   const assistants = messages.filter((message) => message.role === 'assistant')
@@ -285,9 +311,12 @@ function BranchExecutionTimeline({ messages, artifacts, systemEvent, onMatchPage
       <div className="relative ml-3 space-y-3 border-l border-[#d8e1ec] pl-6">
         {systemEvent && <TimelineModule tone="violet"><MessagePart event={systemEvent} /></TimelineModule>}
         <TimelineModule tone="slate"><LegacyPart title={`AI 初始问候 · ${CHAT_WELCOME_TITLE}`} subtitle="客户端打开会话时展示 · 不属于模型输入" icon="ri-message-2-line" iconStyle="bg-cyan-50 text-cyan-700"><div className="whitespace-pre-wrap">{CHAT_WELCOME_MESSAGE}</div></LegacyPart></TimelineModule>
-        {messages.map((message) => message.role === 'assistant'
-          ? <AssistantExecutionModules key={message.id} message={message} artifacts={artifacts[message.id] || emptyArtifacts(message)} onMatchPage={(page) => onMatchPage(message, page)} />
-          : <TimelineModule key={message.id} tone={message.role === 'user' ? 'blue' : 'violet'}><StoredMessagePart message={message} /></TimelineModule>)}
+        {messages.map((message) => <div key={message.id} data-message-id={message.id} className={`rounded-xl transition ${message.id === focusedMessageId ? 'ring-2 ring-amber-300 ring-offset-4 ring-offset-[#f5f7fa]' : ''}`}>
+          {message.role === 'assistant'
+            ? <AssistantExecutionModules message={message} artifacts={artifacts[message.id] || emptyArtifacts(message)} onMatchPage={(page) => onMatchPage(message, page)} />
+            : <TimelineModule tone={message.role === 'user' ? 'blue' : 'violet'}><StoredMessagePart message={message} /></TimelineModule>}
+          {message.id === focusedMessageId && <div className="mt-1 rounded-lg bg-amber-50 px-3 py-1.5 text-[9px] font-medium text-amber-700"><i className="ri-map-pin-line mr-1" />当前反馈对应的 AI 回复</div>}
+        </div>)}
       </div>
     </div>
   </section>

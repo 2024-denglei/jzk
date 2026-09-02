@@ -4,6 +4,7 @@ import type {
   ChatMessageNode,
   ChatMessagePathPage,
   GenerationStatus,
+  MessageFeedbackRating,
 } from '../../types'
 
 export const CHAT_WELCOME_TITLE = '您好'
@@ -85,6 +86,13 @@ export function patchMessage(
       [messageId]: { ...current, ...patch },
     },
   }
+}
+
+export function nextFeedbackRating(
+  current: MessageFeedbackRating | null,
+  clicked: MessageFeedbackRating,
+): MessageFeedbackRating | null {
+  return current === clicked ? null : clicked
 }
 
 export function messagesForSelectedBranch(state: ChatClientState): ChatMessageNode[] {

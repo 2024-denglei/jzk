@@ -7,10 +7,17 @@ import {
   createChatClientState,
   mergeMessagePage,
   messagesForSelectedBranch,
+  nextFeedbackRating,
   patchMessage,
   previewMessagesAtBranchPoint,
   selectConversation,
 } from './chatState.ts'
+
+test('消息反馈支持选择、切换和再次点击取消', () => {
+  assert.equal(nextFeedbackRating(null, 'like'), 'like')
+  assert.equal(nextFeedbackRating('like', 'dislike'), 'dislike')
+  assert.equal(nextFeedbackRating('dislike', 'dislike'), null)
+})
 
 const branch = (id, parent = null, active = false) => ({
   id,

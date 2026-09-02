@@ -9,6 +9,8 @@ import type {
   FrozenMatchPage,
   GenerationRun,
   MatchResultDescriptor,
+  MessageFeedback,
+  MessageFeedbackRating,
 } from '../../types'
 
 export interface ChatListPage {
@@ -47,6 +49,15 @@ export const chatApi = {
     return api.get<FrozenMatchPage>(
       `/api/messages/${encodeURIComponent(messageId)}/match-results?page=${page}&limit=${limit}`,
     )
+  },
+  setFeedback(messageId: string, branchId: string, rating: MessageFeedbackRating) {
+    return api.put<MessageFeedback>(`/api/messages/${encodeURIComponent(messageId)}/feedback`, {
+      branch_id: branchId,
+      rating,
+    })
+  },
+  deleteFeedback(messageId: string) {
+    return api.delete<{ ok: boolean }>(`/api/messages/${encodeURIComponent(messageId)}/feedback`)
   },
   rename(chatId: number, title: string) {
     return api.patch<{ ok: boolean; title: string }>(`/api/chats/${chatId}`, { title })

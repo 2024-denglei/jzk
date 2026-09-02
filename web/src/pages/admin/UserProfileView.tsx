@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { adminFetch, postAdmin } from './adminApi'
 import { adminPageShellClass } from './adminLayout'
 import { AdminConversationWorkspace } from './chat/AdminConversationWorkspace'
@@ -23,8 +23,10 @@ const EMPTY_PAGE = { items: [], total: 0, page: 1, page_size: 20 }
 
 export function UserProfileView({ userId, permissions }: { userId: number; permissions: string[] }) {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') as Tab | null
   const [user, setUser] = useState<UserArchive | null>(null)
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>(TABS.some((item) => item.key === requestedTab) ? requestedTab! : 'overview')
   const [page, setPage] = useState(1)
   const [favorites, setFavorites] = useState<PageData<FavoriteRecord>>(EMPTY_PAGE)
   const [history, setHistory] = useState<PageData<HistoryRecord>>(EMPTY_PAGE)
@@ -38,6 +40,22 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
   const [controlBusy, setControlBusy] = useState(false)
   const canControl = hasAdminPermission(permissions, ADMIN_PERMISSIONS.usersControl)
   const canRequest = hasAdminPermission(permissions, ADMIN_PERMISSIONS.usersControlRequest)
+  const targetChatId = Number(searchParams.get('chat_id')) || undefined
+  const targetBranchId = searchParams.get('branch_id') || undefined
+  const targetMessageId = searchParams.get('message_id') || undefined
+
+  function selectTab(nextTab: Tab) {
+    setTab(nextTab)
+    setPage(1)
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', nextTab)
+    if (nextTab !== 'chats') {
+      next.delete('chat_id')
+      next.delete('branch_id')
+      next.delete('message_id')
+    }
+    setSearchParams(next, { replace: true })
+  }
 
   const loadProfile = useCallback(async () => {
     setLoading(true)
@@ -54,6 +72,10 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
   useEffect(() => {
     void loadProfile()
   }, [loadProfile])
+
+  useEffect(() => {
+    if (requestedTab && TABS.some((item) => item.key === requestedTab)) setTab(requestedTab)
+  }, [requestedTab])
 
   const loadTab = useCallback(async () => {
     if (tab === 'overview' || tab === 'chats') return
@@ -146,7 +168,7 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
       <section className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#dce4ee] bg-white">
         <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-[#e2e8f0] px-4 pt-2">
           {TABS.map((item) => (
-            <button key={item.key} onClick={() => { setTab(item.key); setPage(1) }} className={`relative shrink-0 px-4 py-3 text-xs font-medium ${tab === item.key ? 'text-[#1677ff]' : 'text-[#68768a] hover:text-[#2b3c55]'}`}>
+            <button key={item.key} onClick={() => selectTab(item.key)} className={`relative shrink-0 px-4 py-3 text-xs font-medium ${tab === item.key ? 'text-[#1677ff]' : 'text-[#68768a] hover:text-[#2b3c55]'}`}>
               {item.label}
               {tab === item.key ? <span className="absolute inset-x-3 bottom-0 h-0.5 bg-[#1677ff]" /> : null}
             </button>
@@ -191,7 +213,7 @@ export function UserProfileView({ userId, permissions }: { userId: number; permi
 
           {!tabLoading && tab === 'chats' ? (
             <div className="h-full min-h-0 overflow-x-auto">
-              <AdminConversationWorkspace userId={userId} />
+              <AdminConversationWorkspace userId={userId} initialChatId={targetChatId} initialBranchId={targetBranchId} initialMessageId={targetMessageId} />
             </div>
           ) : null}
 

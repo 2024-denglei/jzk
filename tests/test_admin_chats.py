@@ -29,6 +29,9 @@ class FakeService:
     def get_message_match_results(self, user_id, message_id, **kwargs):
         return {"owner": user_id, "message_id": message_id, **kwargs}
 
+    def get_message_context(self, user_id, chat_id, branch_id, message_id):
+        return {"chat_id": chat_id, "branch_id": branch_id, "items": [{"id": message_id}]}
+
     def get_generation(self, user_id, generation_id):
         return SimpleNamespace(id=generation_id, user_id=user_id, chat_id=11)
 
@@ -64,6 +67,7 @@ def test_every_admin_conversation_resource_read_is_audited(admin_v2):
     admin_chats.get_admin_conversation(7, 11, admin=ADMIN)
     admin_chats.get_admin_message_path(7, 11, branch_id, before=None, limit=40, admin=ADMIN)
     admin_chats.get_admin_message_match(7, 11, message_id, page=1, limit=20, admin=ADMIN)
+    context = admin_chats.get_admin_message_context(7, 11, branch_id, message_id, admin=ADMIN)
     trace = admin_chats.get_admin_generation_trace(
         7, 11, generation_id, after_order=-1, limit=100, admin=ADMIN
     )
@@ -73,8 +77,10 @@ def test_every_admin_conversation_resource_read_is_audited(admin_v2):
         "view_chat_tree",
         "view_chat_path",
         "view_chat_match",
+        "view_chat_message_context",
         "view_chat_trace",
     ]
+    assert context["items"][0]["id"] == message_id
     assert trace["steps"][0]["step_order"] == 0
 
 

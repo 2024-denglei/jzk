@@ -32,7 +32,7 @@ def message_belongs_to_chat(user_id: int, chat_id: int, message_id: UUID) -> boo
 
 
 def write_sensitive_read_audit(
-    user_id: int,
+    user_id: int | None,
     operator_id: int,
     action: str,
     *,

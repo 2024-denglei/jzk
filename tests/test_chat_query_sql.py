@@ -31,7 +31,8 @@ def test_message_page_stops_recursive_walk_at_requested_window():
     conn = _Conn(_Result(rows=[]))
     chat_queries_repo.get_message_path(conn, 9, uuid4(), limit=51)
     assert "child.hop < %s" in conn.sql
-    assert conn.params[-2:] == (51, 51)
+    assert conn.params[-3:] == (51, None, 51)
+    assert "LEFT JOIN app.chat_message_feedback" in conn.sql
 
 
 def test_cursor_membership_walk_stops_at_target_depth():
@@ -47,3 +48,14 @@ def test_path_source_avoids_summary_joins_and_legacy_json_columns():
     assert "JOIN app.chat_messages" not in conn.sql
     assert "messages_json" not in conn.sql
     assert "state_json" not in conn.sql
+
+
+def test_admin_message_context_anchors_inside_selected_branch_path():
+    conn = _Conn(_Result(rows=[]))
+    chat_queries_repo.get_message_context(
+        conn, 7, 9, uuid4(), uuid4(), radius=25
+    )
+    assert "WITH RECURSIVE source" in conn.sql
+    assert "CROSS JOIN target" in conn.sql
+    assert "target.depth - %s" in conn.sql
+    assert "LEFT JOIN app.chat_message_feedback" in conn.sql

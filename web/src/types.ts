@@ -147,6 +147,13 @@ export type ChatForkReason =
   | 'concurrent_send'
 export type ChatMessageStatus = 'generating' | 'completed' | 'stopped' | 'failed'
 export type GenerationStatus = 'queued' | 'running' | 'completed' | 'stopped' | 'failed'
+export type MessageFeedbackRating = 'like' | 'dislike'
+
+export interface MessageFeedback {
+  message_id: string
+  rating: MessageFeedbackRating
+  updated_at: string
+}
 
 export interface ChatV2Summary {
   id: number
@@ -200,6 +207,7 @@ export interface ChatMessageNode {
   depth: number
   state_recoverable: boolean
   generation_id: string | null
+  feedback: MessageFeedback | null
   match_run: ChatMatchRunSummary | null
   created_at: string
   completed_at: string | null

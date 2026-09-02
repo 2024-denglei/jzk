@@ -18,6 +18,7 @@ from db.chat_models import (
     ChatSummary,
     ConversationTreeView,
     MatchRunSummary,
+    MessageFeedbackView,
     MessagePathPage,
 )
 from db.pg import db_session
@@ -74,6 +75,11 @@ def _message_view(row: dict[str, Any]) -> ChatMessageView:
         )
     }
     payload["match_run"] = match_run
+    payload["feedback"] = MessageFeedbackView(
+        message_id=row["feedback_message_id"],
+        rating=row["feedback_rating"],
+        updated_at=row["feedback_updated_at"],
+    ) if row.get("feedback_message_id") else None
     return ChatMessageView.model_validate(payload)
 
 
@@ -180,6 +186,7 @@ class ConversationQueryService:
                 conn,
                 chat_id,
                 start_id,
+                user_id=user_id,
                 limit=page_size + 1,
             )
 
@@ -234,6 +241,30 @@ class ConversationQueryService:
                 ChatErrorCode.MATCH_SNAPSHOT_NOT_FOUND,
                 "完整匹配快照不存在",
             ) from exc
+
+    def get_message_context(
+        self,
+        user_id: int,
+        chat_id: int,
+        branch_id: UUID,
+        message_id: UUID,
+    ) -> MessagePathPage:
+        with db_session(admin=self.admin) as conn:
+            rows = chat_queries_repo.get_message_context(
+                conn, user_id, chat_id, branch_id, message_id
+            )
+        if not rows or not any(str(row["id"]) == str(message_id) for row in rows):
+            raise ConversationQueryError(
+                ChatErrorCode.MESSAGE_NOT_FOUND,
+                "目标消息不在指定会话分支中",
+            )
+        return MessagePathPage(
+            chat_id=chat_id,
+            branch_id=branch_id,
+            items=[_message_view(row) for row in rows],
+            next_before=None,
+            has_more=False,
+        )
 
     def get_generation(self, user_id: int, generation_id: UUID):
         run = generation_runs_repo.get_generation(

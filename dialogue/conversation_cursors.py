@@ -134,3 +134,33 @@ def decode_message_cursor(
         return UUID(str(data["before"]))
     except Exception as exc:
         raise InvalidConversationCursor("消息游标内容无效") from exc
+
+
+def encode_admin_feedback_cursor(
+    filter_key: str,
+    updated_at: datetime,
+    message_id: UUID,
+    *,
+    now: int | None = None,
+) -> str:
+    return _encode({
+        "kind": "admin_feedback",
+        "filter": filter_key,
+        "updated_at": updated_at.isoformat(),
+        "message_id": str(message_id),
+    }, now=now)
+
+
+def decode_admin_feedback_cursor(
+    token: str,
+    filter_key: str,
+    *,
+    now: int | None = None,
+) -> tuple[datetime, UUID]:
+    data = _decode(token, now=now)
+    if data.get("kind") != "admin_feedback" or data.get("filter") != filter_key:
+        raise InvalidConversationCursor("反馈游标与当前筛选条件不匹配")
+    try:
+        return datetime.fromisoformat(str(data["updated_at"])), UUID(str(data["message_id"]))
+    except Exception as exc:
+        raise InvalidConversationCursor("反馈游标内容无效") from exc

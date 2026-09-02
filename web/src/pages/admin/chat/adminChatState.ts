@@ -215,3 +215,18 @@ export function branchOriginLabel(branch: ChatBranchSummary): string {
   }
   return labels[branch.fork_reason]
 }
+
+export function feedbackDetailPath(location: {
+  user_id: number
+  chat_id: number
+  branch_id: string
+  message_id: string
+}): string {
+  const query = new URLSearchParams({
+    tab: 'chats',
+    chat_id: String(location.chat_id),
+    branch_id: location.branch_id,
+    message_id: location.message_id,
+  })
+  return `/admin/users/${location.user_id}?${query}`
+}

@@ -160,6 +160,31 @@ def test_v2_api_branch_lifecycle_ownership_and_irreversible_delete(v2_client):
             (completed["generation_id"],),
         )
 
+    liked = client.put(
+        f"/api/messages/{completed['assistant_message_id']}/feedback",
+        json={"branch_id": root_branch, "rating": "like"},
+    )
+    assert liked.status_code == 200
+    assert liked.json()["rating"] == "like"
+    disliked = client.put(
+        f"/api/messages/{completed['assistant_message_id']}/feedback",
+        json={"branch_id": root_branch, "rating": "dislike"},
+    )
+    assert disliked.status_code == 200
+    assert disliked.json()["rating"] == "dislike"
+    root_path = client.get(
+        f"/api/chats/{chat_id}/branches/{root_branch}/messages?limit=20"
+    ).json()["items"]
+    rated_message = next(item for item in root_path if item["id"] == completed["assistant_message_id"])
+    assert rated_message["feedback"]["rating"] == "dislike"
+
+    current["user_id"] = user_b
+    forbidden_feedback = client.put(
+        f"/api/messages/{completed['assistant_message_id']}/feedback",
+        json={"branch_id": root_branch, "rating": "like"},
+    )
+    assert forbidden_feedback.status_code == 409
+    current["user_id"] = user_a
     rewind = client.post(
         f"/api/chats/{chat_id}/turns",
         json={
@@ -234,6 +259,9 @@ def test_v2_api_branch_lifecycle_ownership_and_irreversible_delete(v2_client):
     with psycopg.connect(TEST_DATABASE_URL, row_factory=dict_row) as conn:
         assert conn.execute(
             "SELECT 1 FROM app.chat_messages WHERE chat_id = %s", (chat_id,)
+        ).fetchone() is None
+        assert conn.execute(
+            "SELECT 1 FROM app.chat_message_feedback WHERE chat_id = %s", (chat_id,)
         ).fetchone() is None
         outbox = conn.execute(
             "SELECT payload_json FROM app.outbox_events WHERE aggregate_id = %s",

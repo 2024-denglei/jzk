@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { agentTranscriptEvents, branchOriginLabel, finalAgentContextEvents, flattenBranchTree, latestSystemContextEvent, layoutHorizontalBranchTree, turnExecutionEvents } from './adminChatState.ts'
+import { agentTranscriptEvents, branchOriginLabel, feedbackDetailPath, finalAgentContextEvents, flattenBranchTree, latestSystemContextEvent, layoutHorizontalBranchTree, turnExecutionEvents } from './adminChatState.ts'
+
+test('反馈详情链接精确携带用户、Session、分支和消息', () => {
+  assert.equal(
+    feedbackDetailPath({ user_id: 7, chat_id: 355, branch_id: 'branch-1', message_id: 'message-9' }),
+    '/admin/users/7?tab=chats&chat_id=355&branch_id=branch-1&message_id=message-9',
+  )
+})
 
 const makeBranch = (id, parent, reason) => ({
   id, parent_branch_id: parent, fork_reason: reason, name: id,

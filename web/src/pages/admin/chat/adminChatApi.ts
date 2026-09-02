@@ -47,6 +47,11 @@ export const adminChatApi = {
       `${base(userId)}/${chatId}/branches/${encodeURIComponent(branchId)}/messages?${query}`,
     )
   },
+  messageContext(userId: number, chatId: number, branchId: string, messageId: string) {
+    return adminFetch<ChatMessagePathPage>(
+      `${base(userId)}/${chatId}/branches/${encodeURIComponent(branchId)}/messages/${encodeURIComponent(messageId)}/context`,
+    )
+  },
   match(userId: number, chatId: number, messageId: string, page = 1, limit = 20) {
     return adminFetch<FrozenMatchPage>(
       `${base(userId)}/${chatId}/messages/${encodeURIComponent(messageId)}/match-results?page=${page}&limit=${limit}`,
