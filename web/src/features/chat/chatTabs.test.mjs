@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { closeTabState, nextDraftBranchName, replaceDraftTab } from './chatTabs.ts'
+import { closeTabState, nextDraftBranchName, replaceDraftTab, shouldShowWorkspaceTabs } from './chatTabs.ts'
 
 const main = { key: 'main', branchId: 'main', name: '主线', closable: false }
 const branch1 = { key: 'b1', branchId: 'b1', name: '分支1', closable: true }
@@ -22,4 +22,10 @@ test('关闭活动分支回到左侧标签且主线不可关闭', () => {
   assert.deepEqual(closeTabState([main, branch1], 'main', 'main'), {
     tabs: [main, branch1], nextActiveKey: 'main',
   })
+})
+
+test('仅打开主线时不展示工作区标签栏', () => {
+  assert.equal(shouldShowWorkspaceTabs([main]), false)
+  assert.equal(shouldShowWorkspaceTabs([main, branch1]), true)
+  assert.equal(shouldShowWorkspaceTabs([]), false)
 })

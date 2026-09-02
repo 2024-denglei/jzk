@@ -36,3 +36,8 @@ export function closeTabState(
   const fallback = remaining[Math.max(0, index - 1)] || remaining[0]
   return { tabs: remaining, nextActiveKey: fallback?.key || 'new' }
 }
+
+/** 仅主线时不展示标签栏，避免与三栏标题行高度错位。 */
+export function shouldShowWorkspaceTabs(tabs: WorkspaceTab[]): boolean {
+  return tabs.length > 1
+}

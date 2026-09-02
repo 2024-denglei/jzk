@@ -309,7 +309,7 @@ export function FilterPanel({
 
   const body = (
     <>
-      <div className={`flex shrink-0 items-center justify-between border-b border-line/60 px-4 ${WORKBENCH_HEADER_HEIGHT_CLASS}`}>
+      <div className={`flex shrink-0 items-center justify-between border-b border-line/60 bg-white/70 px-4 backdrop-blur-sm ${WORKBENCH_HEADER_HEIGHT_CLASS}`}>
         <div className="flex gap-4">
           <button
             type="button"

@@ -8,7 +8,7 @@ import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, Matc
 import { buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
 import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, nextFeedbackRating, patchMessage, selectConversation, visibleMessagesForPendingAction } from './chatState'
-import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
+import { closeTabState, nextDraftBranchName, replaceDraftTab, shouldShowWorkspaceTabs, type WorkspaceTab } from './chatTabs'
 import { followGeneration, generationProgressFromEvent, type GenerationEvent, type GenerationProgress } from './generationStream'
 
 const SUGGESTIONS = ['硕士，身高 175 以上', 'O 型血，体型一般', '本科以上，标本充足']
@@ -613,7 +613,7 @@ export function BranchingChatPanel({
     : `hidden w-[420px] shrink-0 flex-col border-l border-line/80 bg-white/95 xl:flex xl:w-[420px] ${className}`
 
   return <aside className={shellClass}>
-    <header className={`flex shrink-0 items-center border-b border-line/60 bg-white px-3 ${WORKBENCH_HEADER_HEIGHT_CLASS}`}>
+    <header className={`flex shrink-0 items-center border-b border-line/60 bg-white/70 px-3 backdrop-blur-sm ${WORKBENCH_HEADER_HEIGHT_CLASS}`}>
       <div className="flex w-full items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold text-ink">AI 匹配顾问</div>
@@ -630,16 +630,58 @@ export function BranchingChatPanel({
       </div>
     </header>
 
-    {tree && workspaceTabs.length > 0 && <nav aria-label="当前打开的对话线路" className="flex shrink-0 items-end gap-1 overflow-x-auto border-b border-line/60 bg-mist/45 px-2 pt-1.5">
-      {workspaceTabs.map((tab) => <div key={tab.key} className={`flex min-w-[92px] max-w-[140px] flex-1 items-center gap-1 rounded-t-lg border border-b-0 px-2 py-1.5 ${tab.key === activeTabKey ? 'border-line/70 bg-white text-teal-deep' : 'border-transparent text-ink-soft/55 hover:bg-white/60'}`}>
-        <button type="button" onClick={() => switchWorkspaceTab(tab)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left" aria-current={tab.key === activeTabKey ? 'page' : undefined}>
-          <i className={`${tab.name === '主线' ? 'ri-chat-3-line' : 'ri-git-branch-line'} shrink-0 text-[11px]`} />
-          <span className="truncate text-[11px] font-medium">{tab.name}</span>
+    {tree && shouldShowWorkspaceTabs(workspaceTabs) && (
+      <nav
+        aria-label="当前打开的对话线路"
+        className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line/60 bg-white/70 px-3 py-2 backdrop-blur-sm"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          {workspaceTabs.map((tab) => {
+            const active = tab.key === activeTabKey
+            return (
+              <div
+                key={tab.key}
+                className={`group/tab flex h-8 max-w-[148px] shrink-0 items-center rounded-full px-1 transition ${
+                  active
+                    ? 'bg-mist text-teal-deep'
+                    : 'text-ink-soft/55 hover:bg-sand/80 hover:text-ink-soft/80'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => switchWorkspaceTab(tab)}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left"
+                  aria-current={active ? 'page' : undefined}
+                >
+                  <i className={`${tab.name === '主线' ? 'ri-chat-3-line' : 'ri-git-branch-line'} shrink-0 text-[12px]`} />
+                  <span className="truncate text-[11.5px] font-medium">{tab.name}</span>
+                </button>
+                {tab.closable && (
+                  <button
+                    type="button"
+                    title={`关闭${tab.name}`}
+                    aria-label={`关闭${tab.name}`}
+                    onClick={() => closeWorkspaceTab(tab.key)}
+                    className="mr-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink-soft/35 opacity-0 transition hover:bg-rose-50 hover:text-rose-600 group-hover/tab:opacity-100 focus-visible:opacity-100"
+                  >
+                    <i className="ri-close-line text-xs" />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          title="打开其他分支"
+          aria-label="打开其他分支"
+          onClick={() => setBranchesOpen(true)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-soft/45 transition hover:bg-mist hover:text-teal-deep"
+        >
+          <i className="ri-add-line text-[15px]" />
         </button>
-        {tab.closable && <button type="button" title={`关闭${tab.name}`} aria-label={`关闭${tab.name}`} onClick={() => closeWorkspaceTab(tab.key)} className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-soft/35 hover:bg-rose-50 hover:text-rose-600"><i className="ri-close-line text-xs" /></button>}
-      </div>)}
-      <button type="button" title="打开其他分支" aria-label="打开其他分支" onClick={() => setBranchesOpen(true)} className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-soft/45 hover:bg-white hover:text-teal-deep"><i className="ri-add-line" /></button>
-    </nav>}
+      </nav>
+    )}
 
     {historyOpen && user && <section className="max-h-52 shrink-0 overflow-y-auto border-b border-line/50 bg-sand/50 px-2 py-2">
       {historyItems.map((chat) => <button key={chat.id} type="button" onClick={() => { setHistoryOpen(false); void loadConversation(chat.id, chat.active_branch_id) }} className="mb-1 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white">
