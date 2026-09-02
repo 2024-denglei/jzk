@@ -52,34 +52,32 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === 'AbortError'
 }
 
-const GENERATION_PROGRESS_META: Record<GenerationProgress['stage'], { label: string; detail: string; icon: string; tone: string; step: number }> = {
-  connecting: { label: '正在连接 Agent', detail: '正在恢复本轮生成任务', icon: 'ri-link', tone: 'bg-cyan-50 text-cyan-700', step: 0 },
-  queued: { label: '任务已进入队列', detail: '即将开始理解您的需求', icon: 'ri-time-line', tone: 'bg-slate-100 text-slate-700', step: 0 },
-  thinking: { label: '正在理解需求', detail: '模型正在分析对话上下文', icon: 'ri-brain-line', tone: 'bg-violet-50 text-violet-700', step: 1 },
-  tool_call: { label: '正在调用匹配工具', detail: '正在按最新条件筛选候选人', icon: 'ri-tools-line', tone: 'bg-amber-50 text-amber-700', step: 2 },
-  tool_result: { label: '匹配工具已返回', detail: '候选人快照已冻结', icon: 'ri-checkbox-circle-line', tone: 'bg-emerald-50 text-emerald-700', step: 2 },
-  summarizing: { label: '正在组织匹配说明', detail: '模型正在结合工具结果生成回复', icon: 'ri-draft-line', tone: 'bg-cyan-50 text-cyan-700', step: 3 },
-  responding: { label: '正在回复', detail: '内容将持续显示在下方', icon: 'ri-sparkling-2-line', tone: 'bg-cyan-50 text-cyan-700', step: 3 },
-  reconnecting: { label: '正在恢复连接', detail: '生成任务仍在后台继续', icon: 'ri-refresh-line', tone: 'bg-amber-50 text-amber-700', step: 1 },
-  stopping: { label: '正在停止生成', detail: '正在安全保存当前状态', icon: 'ri-stop-circle-line', tone: 'bg-rose-50 text-rose-700', step: 3 },
-  stopped: { label: '生成已停止', detail: '您可以编辑上一条消息后继续', icon: 'ri-stop-circle-line', tone: 'bg-slate-100 text-slate-700', step: 3 },
-  failed: { label: '生成失败', detail: '请编辑上一条消息后重新发送', icon: 'ri-error-warning-line', tone: 'bg-rose-50 text-rose-700', step: 3 },
+const GENERATION_PROGRESS_LABELS: Record<GenerationProgress['stage'], string> = {
+  connecting: '正在连接 Agent',
+  queued: '任务排队中',
+  thinking: '正在理解您的需求',
+  tool_call: '正在调用匹配工具',
+  tool_result: '匹配完成，正在整理结果',
+  summarizing: '正在组织回复',
+  responding: '正在生成回复',
+  reconnecting: '连接中断，正在恢复',
+  stopping: '正在停止生成',
+  stopped: '生成已停止',
+  failed: '生成失败，请编辑上一条消息后重试',
 }
 
-function GenerationProgressCard({ progress, content }: { progress: GenerationProgress | null; content: string }) {
+function GenerationStatusLine({ progress, content }: { progress: GenerationProgress | null; content: string }) {
   const current = progress || { stage: 'connecting' as const }
-  const meta = GENERATION_PROGRESS_META[current.stage]
-  const detail = current.stage === 'tool_result' && current.count !== undefined
-    ? `已冻结 ${current.count.toLocaleString()} 位候选人的完整快照`
-    : current.stage === 'reconnecting' && current.detail
-      ? `${meta.detail} · ${current.detail}`
-      : meta.detail
-  return <div className="w-full max-w-[92%] overflow-hidden rounded-2xl rounded-bl-md border border-line/70 bg-white shadow-[0_5px_18px_rgba(15,61,68,0.06)]">
-    <div className="flex items-start gap-3 px-3.5 py-3">
-      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${meta.tone}`}><i className={`${meta.icon} ${['connecting', 'thinking', 'tool_call', 'summarizing', 'responding', 'reconnecting', 'stopping'].includes(current.stage) ? 'animate-pulse' : ''}`} /></span>
-      <div className="min-w-0 flex-1"><div className="text-[12px] font-semibold text-ink/85">{meta.label}</div><div className="mt-0.5 truncate text-[10px] text-ink-soft/50">{detail}</div><div className="mt-2 flex gap-1.5" aria-hidden="true">{[0, 1, 2, 3].map((step) => <span key={step} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${step <= meta.step ? step === meta.step ? 'animate-pulse bg-teal' : 'bg-teal-deep/70' : 'bg-mist'}`} />)}</div></div>
+  const isActive = current.stage !== 'stopped' && current.stage !== 'failed'
+  const count = current.stage === 'tool_result' && current.count !== undefined
+    ? `，已找到 ${current.count.toLocaleString()} 位候选人`
+    : ''
+  const reconnect = current.stage === 'reconnecting' && current.detail ? ` · ${current.detail}` : ''
+  return <div className="w-full max-w-[92%] py-1 pl-1">
+    <div role="status" aria-live="polite" className={`text-[11.5px] font-medium ${isActive ? 'generation-status-sweep' : current.stage === 'failed' ? 'text-rose-600' : 'text-ink-soft/55'}`}>
+      {GENERATION_PROGRESS_LABELS[current.stage]}{count}{reconnect}
     </div>
-    {content && <div className="border-t border-line/50 px-3.5 py-3 text-[12.5px] leading-relaxed text-ink/90" dangerouslySetInnerHTML={{ __html: fmtMd(content) }} />}
+    {content && <div className="mt-2 rounded-2xl rounded-bl-md border border-line/70 bg-white px-3.5 py-2.5 text-[12.5px] leading-relaxed text-ink/90" dangerouslySetInnerHTML={{ __html: fmtMd(content) }} />}
   </div>
 }
 
@@ -576,7 +574,7 @@ export function BranchingChatPanel({
         const canBranch = canCreateBranchAfterMessage(message, index, visibleMessages.length)
         return <article key={message.id} className="animate-msg-in group/msg">
           <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>{message.role === 'assistant' && message.status === 'generating'
-            ? <GenerationProgressCard progress={generationProgress} content={message.content} />
+            ? <GenerationStatusLine progress={generationProgress} content={message.content} />
             : <div className={`relative max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${message.role === 'user' ? 'rounded-br-md bg-teal-deep text-white' : message.role === 'system' ? 'border border-amber-200 bg-amber-50 text-amber-900/80' : 'rounded-bl-md border border-line/70 bg-white text-ink/90'}`}>
               {message.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: fmtMd(message.content) }} /> : message.content}
               {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
