@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { WORKBENCH_HEADER_HEIGHT_CLASS } from '../lib/workbenchLayout'
 import type { FilterState } from '../types'
 import { DEFAULT_PRIORITY } from '../types'
 
@@ -11,7 +12,6 @@ type Props = {
   setPriority: (p: string[]) => void
   onSearch: () => void
   onClear: () => void
-  onSavePref?: () => void
   searching?: boolean
   /** 移动端抽屉模式：始终展开内容，由外层控制显隐 */
   drawer?: boolean
@@ -254,7 +254,6 @@ export function FilterPanel({
   setPriority,
   onSearch,
   onClear,
-  onSavePref,
   searching,
   drawer = false,
   className = '',
@@ -310,7 +309,7 @@ export function FilterPanel({
 
   const body = (
     <>
-      <div className="flex shrink-0 items-center justify-between border-b border-line/60 px-4 py-3">
+      <div className={`flex shrink-0 items-center justify-between border-b border-line/60 px-4 ${WORKBENCH_HEADER_HEIGHT_CLASS}`}>
         <div className="flex gap-4">
           <button
             type="button"
@@ -419,7 +418,7 @@ export function FilterPanel({
         )}
       </div>
 
-      <div className="sticky bottom-0 shrink-0 space-y-2 border-t border-line/70 bg-white/95 px-4 py-3 backdrop-blur">
+      <div className="sticky bottom-0 shrink-0 border-t border-line/70 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="flex gap-2">
           <button
             type="button"
@@ -437,15 +436,6 @@ export function FilterPanel({
             {searching ? '匹配中…' : '搜索匹配'}
           </button>
         </div>
-        {onSavePref && (
-          <button
-            type="button"
-            onClick={onSavePref}
-            className="h-8 w-full rounded-lg text-[11px] font-medium text-teal-deep transition hover:bg-mist/60"
-          >
-            保存为偏好
-          </button>
-        )}
       </div>
     </>
   )

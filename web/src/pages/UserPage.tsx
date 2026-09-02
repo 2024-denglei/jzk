@@ -256,7 +256,7 @@ export function UserPage() {
           <div>
             <h2 className="mb-4 text-lg font-semibold">筛选偏好</h2>
             {(!prefs.priority.length && !Object.keys(prefs.filters || {}).length) ? (
-              <p className="text-sm text-ink-soft/50">尚未保存偏好。可在查找页左侧点击「保存为偏好」。</p>
+              <p className="text-sm text-ink-soft/50">暂无已保存的偏好信息。</p>
             ) : (
               <>
                 <pre className="overflow-auto rounded-xl bg-sand p-4 text-xs text-ink-soft">

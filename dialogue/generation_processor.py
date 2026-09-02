@@ -122,6 +122,10 @@ class AgentGenerationProcessor:
         for round_index in range(4):
             if await control.cancelled():
                 raise GenerationCancelled("generation_cancelled")
+            await control.emit_event(
+                "agent_stage",
+                {"stage": "thinking", "round": round_index},
+            )
             llm_started = perf_counter()
             control.trace.add(
                 "llm_request",
@@ -192,6 +196,10 @@ class AgentGenerationProcessor:
             match_ok = False
             for call in tool_calls:
                 arguments = parse_tool_arguments(call.function.arguments, choice.content)
+                await control.emit_event(
+                    "agent_stage",
+                    {"stage": "tool_call", "tool_name": call.function.name},
+                )
                 tool_started = perf_counter()
                 if call.function.name != "submit_preference_profile":
                     tool_payload = tool_failure_payload(f"unknown tool {call.function.name}")
@@ -271,6 +279,10 @@ class AgentGenerationProcessor:
                 break
 
             summarize_started = perf_counter()
+            await control.emit_event(
+                "agent_stage",
+                {"stage": "summarizing"},
+            )
             control.trace.add(
                 "llm_request",
                 phase="summarize",

@@ -9,6 +9,46 @@ export interface GenerationEvent {
   data: Record<string, unknown>
 }
 
+export type GenerationProgressStage =
+  | 'connecting'
+  | 'queued'
+  | 'thinking'
+  | 'tool_call'
+  | 'tool_result'
+  | 'summarizing'
+  | 'responding'
+  | 'reconnecting'
+  | 'stopping'
+  | 'stopped'
+  | 'failed'
+
+export type GenerationProgress = {
+  stage: GenerationProgressStage
+  detail?: string
+  count?: number
+}
+
+export function generationProgressFromEvent(event: GenerationEvent): GenerationProgress | null {
+  if (event.event === 'token') return { stage: 'responding' }
+  if (event.event === 'match_ready') {
+    const count = Number(event.data.total)
+    return { stage: 'tool_result', count: Number.isFinite(count) ? count : undefined }
+  }
+  if (event.event === 'agent_stage') {
+    const stage = String(event.data.stage || '')
+    if (stage === 'thinking' || stage === 'tool_call' || stage === 'summarizing') {
+      return { stage, detail: typeof event.data.tool_name === 'string' ? event.data.tool_name : undefined }
+    }
+  }
+  if (event.event === 'generation_status') {
+    if (event.data.cancel_requested) return { stage: 'stopping' }
+    return { stage: String(event.data.status) === 'queued' ? 'queued' : 'thinking' }
+  }
+  if (event.event === 'stopped') return { stage: 'stopped' }
+  if (event.event === 'failed') return { stage: 'failed' }
+  return null
+}
+
 export function createSseParser(onEvent: (event: GenerationEvent) => void) {
   let buffer = ''
   let eventName = 'message'

@@ -121,8 +121,15 @@ def test_agent_processor_creates_match_snapshot_ref_and_streams_summary(monkeypa
     assert output.content == "匹配完成"
     assert output.match_run_id == UUID(result_set_id)
     assert control.state["latest_match_run_id"] == result_set_id
-    assert control.events[0][0] == "match_ready"
-    assert control.events[0][1]["total"] == 12
+    assert [event for event, _payload in control.events] == [
+        "agent_stage", "agent_stage", "match_ready", "agent_stage",
+    ]
+    assert control.events[0][1]["stage"] == "thinking"
+    assert control.events[1][1] == {
+        "stage": "tool_call", "tool_name": "submit_preference_profile",
+    }
+    assert control.events[2][1]["total"] == 12
+    assert control.events[3][1]["stage"] == "summarizing"
     assert control.metadata["prompt_version"] == "agent-v2"
     assert all("content" not in payload for _step, payload in control.trace.steps)
     transcript = [payload for step, payload in control.trace.steps if step == "agent_message"]

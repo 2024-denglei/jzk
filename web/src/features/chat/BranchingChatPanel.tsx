@@ -3,12 +3,13 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChatMatchCards } from '../../components/ChatMatchCards'
 import { useAuth } from '../../context/AuthContext'
 import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } from '../../lib/speech'
+import { WORKBENCH_HEADER_HEIGHT_CLASS } from '../../lib/workbenchLayout'
 import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor } from '../../types'
 import { buildTurnCommand, pendingActionComposerBanner, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
 import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, patchMessage, previewMessagesAtBranchPoint, selectConversation } from './chatState'
 import { closeTabState, nextDraftBranchName, replaceDraftTab, type WorkspaceTab } from './chatTabs'
-import { followGeneration, type GenerationEvent } from './generationStream'
+import { followGeneration, generationProgressFromEvent, type GenerationEvent, type GenerationProgress } from './generationStream'
 
 const SUGGESTIONS = ['硕士，身高 175 以上', 'O 型血，体型一般', '本科以上，标本充足']
 const FORK_LABEL: Record<ChatBranchSummary['fork_reason'], string> = {
@@ -51,6 +52,37 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === 'AbortError'
 }
 
+const GENERATION_PROGRESS_META: Record<GenerationProgress['stage'], { label: string; detail: string; icon: string; tone: string; step: number }> = {
+  connecting: { label: '正在连接 Agent', detail: '正在恢复本轮生成任务', icon: 'ri-link', tone: 'bg-cyan-50 text-cyan-700', step: 0 },
+  queued: { label: '任务已进入队列', detail: '即将开始理解您的需求', icon: 'ri-time-line', tone: 'bg-slate-100 text-slate-700', step: 0 },
+  thinking: { label: '正在理解需求', detail: '模型正在分析对话上下文', icon: 'ri-brain-line', tone: 'bg-violet-50 text-violet-700', step: 1 },
+  tool_call: { label: '正在调用匹配工具', detail: '正在按最新条件筛选候选人', icon: 'ri-tools-line', tone: 'bg-amber-50 text-amber-700', step: 2 },
+  tool_result: { label: '匹配工具已返回', detail: '候选人快照已冻结', icon: 'ri-checkbox-circle-line', tone: 'bg-emerald-50 text-emerald-700', step: 2 },
+  summarizing: { label: '正在组织匹配说明', detail: '模型正在结合工具结果生成回复', icon: 'ri-draft-line', tone: 'bg-cyan-50 text-cyan-700', step: 3 },
+  responding: { label: '正在回复', detail: '内容将持续显示在下方', icon: 'ri-sparkling-2-line', tone: 'bg-cyan-50 text-cyan-700', step: 3 },
+  reconnecting: { label: '正在恢复连接', detail: '生成任务仍在后台继续', icon: 'ri-refresh-line', tone: 'bg-amber-50 text-amber-700', step: 1 },
+  stopping: { label: '正在停止生成', detail: '正在安全保存当前状态', icon: 'ri-stop-circle-line', tone: 'bg-rose-50 text-rose-700', step: 3 },
+  stopped: { label: '生成已停止', detail: '您可以编辑上一条消息后继续', icon: 'ri-stop-circle-line', tone: 'bg-slate-100 text-slate-700', step: 3 },
+  failed: { label: '生成失败', detail: '请编辑上一条消息后重新发送', icon: 'ri-error-warning-line', tone: 'bg-rose-50 text-rose-700', step: 3 },
+}
+
+function GenerationProgressCard({ progress, content }: { progress: GenerationProgress | null; content: string }) {
+  const current = progress || { stage: 'connecting' as const }
+  const meta = GENERATION_PROGRESS_META[current.stage]
+  const detail = current.stage === 'tool_result' && current.count !== undefined
+    ? `已冻结 ${current.count.toLocaleString()} 位候选人的完整快照`
+    : current.stage === 'reconnecting' && current.detail
+      ? `${meta.detail} · ${current.detail}`
+      : meta.detail
+  return <div className="w-full max-w-[92%] overflow-hidden rounded-2xl rounded-bl-md border border-line/70 bg-white shadow-[0_5px_18px_rgba(15,61,68,0.06)]">
+    <div className="flex items-start gap-3 px-3.5 py-3">
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${meta.tone}`}><i className={`${meta.icon} ${['connecting', 'thinking', 'tool_call', 'summarizing', 'responding', 'reconnecting', 'stopping'].includes(current.stage) ? 'animate-pulse' : ''}`} /></span>
+      <div className="min-w-0 flex-1"><div className="text-[12px] font-semibold text-ink/85">{meta.label}</div><div className="mt-0.5 truncate text-[10px] text-ink-soft/50">{detail}</div><div className="mt-2 flex gap-1.5" aria-hidden="true">{[0, 1, 2, 3].map((step) => <span key={step} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${step <= meta.step ? step === meta.step ? 'animate-pulse bg-teal' : 'bg-teal-deep/70' : 'bg-mist'}`} />)}</div></div>
+    </div>
+    {content && <div className="border-t border-line/50 px-3.5 py-3 text-[12.5px] leading-relaxed text-ink/90" dangerouslySetInnerHTML={{ __html: fmtMd(content) }} />}
+  </div>
+}
+
 export function BranchingChatPanel({
   onCandidates, seedMessage, onSeedConsumed, resumeChatId, resumeBranchId,
   onConversationChange, drawer = false, onClose, className = '',
@@ -64,6 +96,7 @@ export function BranchingChatPanel({
   const [inputsByTab, setInputsByTab] = useState<Record<string, string>>({ new: '' })
   const [loadingConversation, setLoadingConversation] = useState(false)
   const [sending, setSending] = useState(false)
+  const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -227,6 +260,7 @@ export function BranchingChatPanel({
     const branchId = selectedBranch?.id
     if (!generationId || !assistantId || !currentChatId || !branchId) {
       setSending(false)
+      setGenerationProgress(null)
       return
     }
     const messageId = assistantId
@@ -235,26 +269,23 @@ export function BranchingChatPanel({
     generationAbortRef.current = controller
     let streamedText = ''
     setSending(true)
-    setNotice('正在连接生成任务…')
+    setGenerationProgress({ stage: 'connecting' })
 
     function onEvent(event: GenerationEvent) {
+      const progress = generationProgressFromEvent(event)
+      if (progress) setGenerationProgress(progress)
       if (event.event === 'token') {
         streamedText += String(event.data.text || '')
         setChatState((state) => patchMessage(state, messageId, { content: streamedText, status: 'generating' }))
-        setNotice('')
-      } else if (event.event === 'generation_status') {
-        setNotice(String(event.data.status) === 'queued' ? '任务排队中…' : '正在生成…')
-      } else if (event.event === 'match_ready') {
-        setNotice('完整排名快照已冻结，正在生成说明…')
       }
     }
     void followGeneration(generationId, {
       signal: controller.signal,
       onEvent,
-      onReconnect: (attempt) => setNotice(`连接中断，正在第 ${attempt} 次重连…`),
+      onReconnect: (attempt) => setGenerationProgress({ stage: 'reconnecting', detail: `第 ${attempt} 次重连` }),
     }).then(async (status) => {
       if (controller.signal.aborted) return
-      setNotice(status === 'stopped' ? '生成已停止' : status === 'failed' ? '生成失败，请编辑上一条消息后重新发送' : '')
+      if (status === 'stopped' || status === 'failed') setGenerationProgress({ stage: status })
       if (status === 'completed' && ttsOnRef.current && streamedText) speakText(streamedText)
       await loadRef.current?.(currentChatId, branchId, false)
     }).catch((cause) => {
@@ -283,6 +314,7 @@ export function BranchingChatPanel({
 
   function startNewChat() {
     generationAbortRef.current?.abort()
+    setGenerationProgress(null)
     setChatState(createChatClientState())
     setMatchesByMessage({})
     setWorkspaceTabs([])
@@ -312,7 +344,7 @@ export function BranchingChatPanel({
   async function stopGeneration(generationId: string) {
     try {
       await chatApi.stop(generationId)
-      setNotice('正在停止生成…')
+      setGenerationProgress({ stage: 'stopping' })
     } catch (cause) { setError(cause instanceof Error ? cause.message : '停止生成失败') }
   }
 
@@ -328,6 +360,7 @@ export function BranchingChatPanel({
     const text = (textOverride ?? input).trim()
     if (!text) return
     setSending(true)
+    setGenerationProgress({ stage: 'queued' })
     setError('')
     setInput('')
     let created = false
@@ -360,6 +393,7 @@ export function BranchingChatPanel({
       await loadConversation(result.chat_id, result.branch_id, true, result.branch_id)
     } catch (cause) {
       setInput(text)
+      setGenerationProgress(null)
       setError(cause instanceof Error ? cause.message : '发送失败，请稍后重试')
     } finally { if (!created) setSending(false) }
   }
@@ -479,8 +513,8 @@ export function BranchingChatPanel({
     : `hidden w-[420px] shrink-0 flex-col border-l border-line/80 bg-white/95 xl:flex xl:w-[420px] ${className}`
 
   return <aside className={shellClass}>
-    <header className="shrink-0 border-b border-line/60 bg-white px-3 py-3">
-      <div className="flex items-start justify-between gap-2">
+    <header className={`flex shrink-0 items-center border-b border-line/60 bg-white px-3 ${WORKBENCH_HEADER_HEIGHT_CLASS}`}>
+      <div className="flex w-full items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold text-ink">AI 匹配顾问</div>
           <div className="mt-0.5 truncate text-[11px] text-ink-soft/45">{tree ? `对话已保存 · ${tree.chat.branch_count || 1} 条分支` : '描述条件，获取智能匹配建议'}</div>
@@ -541,10 +575,12 @@ export function BranchingChatPanel({
         const match = matchesByMessage[message.id]
         const canBranch = canCreateBranchAfterMessage(message, index, visibleMessages.length)
         return <article key={message.id} className="animate-msg-in group/msg">
-          <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`relative max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${message.role === 'user' ? 'rounded-br-md bg-teal-deep text-white' : message.role === 'system' ? 'border border-amber-200 bg-amber-50 text-amber-900/80' : 'rounded-bl-md border border-line/70 bg-white text-ink/90'}`}>
-            {message.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: fmtMd(message.content || (message.status === 'generating' ? '…' : '')) }} /> : message.content}
-            {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'generating' ? '生成中' : message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
-          </div></div>
+          <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>{message.role === 'assistant' && message.status === 'generating'
+            ? <GenerationProgressCard progress={generationProgress} content={message.content} />
+            : <div className={`relative max-w-[92%] rounded-2xl px-3.5 py-2.5 text-[12.5px] leading-relaxed ${message.role === 'user' ? 'rounded-br-md bg-teal-deep text-white' : message.role === 'system' ? 'border border-amber-200 bg-amber-50 text-amber-900/80' : 'rounded-bl-md border border-line/70 bg-white text-ink/90'}`}>
+              {message.role === 'assistant' ? <div dangerouslySetInnerHTML={{ __html: fmtMd(message.content) }} /> : message.content}
+              {message.status !== 'completed' && <div className="mt-1 text-[9px] opacity-55">{message.status === 'stopped' ? '已停止' : '生成失败'}</div>}
+            </div>}</div>
           {message.match_run && !match?.items.length && <button type="button" onClick={() => void loadMatch(message)} className="mt-2 flex w-full max-w-[92%] items-center gap-2 rounded-xl border border-line/70 bg-white px-3 py-2 text-left text-[11px] text-ink-soft/65 hover:border-teal/30 hover:bg-mist/30">
             <i className={matchLoadingId === message.id ? 'ri-loader-4-line animate-spin text-teal-deep' : 'ri-group-line text-teal-deep'} />
             <span className="font-medium">候选人结果</span>

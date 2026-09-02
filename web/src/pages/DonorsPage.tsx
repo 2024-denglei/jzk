@@ -9,6 +9,7 @@ import { api, ApiError } from '../lib/api'
 import { getPaginationPages, normalizeJumpPage } from '../lib/pagination'
 import { cacheMatchPage, createMatchPageState } from '../lib/matchPagination'
 import type { MatchPageState } from '../lib/matchPagination'
+import { WORKBENCH_HEADER_HEIGHT_CLASS } from '../lib/workbenchLayout'
 import type { Candidate, FilterState, FrozenMatchPage, MatchResultDescriptor } from '../types'
 import { DEFAULT_PRIORITY, EMPTY_FILTERS } from '../types'
 import { frozenPageToMatchResult } from '../features/chat/chatApi'
@@ -322,19 +323,6 @@ export function DonorsPage() {
     }
   }
 
-  async function savePref() {
-    if (!user) {
-      setError('请先登录后再保存偏好')
-      return
-    }
-    try {
-      await api.post('/api/user/preferences', { filters, priority })
-      setSyncToast('偏好已保存')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败')
-    }
-  }
-
   const meta = MODE_META[mode]
   const pagedItems =
     mode === 'featured' || mode === 'chat'
@@ -413,7 +401,6 @@ export function DonorsPage() {
       setFilters({ ...EMPTY_FILTERS })
       void loadFeatured(1)
     },
-    onSavePref: user ? () => void savePref() : undefined,
     searching,
   }
 
@@ -495,7 +482,7 @@ export function DonorsPage() {
       <section className="relative flex min-w-0 flex-1 flex-col">
         {showingDetail ? (
           <>
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line/60 bg-white/70 px-4 py-3 backdrop-blur-sm md:px-5">
+            <div className={`flex shrink-0 items-center justify-between gap-3 border-b border-line/60 bg-white/70 px-4 backdrop-blur-sm md:px-5 ${WORKBENCH_HEADER_HEIGHT_CLASS}`}>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="font-display text-[17px] font-bold text-ink md:text-[18px]">
@@ -544,7 +531,7 @@ export function DonorsPage() {
           </>
         ) : (
           <>
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line/60 bg-white/70 px-4 py-3 backdrop-blur-sm md:px-5">
+            <div className={`flex shrink-0 items-center justify-between gap-3 border-b border-line/60 bg-white/70 px-4 backdrop-blur-sm md:px-5 ${WORKBENCH_HEADER_HEIGHT_CLASS}`}>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="font-display text-[17px] font-bold text-ink md:text-[18px]">
