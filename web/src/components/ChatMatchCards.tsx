@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import { donorsPathWithSearch } from '../lib/donorsWorkbench'
 import type { Candidate, PreferHit } from '../types'
 
 const PREFER_HIT_SCORE = 0.8
@@ -67,6 +68,7 @@ type Props = {
 }
 
 export function ChatMatchCards({ candidates, preferHits, totalOverride, onViewInMiddle }: Props) {
+  const [searchParams] = useSearchParams()
   if (!candidates.length) return null
   const hits = preferHits?.length ? preferHits : derivePreferHits(candidates)
   const total = totalOverride ?? hits[0]?.of ?? candidates.length
@@ -118,7 +120,7 @@ export function ChatMatchCards({ candidates, preferHits, totalOverride, onViewIn
           return (
             <li key={d.code}>
               <Link
-                to={`/donors/${encodeURIComponent(d.code)}`}
+                to={donorsPathWithSearch(`/donors/${encodeURIComponent(d.code)}`, searchParams)}
                 className="flex items-center gap-2.5 px-3 py-2 transition hover:bg-mist/40"
               >
                 <div

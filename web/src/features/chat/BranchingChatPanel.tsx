@@ -3,8 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ChatMatchCards } from '../../components/ChatMatchCards'
 import { useAuth } from '../../context/AuthContext'
 import { createSpeechRecognizer, getSpeechSupport, speakText, stopSpeaking } from '../../lib/speech'
+import { randomUUID } from '../../lib/uuid'
 import { WORKBENCH_HEADER_HEIGHT_CLASS } from '../../lib/workbenchLayout'
-import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, MatchResultDescriptor, MessageFeedbackRating } from '../../types'
+import type { Candidate, ChatBranchSummary, ChatMessageNode, ChatV2Summary, CandidateSyncOptions, MatchResultDescriptor, MessageFeedbackRating } from '../../types'
 import { buildTurnCommand, type PendingChatAction } from './chatActions'
 import { chatApi, frozenPageToMatchResult } from './chatApi'
 import { canCreateBranchAfterMessage, candidateSyncAction, CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE, createChatClientState, mergeMessagePage, messagesForSelectedBranch, nextFeedbackRating, patchMessage, selectConversation, visibleMessagesForPendingAction } from './chatState'
@@ -19,7 +20,7 @@ const FORK_LABEL: Record<ChatBranchSummary['fork_reason'], string> = {
 const MESSAGE_ICON_ACTION = 'inline-flex h-7 w-7 items-center justify-center rounded-md text-[14px] text-ink-soft/45 transition hover:bg-mist hover:text-teal-deep focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal/40'
 
 type Props = {
-  onCandidates: (items: Candidate[], result?: MatchResultDescriptor) => void
+  onCandidates: (items: Candidate[], result?: MatchResultDescriptor, options?: CandidateSyncOptions) => void
   /** 无对话快照可展示时回退中间栏（通常为全部捐献者），勿传空数组进 onCandidates */
   onClearCandidates?: () => void
   seedMessage?: string | null
@@ -159,8 +160,8 @@ export function BranchingChatPanel({
       : tab))
   }
 
-  function publishCandidates(result?: MatchResultDescriptor) {
-    startTransition(() => onCandidates(result?.items || [], result))
+  function publishCandidates(result?: MatchResultDescriptor, options?: CandidateSyncOptions) {
+    startTransition(() => onCandidates(result?.items || [], result, options))
   }
 
   function clearCandidates() {
@@ -458,7 +459,7 @@ export function BranchingChatPanel({
         branchHeadMessageId: selectedBranch?.head_message_id,
         pending: pendingAction,
         content: text,
-        requestId: crypto.randomUUID(),
+        requestId: randomUUID(),
       }))
       created = true
       const submittedTabKey = activeTabKey
@@ -524,7 +525,7 @@ export function BranchingChatPanel({
       tree.branches.filter((branch) => branch.fork_reason !== 'root').length,
       workspaceTabs.filter((tab) => tab.key.startsWith('draft:')).length,
     )
-    const key = `draft:${crypto.randomUUID()}`
+    const key = `draft:${randomUUID()}`
     const pending: PendingChatAction = {
       action: 'rewind_continue',
       parentMessageId: message.id,
@@ -581,7 +582,7 @@ export function BranchingChatPanel({
     if (!currentChatId || !tree) return
     if (!window.confirm(`确定永久删除会话“${tree.chat.title}”吗？\n\n所有分支、消息、完整排名快照和生成记录将立即删除，且不可恢复。`)) return
     try {
-      await chatApi.remove(currentChatId, crypto.randomUUID())
+      await chatApi.remove(currentChatId, randomUUID())
       startNewChat()
       await loadHistory(true)
     } catch (cause) { setError(cause instanceof Error ? cause.message : '删除会话失败') }
@@ -784,7 +785,7 @@ export function BranchingChatPanel({
             <span className="tabular-nums">{message.match_run.total} 位</span>
             <i className="ri-arrow-right-s-line ml-auto text-ink-soft/35" />
           </button>}
-          {!isEditing && !dimmedByEdit && match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match)} /> : null}
+          {!isEditing && !dimmedByEdit && match?.items.length ? <ChatMatchCards candidates={match.items} totalOverride={match.total} onViewInMiddle={() => publishCandidates(match, { focusMiddle: true })} /> : null}
           {!isEditing && !dimmedByEdit && ((!sending && message.role !== 'system' && (canBranch || message.role === 'user' || message.match_run)) || canFeedback) && <div className={`mt-1 flex items-center gap-1 text-[9px] text-ink-soft/45 ${message.role === 'user' ? 'justify-end' : ''}`}>
             {!sending && canBranch && <button type="button" title="在完整回复后创建分支" aria-label="在完整回复后创建分支" onClick={() => prepareRewind(message)} className={MESSAGE_ICON_ACTION}><i className="ri-git-branch-line" /></button>}
             {!sending && message.role === 'user' && <button type="button" title="编辑当前消息" aria-label="编辑当前消息" onClick={() => prepareEdit(message)} className={MESSAGE_ICON_ACTION}><i className="ri-edit-line" /></button>}

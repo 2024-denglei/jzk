@@ -1,8 +1,10 @@
+import config
 from core.preference.schema import field_catalog_text, openai_tool_schema
 from dialogue.agent_tools import (
     AGENT_SYSTEM_PROMPT,
     SUBMIT_PROFILE_TOOL,
     apply_match_api_response,
+    build_agent_system_prompt,
     run_preference_match,
     slim_assistant_for_llm,
     tool_failure_payload,
@@ -107,6 +109,11 @@ def test_prompt_requires_prefer_rerank_wording():
     assert "prefer_hits" in AGENT_SYSTEM_PROMPT
     assert "已按偏好重排" in AGENT_SYSTEM_PROMPT
     assert "禁止把 prefer 说成筛掉了人" in AGENT_SYSTEM_PROMPT
+
+
+def test_prompt_uses_configured_candidate_pool():
+    assert str(config.MATCH_SCORER_CANDIDATE_POOL) in AGENT_SYSTEM_PROMPT
+    assert "最多 5000" in build_agent_system_prompt(5000)
 
 
 def test_validation_error_payload_tells_model_how_to_fix():

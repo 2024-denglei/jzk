@@ -1,5 +1,6 @@
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { donorsPathWithSearch } from '../lib/donorsWorkbench'
 import type { Candidate } from '../types'
 
 /** 基于代号生成柔和背景色，用于头像占位 */
@@ -12,6 +13,7 @@ function avatarTone(code: string) {
 
 export function DonorCard({ candidate, index = 0 }: { candidate: Candidate; index?: number }) {
   const { user } = useAuth()
+  const [searchParams] = useSearchParams()
   const d = candidate.donor_info
   const pct =
     candidate.match_pct != null
@@ -21,7 +23,7 @@ export function DonorCard({ candidate, index = 0 }: { candidate: Candidate; inde
         : null
   const showMatch = pct != null && pct > 0
   const letter = (d.code?.replace(/[^A-Za-z]/g, '')[0] || d.code?.[0] || 'D').toUpperCase()
-  const detailPath = `/donors/${encodeURIComponent(d.code)}`
+  const detailPath = donorsPathWithSearch(`/donors/${encodeURIComponent(d.code)}`, searchParams)
   const href = user ? detailPath : `/login?next=${encodeURIComponent(detailPath)}`
 
   // 参考 Cryos：双列键值，信息稍多以便扫读

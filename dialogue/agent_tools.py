@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any
 
+import config
 from core.preference.schema import field_catalog_text, openai_tool_schema
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,11 @@ def _extract_json_objects(text: str | None) -> list[Any]:
             idx = start + 1
     return found
 
-AGENT_SYSTEM_PROMPT = """你是智能生育匹配系统的顾问助手。
+def build_agent_system_prompt(
+    candidate_pool: int | None = None,
+) -> str:
+    pool = candidate_pool if candidate_pool is not None else config.MATCH_SCORER_CANDIDATE_POOL
+    return f"""你是智能生育匹配系统的顾问助手。
 
 你通过对话理解用户对捐精人的偏好，自己判断何时该调用工具。不要用固定口头禅词表，按语义理解。
 
@@ -60,7 +65,7 @@ AGENT_SYSTEM_PROMPT = """你是智能生育匹配系统的顾问助手。
 3. 人数、代号、匹配度只能来自工具返回的 count / top_preview / prefer_hits。禁止虚构。禁止输出捐精人 Markdown 表格。匹配结果由系统在回复下方展示卡片，引导用户看卡片。
 4. 若工具返回 ok=false，根据 error / allowed_values 修正 parameters，再次调用同一工具，直到成功或确认无法修正。修正期间不要向用户编造成果。
 5. 闲聊、问候、明确说「没了/没有了」且不改条件 → 不调用工具。
-6. filtered_count 是满足 must 硬条件的总人数；count / ranked_count 是模型生成的可浏览排名人数（最多 300），两者可能不同。若工具返回 prefer_hits 非空：这些字段只重排、未做硬过滤，hits/of 的分母是模型排名池。总结必须说明「硬条件人数未因该偏好减少，已按偏好重排」，并引用各字段 hits/of。filtered_count 大于 ranked_count 时必须同时说清两个数字，禁止把 300 说成全部合格人数，也禁止把 prefer 说成筛掉了人。
+6. filtered_count 是满足 must 硬条件的总人数；count / ranked_count 是模型生成的可浏览排名人数（最多 {pool}），两者可能不同。若工具返回 prefer_hits 非空：这些字段只重排、未做硬过滤，hits/of 的分母是模型排名池。总结必须说明「硬条件人数未因该偏好减少，已按偏好重排」，并引用各字段 hits/of。filtered_count 大于 ranked_count 时必须同时说清两个数字，禁止把 {pool} 说成全部合格人数，也禁止把 prefer 说成筛掉了人。
 
 【画像规则】
 - 每轮提交完整 attributes，不是增量。取消某条件 = 该字段从 attributes 中消失
@@ -73,6 +78,9 @@ AGENT_SYSTEM_PROMPT = """你是智能生育匹配系统的顾问助手。
 - 禁止输出 SQL，禁止编造代号
 
 """ + field_catalog_text()
+
+
+AGENT_SYSTEM_PROMPT = build_agent_system_prompt()
 
 _DONOR_CODE = re.compile(r"A\d{7}")
 _MD_TABLE_ROW = re.compile(r"(?m)^\s*\|.+\|\s*$")

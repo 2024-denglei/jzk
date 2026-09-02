@@ -59,4 +59,4 @@ def test_candidate_pool_is_capped(scoring_engine, scorer_settings):
     ]
     response = scoring_engine.rank(_request(candidates, request_id="pool-test"))
     assert response.eligible_count == 301
-    assert response.ranked_count == scorer_settings.candidate_pool == 300
+    assert response.ranked_count == scorer_settings.candidate_pool

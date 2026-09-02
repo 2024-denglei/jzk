@@ -157,6 +157,9 @@ MATCH_SCORER_TIMEOUT_SECONDS = float(
 MATCH_SCORER_MAX_CANDIDATES = int(
     os.getenv("MATCH_SCORER_MAX_CANDIDATES", "20000")
 )
+MATCH_SCORER_CANDIDATE_POOL = int(
+    os.getenv("SCORER_CANDIDATE_POOL", "5000")
+)
 MATCH_SCORER_TOKEN = os.getenv(
     "MATCH_SCORER_TOKEN", "dev-match-scorer-token-change-me"
 )
@@ -263,6 +266,10 @@ def validate_match_scoring_config() -> None:
         errors.append("MATCH_SCORER_TIMEOUT_SECONDS 必须大于0")
     if MATCH_SCORER_MAX_CANDIDATES <= 0:
         errors.append("MATCH_SCORER_MAX_CANDIDATES 必须大于0")
+    if MATCH_SCORER_CANDIDATE_POOL <= 0:
+        errors.append("SCORER_CANDIDATE_POOL 必须大于0")
+    if MATCH_SCORER_CANDIDATE_POOL > MATCH_SCORER_MAX_CANDIDATES:
+        errors.append("SCORER_CANDIDATE_POOL 不能大于 MATCH_SCORER_MAX_CANDIDATES")
     if errors:
         raise SecurityConfigError("匹配评分配置校验失败：" + "；".join(errors))
 

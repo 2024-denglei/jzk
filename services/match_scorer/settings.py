@@ -53,7 +53,7 @@ class ScorerSettings:
             ).strip(),
             force_cpu=os.getenv("SCORER_FORCE_CPU", "1").strip().lower()
             in {"1", "true", "yes"},
-            candidate_pool=_env_int("SCORER_CANDIDATE_POOL", 300),
+            candidate_pool=_env_int("SCORER_CANDIDATE_POOL", 5000),
             max_candidates=_env_int("SCORER_MAX_CANDIDATES", 20000),
             max_request_bytes=_env_int("SCORER_MAX_REQUEST_BYTES", 25000000),
             token=token,

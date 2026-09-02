@@ -87,6 +87,12 @@ export interface MatchResultDescriptor {
   source_message_id?: string
 }
 
+/** 对话结果同步到中间栏时的可选行为。 */
+export interface CandidateSyncOptions {
+  /** 用户主动要在中间栏查看时，移动端可关闭聊天抽屉。 */
+  focusMiddle?: boolean
+}
+
 export interface User {
   id: number
   email: string

@@ -10,7 +10,8 @@ import { getPaginationPages, normalizeJumpPage } from '../lib/pagination'
 import { cacheMatchPage, createMatchPageState } from '../lib/matchPagination'
 import type { MatchPageState } from '../lib/matchPagination'
 import { WORKBENCH_HEADER_HEIGHT_CLASS } from '../lib/workbenchLayout'
-import type { Candidate, FilterState, FrozenMatchPage, MatchResultDescriptor } from '../types'
+import { DESKTOP_CHAT_MEDIA, donorsPathWithSearch, shouldCloseMobileChatOnSync } from '../lib/donorsWorkbench'
+import type { Candidate, FilterState, FrozenMatchPage, MatchResultDescriptor, CandidateSyncOptions } from '../types'
 import { DEFAULT_PRIORITY, EMPTY_FILTERS } from '../types'
 import { frozenPageToMatchResult } from '../features/chat/chatApi'
 
@@ -174,6 +175,10 @@ export function DonorsPage() {
   const [listKey, setListKey] = useState(0)
   const [mobileFilter, setMobileFilter] = useState(false)
   const [mobileChat, setMobileChat] = useState(false)
+  const [mobileChatMounted, setMobileChatMounted] = useState(false)
+  const [desktopChat, setDesktopChat] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(DESKTOP_CHAT_MEDIA).matches,
+  )
   const [matchPages, setMatchPages] = useState<MatchPageState | null>(null)
   const [snapshotExpired, setSnapshotExpired] = useState(false)
   const matchRequestSeq = useRef(0)
@@ -220,6 +225,20 @@ export function DonorsPage() {
     const t = setTimeout(() => setSyncToast(''), 2600)
     return () => clearTimeout(t)
   }, [syncToast])
+
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_CHAT_MEDIA)
+    const apply = () => setDesktopChat(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+
+  useEffect(() => {
+    if (mobileChat && !desktopChat) setMobileChatMounted(true)
+  }, [mobileChat, desktopChat])
+
+  const donorsListPath = donorsPathWithSearch('/donors', searchParams)
 
   function flashList(nextMode: 'featured' | 'search' | 'chat', toast?: string) {
     setMode(nextMode)
@@ -421,7 +440,7 @@ export function DonorsPage() {
     onClearCandidates: () => {
       void loadFeatured(1)
     },
-    onCandidates: (cands: Candidate[], result?: MatchResultDescriptor) => {
+    onCandidates: (cands: Candidate[], result?: MatchResultDescriptor, options?: CandidateSyncOptions) => {
       matchRequestSeq.current += 1
       startTransition(() => {
         const nextItems = result?.items || cands
@@ -443,9 +462,9 @@ export function DonorsPage() {
         // 这样已有卡片会原位更新，不再产生一次类似整页刷新的动画。
         setMode('chat')
         setSyncToast('已根据对话更新中间结果')
-        setMobileChat(false)
+        if (shouldCloseMobileChatOnSync(options)) setMobileChat(false)
       })
-      if (showingDetail) navigate('/donors')
+      if (showingDetail) navigate(donorsListPath)
     },
   }
 
@@ -501,7 +520,7 @@ export function DonorsPage() {
               <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => navigate('/donors')}
+                  onClick={() => navigate(donorsListPath)}
                   className="flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-2.5 text-[12px] font-medium text-ink-soft/70 transition hover:border-teal/30 hover:text-teal-deep"
                 >
                   <i className="ri-arrow-left-line" />
@@ -528,7 +547,7 @@ export function DonorsPage() {
             <div className="min-h-0 flex-1 overflow-hidden">
               <DonorDetailPanel
                 code={detailCode!}
-                onBack={() => navigate('/donors')}
+                onBack={() => navigate(donorsListPath)}
                 onAskAbout={handleAskAbout}
               />
             </div>
@@ -655,7 +674,7 @@ export function DonorsPage() {
         )}
       </section>
 
-      <ChatPanel {...chatProps} />
+      {desktopChat ? <ChatPanel {...chatProps} /> : null}
 
       {mobileFilter && (
         <div className="fixed inset-0 z-50 flex lg:hidden">
@@ -676,11 +695,14 @@ export function DonorsPage() {
         </div>
       )}
 
-      {mobileChat && (
-        <div className="fixed inset-0 z-50 flex justify-end xl:hidden">
+      {!desktopChat && mobileChatMounted ? (
+        <div
+          className={`fixed inset-0 z-50 flex justify-end ${mobileChat ? '' : 'pointer-events-none invisible'}`}
+          aria-hidden={!mobileChat}
+        >
           <button
             type="button"
-            className="absolute inset-0 bg-ink/25 backdrop-blur-[2px]"
+            className={`absolute inset-0 bg-ink/25 backdrop-blur-[2px] ${mobileChat ? '' : 'hidden'}`}
             aria-label="关闭"
             onClick={() => setMobileChat(false)}
           />
@@ -688,7 +710,7 @@ export function DonorsPage() {
             <ChatPanel {...chatProps} drawer onClose={() => setMobileChat(false)} />
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

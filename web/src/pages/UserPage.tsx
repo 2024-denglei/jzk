@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
+import { randomUUID } from '../lib/uuid'
 import type { ChatV2Summary, FilterState } from '../types'
 import { chatApi } from '../features/chat/chatApi'
 
@@ -80,7 +81,7 @@ export function UserPage() {
 
   async function deleteChat(chat: ChatV2Summary) {
     if (!window.confirm(`确定永久删除会话“${chat.title}”吗？所有分支和消息会立即删除，且不可恢复。`)) return
-    await chatApi.remove(chat.id, crypto.randomUUID())
+    await chatApi.remove(chat.id, randomUUID())
     setChats((current) => current.filter((item) => item.id !== chat.id))
   }
 
