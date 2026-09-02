@@ -193,11 +193,18 @@ def _create_turn(
                 )
                 if fork_parent_id != selected_head:
                     fork_reason = ForkReason.CONCURRENT_SEND
-                elif chats_repo.branch_has_active_generation(conn, selected_branch_id):
-                    raise ConversationCommandError(
-                        ChatErrorCode.BRANCH_GENERATION_ACTIVE,
-                        "当前分支已有正在运行的生成任务",
+                else:
+                    # 用户已点终止但 worker 尚未收尾时，先落地取消，避免立刻追问被挡住
+                    chats_repo.force_stop_branch_generations(
+                        conn,
+                        selected_branch_id,
+                        only_cancel_requested=True,
                     )
+                    if chats_repo.branch_has_active_generation(conn, selected_branch_id):
+                        raise ConversationCommandError(
+                            ChatErrorCode.BRANCH_GENERATION_ACTIVE,
+                            "当前分支已有正在运行的生成任务",
+                        )
             elif command.action == TurnAction.REWIND_CONTINUE:
                 fork_reason = ForkReason.REWIND_CONTINUE
                 fork_parent_id = command.parent_message_id
@@ -209,11 +216,8 @@ def _create_turn(
                 )
                 source_message = parent_message
             elif command.action == TurnAction.EDIT_RESEND:
-                if chats_repo.branch_has_active_generation(conn, selected_branch_id):
-                    raise ConversationCommandError(
-                        ChatErrorCode.BRANCH_GENERATION_ACTIVE,
-                        "当前分支已有正在运行的生成任务",
-                    )
+                # 编辑会替换后续线路（含进行中的助手消息），直接强制收尾活跃生成
+                chats_repo.force_stop_branch_generations(conn, selected_branch_id)
                 source_message = _require_message(
                     conn,
                     chat_id=chat_id,

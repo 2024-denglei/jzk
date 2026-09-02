@@ -126,6 +126,55 @@ def branch_has_active_generation(conn, branch_id: UUID) -> bool:
     return bool(row and row["active"])
 
 
+def force_stop_branch_generations(
+    conn,
+    branch_id: UUID,
+    *,
+    only_cancel_requested: bool = False,
+) -> int:
+    """将分支上未完成的生成任务直接标为 stopped。
+
+    - edit_resend：替换当前线路，应强制收尾所有 queued/running
+    - append：仅收尾已请求取消的 running，避免「终止后立刻发送」被挡住
+    """
+    rows = fetchall(
+        conn,
+        """
+        SELECT id, assistant_message_id, status, cancel_requested_at
+        FROM app.ai_generation_runs
+        WHERE branch_id = %s AND status IN ('queued', 'running')
+        FOR UPDATE
+        """,
+        (branch_id,),
+    )
+    stopped = 0
+    for row in rows:
+        if only_cancel_requested:
+            if row["status"] != "running" or row.get("cancel_requested_at") is None:
+                continue
+        conn.execute(
+            """
+            UPDATE app.chat_messages
+            SET status = 'stopped', completed_at = now()
+            WHERE id = %s AND status = 'generating'
+            """,
+            (row["assistant_message_id"],),
+        )
+        conn.execute(
+            """
+            UPDATE app.ai_generation_runs
+            SET status = 'stopped',
+                cancel_requested_at = COALESCE(cancel_requested_at, now()),
+                finished_at = now(),
+                lease_expires_at = NULL
+            WHERE id = %s AND status IN ('queued', 'running')
+            """,
+            (row["id"],),
+        )
+        stopped += 1
+    return stopped
+
+
 def insert_branch(
     conn,
     *,

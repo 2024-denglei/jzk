@@ -74,6 +74,111 @@ def _finish_generation(result, content="AI 回复"):
         )
 
 
+def _mark_generation_running_with_cancel(result) -> None:
+    """模拟：用户已点终止，但 worker 尚未把 running 收尾为 stopped。"""
+    assert TEST_DATABASE_URL
+    with psycopg.connect(TEST_DATABASE_URL) as conn:
+        conn.execute(
+            """
+            UPDATE app.ai_generation_runs
+            SET status = 'running',
+                started_at = COALESCE(started_at, now()),
+                cancel_requested_at = now(),
+                lease_owner = 'worker-lag',
+                lease_expires_at = now() + interval '5 minutes'
+            WHERE id = %s
+            """,
+            (result.generation_id,),
+        )
+
+
+def test_edit_after_cancel_requested_does_not_block(v2_user):
+    root = create_turn(v2_user, TurnCommand(content="旧需求", client_request_id=uuid4()))
+    _mark_generation_running_with_cancel(root)
+
+    edit = create_turn(
+        v2_user,
+        TurnCommand(
+            branch_id=root.branch_id,
+            action=TurnAction.EDIT_RESEND,
+            derived_from_message_id=root.user_message_id,
+            content="终止后立刻编辑",
+            client_request_id=uuid4(),
+        ),
+        chat_id=root.chat_id,
+    )
+    assert edit.branch_id == root.branch_id and not edit.branch_created
+
+    path = ConversationQueryService().get_message_path(
+        v2_user, root.chat_id, root.branch_id, limit=20
+    )
+    assert [item.content for item in path.items] == ["终止后立刻编辑", ""]
+    with psycopg.connect(TEST_DATABASE_URL, row_factory=dict_row) as conn:
+        old_run = conn.execute(
+            "SELECT status FROM app.ai_generation_runs WHERE id = %s",
+            (root.generation_id,),
+        ).fetchone()
+        # 旧生成被强制 stopped 后，编辑 prune 可能硬删
+        assert old_run is None or old_run["status"] == "stopped"
+
+
+def test_append_after_cancel_requested_does_not_block(v2_user):
+    root = create_turn(v2_user, TurnCommand(content="第一轮", client_request_id=uuid4()))
+    _finish_generation(root, "第一轮回复")
+    follow = create_turn(
+        v2_user,
+        TurnCommand(
+            branch_id=root.branch_id,
+            parent_message_id=root.assistant_message_id,
+            content="第二轮进行中",
+            client_request_id=uuid4(),
+        ),
+        chat_id=root.chat_id,
+    )
+    _mark_generation_running_with_cancel(follow)
+
+    nxt = create_turn(
+        v2_user,
+        TurnCommand(
+            branch_id=root.branch_id,
+            parent_message_id=follow.assistant_message_id,
+            content="终止后立刻追问",
+            client_request_id=uuid4(),
+        ),
+        chat_id=root.chat_id,
+    )
+    assert nxt.user_message_id != follow.user_message_id
+
+
+def test_append_still_blocks_when_generation_running_without_cancel(v2_user):
+    root = create_turn(v2_user, TurnCommand(content="占用中", client_request_id=uuid4()))
+    assert TEST_DATABASE_URL
+    with psycopg.connect(TEST_DATABASE_URL) as conn:
+        conn.execute(
+            """
+            UPDATE app.ai_generation_runs
+            SET status = 'running', started_at = now(),
+                lease_owner = 'worker-busy',
+                lease_expires_at = now() + interval '5 minutes'
+            WHERE id = %s
+            """,
+            (root.generation_id,),
+        )
+
+    with pytest.raises(ConversationCommandError) as exc_info:
+        create_turn(
+            v2_user,
+            TurnCommand(
+                branch_id=root.branch_id,
+                parent_message_id=root.assistant_message_id,
+                content="未终止时追问",
+                client_request_id=uuid4(),
+            ),
+            chat_id=root.chat_id,
+        )
+    assert exc_info.value.code == ChatErrorCode.BRANCH_GENERATION_ACTIVE
+
+
 def test_edit_rewrites_current_line_while_explicit_branch_preserves_its_path(v2_user):
     root = create_turn(
         v2_user,
