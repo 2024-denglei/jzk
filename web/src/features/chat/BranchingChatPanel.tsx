@@ -132,6 +132,7 @@ export function BranchingChatPanel({
   const selectedBranch = tree?.branches.find((branch) => branch.id === chatState.selectedBranchId) || null
   const activeTab = workspaceTabs.find((tab) => tab.key === activeTabKey) || null
   const pendingAction = activeTab?.pendingAction || null
+  const draftTabCount = workspaceTabs.filter((tab) => tab.key.startsWith('draft:')).length
   const input = inputsByTab[activeTabKey] || ''
   const messages = useMemo(() => messagesForSelectedBranch(chatState), [chatState])
   const editingMessageId = pendingAction?.action === 'edit_resend'
@@ -617,7 +618,9 @@ export function BranchingChatPanel({
       <div className="flex w-full items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold text-ink">AI 匹配顾问</div>
-          <div className="mt-0.5 truncate text-[11px] text-ink-soft/45">{tree ? `对话已保存 · ${tree.chat.branch_count || 1} 条分支` : '描述条件，获取智能匹配建议'}</div>
+          <div className="mt-0.5 truncate text-[11px] text-ink-soft/45">{tree
+            ? `对话已保存 · ${tree.chat.branch_count || 1} 条分支${draftTabCount ? ` · ${draftTabCount} 个待创建` : ''}`
+            : '描述条件，获取智能匹配建议'}</div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button type="button" title="新对话" onClick={startNewChat} className="rounded-md p-1.5 text-ink-soft/50 hover:bg-mist/60"><i className="ri-add-line" /></button>
@@ -638,13 +641,16 @@ export function BranchingChatPanel({
         <div className="flex min-w-0 flex-1 items-center gap-1">
           {workspaceTabs.map((tab) => {
             const active = tab.key === activeTabKey
+            const isDraft = tab.key.startsWith('draft:')
             return (
               <div
                 key={tab.key}
-                className={`group/tab flex h-8 max-w-[148px] shrink-0 items-center rounded-full px-1 transition ${
+                className={`group/tab flex h-8 max-w-[168px] shrink-0 items-center rounded-full px-1 transition ${
                   active
                     ? 'bg-mist text-teal-deep'
-                    : 'text-ink-soft/55 hover:bg-sand/80 hover:text-ink-soft/80'
+                    : isDraft
+                      ? 'border border-dashed border-teal/35 text-teal-deep/80 hover:bg-mist/50'
+                      : 'text-ink-soft/55 hover:bg-sand/80 hover:text-ink-soft/80'
                 }`}
               >
                 <button
@@ -653,14 +659,14 @@ export function BranchingChatPanel({
                   className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left"
                   aria-current={active ? 'page' : undefined}
                 >
-                  <i className={`${tab.name === '主线' ? 'ri-chat-3-line' : 'ri-git-branch-line'} shrink-0 text-[12px]`} />
-                  <span className="truncate text-[11.5px] font-medium">{tab.name}</span>
+                  <i className={`${isDraft ? 'ri-git-branch-line' : tab.name === '主线' ? 'ri-chat-3-line' : 'ri-git-branch-line'} shrink-0 text-[12px]`} />
+                  <span className="truncate text-[11.5px] font-medium">{isDraft ? `待创建 · ${tab.name}` : tab.name}</span>
                 </button>
                 {tab.closable && (
                   <button
                     type="button"
-                    title={`关闭${tab.name}`}
-                    aria-label={`关闭${tab.name}`}
+                    title={isDraft ? `取消${tab.name}` : `关闭${tab.name}`}
+                    aria-label={isDraft ? `取消${tab.name}` : `关闭${tab.name}`}
                     onClick={() => closeWorkspaceTab(tab.key)}
                     className="mr-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink-soft/35 opacity-0 transition hover:bg-rose-50 hover:text-rose-600 group-hover/tab:opacity-100 focus-visible:opacity-100"
                   >
