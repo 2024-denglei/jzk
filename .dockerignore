@@ -1,0 +1,12 @@
+.git
+.env
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+web/node_modules
+web/dist
+data
+*.xlsx
+docs/superpowers

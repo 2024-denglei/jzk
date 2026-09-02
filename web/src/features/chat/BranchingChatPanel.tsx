@@ -281,6 +281,7 @@ export function BranchingChatPanel({
       setGenerationProgress(null)
       return
     }
+    const activeGenerationId = generationId
     // 用户已点终止：即使服务端短暂仍为 generating，也不再拉起 SSE
     if (userStoppedGenerationsRef.current.has(generationId)) {
       setSending(false)
@@ -295,7 +296,7 @@ export function BranchingChatPanel({
     setGenerationProgress({ stage: 'connecting' })
 
     function onEvent(event: GenerationEvent) {
-      if (userStoppedGenerationsRef.current.has(generationId)) return
+      if (userStoppedGenerationsRef.current.has(activeGenerationId)) return
       const progress = generationProgressFromEvent(event)
       if (progress) setGenerationProgress(progress)
       if (event.event === 'token') {
@@ -303,15 +304,15 @@ export function BranchingChatPanel({
         setChatState((state) => patchMessage(state, messageId, { content: streamedText, status: 'generating' }))
       }
     }
-    void followGeneration(generationId, {
+    void followGeneration(activeGenerationId, {
       signal: controller.signal,
       onEvent,
       onReconnect: (attempt) => setGenerationProgress({ stage: 'reconnecting', detail: `第 ${attempt} 次重连` }),
     }).then(async (status) => {
-      if (controller.signal.aborted || userStoppedGenerationsRef.current.has(generationId)) return
+      if (controller.signal.aborted || userStoppedGenerationsRef.current.has(activeGenerationId)) return
       if (status === 'stopped' || status === 'failed') setGenerationProgress({ stage: status })
       if (status === 'completed' && ttsOnRef.current && streamedText) speakText(streamedText)
-      userStoppedGenerationsRef.current.delete(generationId)
+      userStoppedGenerationsRef.current.delete(activeGenerationId)
       await loadRef.current?.(currentChatId, branchId, false)
     }).catch((cause) => {
       if (!isAbortError(cause)) setError(cause instanceof Error ? cause.message : '生成事件连接失败')

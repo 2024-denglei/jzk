@@ -1,0 +1,120 @@
+name: jzk
+
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-jzk_dev_change_me}@postgres:5432/jzk
+  DATABASE_ADMIN_URL: postgresql://postgres:${POSTGRES_PASSWORD:-jzk_dev_change_me}@postgres:5432/jzk
+  DATABASE_MIGRATOR_URL: postgresql://postgres:${POSTGRES_PASSWORD:-jzk_dev_change_me}@postgres:5432/jzk
+  REDIS_URL: redis://redis:6379/0
+  MATCH_SCORER_URL: http://scorer:8020
+  HOST: 0.0.0.0
+  PORT: 8010
+  RELOAD: "0"
+
+x-app-common: &app-common
+  build:
+    context: .
+  image: jzk-app:local
+  env_file:
+    - path: .env
+      required: false
+  environment: *app-environment
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    scorer:
+      condition: service_healthy
+
+services:
+  app:
+    <<: *app-common
+    container_name: jzk-app
+    ports:
+      - "${APP_PORT:-8010}:8010"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8010/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  scorer:
+    image: jzk-app:local
+    container_name: jzk-scorer
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SCORER_MODEL_PATH: /app/models/best_mae_model_v4.pt
+    command: ["python", "-m", "uvicorn", "services.match_scorer.app:app", "--host", "0.0.0.0", "--port", "8020"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8020/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: jzk-postgres
+    environment:
+      POSTGRES_DB: jzk
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jzk_dev_change_me}
+      JZK_APP_PASSWORD: ${JZK_APP_PASSWORD:-jzk_app_dev}
+      JZK_ADMIN_PASSWORD: ${JZK_ADMIN_PASSWORD:-jzk_admin_dev}
+      JZK_READONLY_PASSWORD: ${JZK_READONLY_PASSWORD:-jzk_ro_dev}
+      JZK_MIGRATOR_PASSWORD: ${JZK_MIGRATOR_PASSWORD:-jzk_migrator_dev}
+    ports:
+      - "${POSTGRES_BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - jzk_pg_data:/var/lib/postgresql/data
+      - ./db/postgres:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d jzk"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: jzk-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - jzk_redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  generation-worker:
+    <<: *app-common
+    container_name: jzk-generation-worker
+    profiles: ["workers"]
+    environment:
+      <<: *app-environment
+      CHAT_GENERATION_WORKER_ENABLED: "1"
+    command: ["python", "scripts/run_generation_worker.py"]
+
+  outbox-worker:
+    <<: *app-common
+    container_name: jzk-outbox-worker
+    profiles: ["workers"]
+    environment:
+      <<: *app-environment
+      CHAT_OUTBOX_WORKER_ENABLED: "1"
+    command: ["python", "scripts/run_outbox_worker.py"]
+
+volumes:
+  jzk_pg_data:
+    name: postgres_jzk_pg_data
+  jzk_redis_data:
+    name: postgres_jzk_redis_data
