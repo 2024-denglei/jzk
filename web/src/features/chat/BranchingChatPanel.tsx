@@ -789,10 +789,6 @@ export function BranchingChatPanel({
           </div>}
         </article>
       })}
-      {pendingAction?.action === 'rewind_continue' && <div className="rounded-xl border border-dashed border-teal/25 bg-white/75 px-3 py-2 text-center text-[10px] text-ink-soft/55">
-        <i className="ri-git-branch-line mr-1 text-teal-deep" />
-        已定位到分支点，原路径后续 {messagePreview.hiddenCount} 条消息会完整保留
-      </div>}
       <div ref={bottomRef} />
     </main>
 
