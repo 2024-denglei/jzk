@@ -19,9 +19,14 @@ export function buildTurnCommand(input: {
   requestId: string
 }): ChatTurnCommand {
   const action: ChatTurnAction = input.pending?.action || 'append'
+  // edit_resend 必须保留被编辑消息的真实父节点（首条用户消息为 null），
+  // 不能用 ?? 回落到 branchHead，否则后端会报「编辑消息的父节点不一致」。
+  const parent_message_id = action === 'edit_resend'
+    ? input.pending?.parentMessageId ?? null
+    : input.pending?.parentMessageId ?? input.branchHeadMessageId ?? null
   return {
     branch_id: input.selectedBranchId || null,
-    parent_message_id: input.pending?.parentMessageId ?? input.branchHeadMessageId ?? null,
+    parent_message_id,
     action,
     derived_from_message_id: input.pending?.derivedFromMessageId || null,
     content: input.content.trim(),
