@@ -19,6 +19,7 @@ from dialogue.agent_tools import (
     SUBMIT_PROFILE_EXTENDED_TOOL,
     SUBMIT_PROFILE_TOOL,
     build_preference_snapshot_message,
+    describe_empty_tool_arguments_error,
     parse_tool_arguments,
     slim_assistant_for_llm,
     tool_failure_payload,
@@ -251,6 +252,10 @@ class AgentGenerationProcessor:
                 tool_started = perf_counter()
                 if call.function.name not in PROFILE_TOOL_NAMES:
                     tool_payload = tool_failure_payload(f"unknown tool {call.function.name}")
+                elif not arguments:
+                    tool_payload = tool_failure_payload(
+                        describe_empty_tool_arguments_error(call.function.arguments)
+                    )
                 else:
                     try:
                         match_data = execute_match(

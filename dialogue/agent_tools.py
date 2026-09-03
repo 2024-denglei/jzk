@@ -26,18 +26,58 @@ PROFILE_TOOL_NAMES = frozenset(
 )
 
 
+def _unwrap_arguments_wrapper(blob: dict[str, Any]) -> dict[str, Any]:
+    """模型有时把 profile 多包一层 arguments，解包后再识别。"""
+    inner = blob.get("arguments")
+    if not isinstance(inner, dict):
+        return blob
+    if (
+        "schema_version" in inner
+        or "attributes" in inner
+        or any(k in inner for k in ("abo_blood", "height_cm", "education"))
+    ):
+        return inner
+    return blob
+
+
+def _coerce_preference_profile(blob: dict[str, Any]) -> dict[str, Any] | None:
+    blob = _unwrap_arguments_wrapper(blob)
+    if "schema_version" in blob or "attributes" in blob:
+        profile = dict(blob)
+        profile.setdefault("schema_version", "1.0")
+        profile.setdefault("attributes", {})
+        return profile
+    if blob.get("attributes") is None and any(
+        k in blob for k in ("abo_blood", "height_cm", "education")
+    ):
+        return {"schema_version": "1.0", "attributes": blob}
+    return None
+
+
 def parse_tool_arguments(raw_arguments: str | None, assistant_content: str | None = None) -> dict[str, Any]:
     """从工具 arguments 或助手正文中取出 PreferenceProfile 对象。"""
     for blob in (_extract_json_objects(raw_arguments) + _extract_json_objects(assistant_content)):
-        if isinstance(blob, dict) and ("schema_version" in blob or "attributes" in blob):
-            blob.setdefault("schema_version", "1.0")
-            blob.setdefault("attributes", {})
-            return blob
-        if isinstance(blob, dict) and blob.get("attributes") is None and any(
-            k in blob for k in ("abo_blood", "height_cm", "education")
-        ):
-            return {"schema_version": "1.0", "attributes": blob}
+        if isinstance(blob, dict):
+            profile = _coerce_preference_profile(blob)
+            if profile is not None:
+                return profile
     return {}
+
+
+def describe_empty_tool_arguments_error(raw_arguments: str | None) -> str:
+    """空解析时给模型的明确修正指引。"""
+    for blob in _extract_json_objects(raw_arguments):
+        if isinstance(blob, dict) and isinstance(blob.get("arguments"), dict):
+            return (
+                "工具 arguments 应直接包含 schema_version 与 attributes，"
+                "不要多包一层 arguments 对象。"
+                "正确示例：{\"schema_version\":\"1.0\",\"attributes\":{...}}"
+            )
+    return (
+        "未能从工具 arguments 解析 PreferenceProfile。"
+        "arguments 必须是完整 JSON：{\"schema_version\":\"1.0\",\"attributes\":{...}}，"
+        "禁止空参数。"
+    )
 
 
 def _extract_json_objects(text: str | None) -> list[Any]:
