@@ -8,9 +8,22 @@ import re
 from typing import Any
 
 import config
-from core.preference.schema import field_catalog_text, openai_tool_schema
+from core.preference.schema import (
+    CORE_FIELDS,
+    EXTENDED_FIELDS,
+    FIELD_REGISTRY,
+    openai_tool_schema,
+)
 
 logger = logging.getLogger(__name__)
+
+PREFERENCE_SNAPSHOT_PREFIX = "【当前完整偏好画像】"
+EMPTY_PREFERENCE_PROFILE = {"schema_version": "1.0", "attributes": {}}
+SUBMIT_PROFILE_TOOL_NAME = "submit_preference_profile"
+SUBMIT_PROFILE_EXTENDED_TOOL_NAME = "submit_preference_profile_extended"
+PROFILE_TOOL_NAMES = frozenset(
+    {SUBMIT_PROFILE_TOOL_NAME, SUBMIT_PROFILE_EXTENDED_TOOL_NAME}
+)
 
 
 def parse_tool_arguments(raw_arguments: str | None, assistant_content: str | None = None) -> dict[str, Any]:
@@ -51,33 +64,46 @@ def _extract_json_objects(text: str | None) -> list[Any]:
             idx = start + 1
     return found
 
+def build_preference_snapshot_message(profile: dict[str, Any] | None) -> dict[str, str]:
+    """权威画像片段：独立 system 消息，供 chat-v2 processor 与兼容路径共用。"""
+    payload = profile if isinstance(profile, dict) and profile else EMPTY_PREFERENCE_PROFILE
+    return {
+        "role": "system",
+        "content": PREFERENCE_SNAPSHOT_PREFIX
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+    }
+
+
+def is_preference_snapshot_text(text: str | None) -> bool:
+    return str(text or "").startswith(PREFERENCE_SNAPSHOT_PREFIX)
+
+
 def build_agent_system_prompt(
     candidate_pool: int | None = None,
 ) -> str:
     pool = candidate_pool if candidate_pool is not None else config.MATCH_SCORER_CANDIDATE_POOL
+    extended = "、".join(EXTENDED_FIELDS)
     return f"""你是智能生育匹配系统的顾问助手。
 
 你通过对话理解用户对捐精人的偏好，自己判断何时该调用工具。不要用固定口头禅词表，按语义理解。
 
 【必须遵守】
-1. 用户提出、修改、放宽、取消任何偏好时，必须调用 submit_preference_profile，提交当前完整 PreferenceProfile 快照后再总结。禁止只说「已记录/已添加/已放宽」却不调用。
-2. 工具参数必须符合 JSON Schema（见工具 parameters）。每个属性都要有 constraint（must|prefer）和 weight（0~1）。
-3. 人数、代号、匹配度只能来自工具返回的 count / top_preview / prefer_hits。禁止虚构。禁止输出捐精人 Markdown 表格。匹配结果由系统在回复下方展示卡片，引导用户看卡片。
-4. 若工具返回 ok=false，根据 error / allowed_values 修正 parameters，再次调用同一工具，直到成功或确认无法修正。修正期间不要向用户编造成果。
-5. 闲聊、问候、明确说「没了/没有了」且不改条件 → 不调用工具。
-6. filtered_count 是满足 must 硬条件的总人数；count / ranked_count 是模型生成的可浏览排名人数（最多 {pool}），两者可能不同。若工具返回 prefer_hits 非空：这些字段只重排、未做硬过滤，hits/of 的分母是模型排名池。总结必须说明「硬条件人数未因该偏好减少，已按偏好重排」，并引用各字段 hits/of。filtered_count 大于 ranked_count 时必须同时说清两个数字，禁止把 {pool} 说成全部合格人数，也禁止把 prefer 说成筛掉了人。
+1. 用户提出、修改、放宽、取消任何偏好时，必须调用工具提交当前完整 PreferenceProfile 快照后再总结。禁止只说「已记录/已添加/已放宽」却不调用。
+2. 默认用 {SUBMIT_PROFILE_TOOL_NAME}（常用字段）。若本轮 tools 中出现 {SUBMIT_PROFILE_EXTENDED_TOOL_NAME}（用户提到病史/遗传/爱好/吸烟等，或当前画像已含扩展字段），则必须用它提交完整快照（含已有核心条件）。扩展字段：{extended}。
+3. 工具参数必须符合 JSON Schema。每个属性都要有 constraint（must|prefer）和 weight（0~1）。字段名、类型、合法枚举以工具 parameters 为准；口语映射见各字段 description，禁止自造近义词。
+4. 人数、代号、匹配度只能来自工具返回的 count / ranked_count / filtered_count / prefer_hits。禁止虚构。禁止输出捐精人 Markdown 表格。匹配结果由系统在回复下方展示卡片，引导用户看卡片。
+5. 若工具返回 ok=false，根据 error，以及 field / allowed_values（若有）修正 parameters，再次调用同一工具，直到成功或确认无法修正。修正期间不要向用户编造成果。
+6. 闲聊、问候、明确说「没了/没有了」且不改条件 → 不调用工具。
+7. filtered_count 是满足 must 硬条件的总人数；count / ranked_count 是模型生成的可浏览排名人数（最多 {pool}），两者可能不同。若工具返回 prefer_hits 非空：这些字段只重排、未做硬过滤，hits/of 的分母是模型排名池。总结必须说明「硬条件人数未因该偏好减少，已按偏好重排」，并引用各字段 hits/of。filtered_count 大于 ranked_count 时必须同时说清两个数字，禁止把 {pool} 说成全部合格人数，也禁止把 prefer 说成筛掉了人。
 
 【画像规则】
-- 每轮提交完整 attributes，不是增量。取消某条件 = 该字段从 attributes 中消失
+- 以「{PREFERENCE_SNAPSHOT_PREFIX}」system 片段为当前权威快照；每轮提交完整 attributes，不是增量。取消某条件 = 该字段从 attributes 中消失
 - 「必须/一定要/不要（某项）」→ must 且 weight=1.0；「最好/希望」→ prefer；未说强度时 must=1.0、prefer=0.5
 - 「也可以/也行」表示放宽：把新值并入该字段（如籍贯 keywords 同时含重庆和四川），不要丢掉旧值
-- 数值字段用 range.min/max（height_cm、weight_kg、bmi、age、specimen_count）；单边范围另一侧填 null
-- 枚举字段用 values，且必须严格使用下方 catalog 列出的库内实际取值；用户口语先映射到最近允许值，禁止自造近义词（如把「瘦点的」写成偏瘦型）
-- 其余文本字段用 keywords + match(any|all)
+- 数值字段用 range.min/max；单边范围另一侧填 null。枚举用 values。文本用 keywords + match(any|all)
 - 调用时 arguments 必须是完整 JSON（schema_version=1.0 与 attributes），禁止空参数
 - 禁止输出 SQL，禁止编造代号
-
-""" + field_catalog_text()
+"""
 
 
 AGENT_SYSTEM_PROMPT = build_agent_system_prompt()
@@ -102,11 +128,17 @@ def tool_failure_payload(error: Any, **extra: Any) -> dict[str, Any]:
         "retry": True,
         "error": str(error),
         "note": (
-            "参数未通过校验。请根据 error 修正完整 PreferenceProfile 后，"
-            "再次调用 submit_preference_profile。"
+            "参数未通过校验。请根据 error，以及 field/allowed_values（若有）"
+            "修正完整 PreferenceProfile 后，再次调用同一工具。"
             "不要向用户编造匹配人数、代号或卡片。"
         ),
     }
+    field = getattr(error, "field", None)
+    allowed_values = getattr(error, "allowed_values", None)
+    if field:
+        payload["field"] = field
+    if allowed_values:
+        payload["allowed_values"] = list(allowed_values)
     payload.update({k: v for k, v in extra.items() if v is not None})
     return payload
 
@@ -140,17 +172,36 @@ def _match_success_note(
 SUBMIT_PROFILE_TOOL = {
     "type": "function",
     "function": {
-        "name": "submit_preference_profile",
+        "name": SUBMIT_PROFILE_TOOL_NAME,
         "description": (
-            "提交当前完整 PreferenceProfile 并匹配捐精人。"
+            "提交当前完整 PreferenceProfile（常用字段）并匹配捐精人。"
             "有偏好或改条件时必须调用。arguments 必须符合 JSON Schema。"
             "除 specimen_count 外最多提交 11 个属性。"
-            "若返回 ok=false，按 error 修正后重试本工具。"
+            "若涉及扩展字段，改用 submit_preference_profile_extended。"
+            "若返回 ok=false，按 error/field/allowed_values 修正后重试。"
         ),
-        "parameters": openai_tool_schema(),
+        "parameters": openai_tool_schema(CORE_FIELDS),
     },
 }
 
+SUBMIT_PROFILE_EXTENDED_TOOL = {
+    "type": "function",
+    "function": {
+        "name": SUBMIT_PROFILE_EXTENDED_TOOL_NAME,
+        "description": (
+            "提交含扩展字段的完整 PreferenceProfile 并匹配捐精人。"
+            "用户明确提到病史、遗传、爱好、发量等扩展条件时使用。"
+            "arguments 仍须是完整快照（含已有核心条件）。"
+            "除 specimen_count 外最多提交 11 个属性。"
+            "若返回 ok=false，按 error/field/allowed_values 修正后重试。"
+        ),
+        "parameters": openai_tool_schema(tuple(FIELD_REGISTRY)),
+    },
+}
+
+AGENT_TOOLS = [SUBMIT_PROFILE_TOOL, SUBMIT_PROFILE_EXTENDED_TOOL]
+
+# 非 chat-v2 主路径遗留工具；新对话请用 AGENT_TOOLS。
 MATCH_DONORS_TOOL = {
     "type": "function",
     "function": {
@@ -604,16 +655,11 @@ def apply_match_api_response(session, raw_profile: dict, status: int, data: dict
 
 
 def build_agent_messages(session, user_message: str | None = None) -> list[dict]:
-    """组装 Agent 消息列表（session.history 应已含本轮用户句）。"""
-    messages: list[dict] = [{"role": "system", "content": AGENT_SYSTEM_PROMPT}]
-    if session.preference_profile:
-        messages.append(
-            {
-                "role": "system",
-                "content": "【当前完整偏好画像】"
-                + json.dumps(session.preference_profile, ensure_ascii=False),
-            }
-        )
+    """组装 Agent 消息列表（兼容旧 session 路径；chat-v2 以 processor 为准）。"""
+    messages: list[dict] = [
+        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+        build_preference_snapshot_message(getattr(session, "preference_profile", None)),
+    ]
     for m in session.get_llm_messages():
         role = m.get("role")
         if role == "assistant":

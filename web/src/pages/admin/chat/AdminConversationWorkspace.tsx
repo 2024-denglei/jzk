@@ -399,7 +399,12 @@ function ToolCallPart({ call, order }: { call: AgentToolCall; order: number }) {
 }
 
 function partPresentation(event: AgentTranscriptEvent) {
-  if (event.role === 'system') return { title: '系统提示词', subtitle: 'System Prompt · 最终组装上下文', icon: 'ri-shield-check-line', iconStyle: 'bg-violet-50 text-violet-700' }
+  if (event.role === 'system') {
+    if (event.kind === 'preference_snapshot' || event.text.startsWith('【当前完整偏好画像】')) {
+      return { title: '当前画像快照', subtitle: 'Preference Snapshot · 本轮权威状态', icon: 'ri-user-heart-line', iconStyle: 'bg-fuchsia-50 text-fuchsia-700' }
+    }
+    return { title: '系统提示词', subtitle: 'System Prompt · 最终组装上下文', icon: 'ri-shield-check-line', iconStyle: 'bg-violet-50 text-violet-700' }
+  }
   if (event.role === 'user') return { title: '用户消息', subtitle: event.phase === 'input_context' ? 'User · 实际输入上下文' : 'User', icon: 'ri-user-line', iconStyle: 'bg-blue-50 text-blue-700' }
   if (event.role === 'tool') return { title: '工具结果', subtitle: `${event.toolName || 'Tool'} · 实际返回`, icon: 'ri-database-2-line', iconStyle: 'bg-emerald-50 text-emerald-700' }
   if (event.phase === 'final') return { title: '模型最终回复', subtitle: 'Assistant Final · 工具结果之后', icon: 'ri-sparkling-2-line', iconStyle: 'bg-slate-100 text-slate-700' }

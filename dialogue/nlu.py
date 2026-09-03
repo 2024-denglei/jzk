@@ -1,4 +1,8 @@
-"""LLM 语义理解与需求解析模块。"""
+"""LLM 语义理解与需求解析模块。
+
+非 chat-v2 主路径遗留：持久生成 Worker 使用 AgentGenerationProcessor +
+submit_preference_profile。本模块仍提供 create_async_llm_client 与旧 NLU 解析。
+"""
 
 import json
 import logging

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from dialogue import generation_processor
+from dialogue.agent_tools import AGENT_SYSTEM_PROMPT, PREFERENCE_SNAPSHOT_PREFIX
 from dialogue.generation_processor import AgentGenerationProcessor, FallbackGenerationProcessor
 
 
@@ -41,17 +42,20 @@ class _Control:
         return False
 
 
-def _context():
+def _context(*, preference_profile=None):
     generation = SimpleNamespace(
         user_id=7,
         assistant_message_id=uuid4(),
     )
+    state = {"state_schema_version": 1}
+    if preference_profile is not None:
+        state["preference_profile"] = preference_profile
     return {
         "generation": generation,
         "messages": [
             {"id": str(uuid4()), "role": "user", "content": "必须 O 型"},
         ],
-        "state_after_user": {"state_schema_version": 1},
+        "state_after_user": state,
     }
 
 
@@ -87,6 +91,7 @@ def test_agent_processor_creates_match_snapshot_ref_and_streams_summary(monkeypa
     tool_response = SimpleNamespace(
         choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[tool_call]))]
     )
+    captured = {}
 
     async def stream():
         for text in ("匹配", "完成"):
@@ -100,6 +105,9 @@ def test_agent_processor_creates_match_snapshot_ref_and_streams_summary(monkeypa
 
         async def create(self, **kwargs):
             self.calls += 1
+            if not kwargs.get("stream"):
+                captured["tools"] = kwargs.get("tools")
+                captured["messages"] = kwargs.get("messages")
             return stream() if kwargs.get("stream") else tool_response
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
@@ -116,7 +124,18 @@ def test_agent_processor_creates_match_snapshot_ref_and_streams_summary(monkeypa
         },
     )
     control = _Control()
-    output = asyncio.run(AgentGenerationProcessor(client)(_context(), control))
+    existing = {
+        "schema_version": "1.0",
+        "attributes": {
+            "education": {"constraint": "must", "weight": 1, "values": ["本科"]},
+        },
+    }
+    output = asyncio.run(
+        AgentGenerationProcessor(client)(
+            _context(preference_profile=existing),
+            control,
+        )
+    )
 
     assert output.content == "匹配完成"
     assert output.match_run_id == UUID(result_set_id)
@@ -130,16 +149,179 @@ def test_agent_processor_creates_match_snapshot_ref_and_streams_summary(monkeypa
     }
     assert control.events[2][1]["total"] == 12
     assert control.events[3][1]["stage"] == "summarizing"
-    assert control.metadata["prompt_version"] == "agent-v3"
+    assert control.metadata["prompt_version"] == "agent-v4"
     assert all("content" not in payload for _step, payload in control.trace.steps)
+    assert len(captured["tools"]) == 1
+    assert captured["tools"][0]["function"]["name"] == "submit_preference_profile"
+    assert captured["messages"][0]["content"] == AGENT_SYSTEM_PROMPT
+    assert captured["messages"][1]["content"].startswith(PREFERENCE_SNAPSHOT_PREFIX)
+    assert "本科" in captured["messages"][1]["content"]
     transcript = [payload for step, payload in control.trace.steps if step == "agent_message"]
     assert [item["role"] for item in transcript] == [
-        "system", "user", "assistant", "tool", "assistant",
+        "system", "system", "user", "assistant", "tool", "assistant",
     ]
-    assert transcript[0]["text"] == generation_processor.AGENT_SYSTEM_PROMPT
-    assert transcript[1]["text"] == "必须 O 型"
-    assert transcript[2]["phase"] == "tool_call"
-    assert transcript[2]["tool_calls"][0]["name"] == "submit_preference_profile"
-    assert json.loads(transcript[3]["text"])["result_set_id"] == result_set_id
-    assert transcript[4]["phase"] == "final"
-    assert transcript[4]["text"] == "匹配完成"
+    assert transcript[0]["text"] == AGENT_SYSTEM_PROMPT
+    assert transcript[1]["kind"] == "preference_snapshot"
+    assert transcript[1]["text"].startswith(PREFERENCE_SNAPSHOT_PREFIX)
+    assert transcript[2]["text"] == "必须 O 型"
+    assert transcript[3]["phase"] == "tool_call"
+    assert transcript[3]["tool_calls"][0]["name"] == "submit_preference_profile"
+    assert json.loads(transcript[4]["text"])["result_set_id"] == result_set_id
+    assert transcript[5]["phase"] == "final"
+    assert transcript[5]["text"] == "匹配完成"
+
+
+def test_agent_processor_accepts_extended_tool(monkeypatch):
+    result_set_id = str(uuid4())
+    tool_call = SimpleNamespace(
+        id="call-ext",
+        function=SimpleNamespace(
+            name="submit_preference_profile_extended",
+            arguments=json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "attributes": {
+                        "smoke_history": {
+                            "constraint": "must",
+                            "weight": 1,
+                            "keywords": ["无"],
+                            "match": "any",
+                        }
+                    },
+                }
+            ),
+        ),
+    )
+    tool_response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[tool_call]))]
+    )
+    captured = {}
+
+    async def stream():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="好的"))])
+
+    class Completions:
+        async def create(self, **kwargs):
+            if not kwargs.get("stream"):
+                captured["tools"] = kwargs.get("tools")
+            return stream() if kwargs.get("stream") else tool_response
+
+    monkeypatch.setattr(
+        generation_processor,
+        "execute_match",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "total": 3,
+            "filtered_count": 3,
+            "match_level": "full",
+            "prefer_hits": [],
+            "bottlenecks": [],
+            "result_set_id": result_set_id,
+        },
+    )
+    control = _Control()
+    ctx = _context()
+    ctx["messages"] = [{"id": str(uuid4()), "role": "user", "content": "不要抽烟的"}]
+    output = asyncio.run(
+        AgentGenerationProcessor(
+            SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+        )(ctx, control)
+    )
+    assert captured["tools"][0]["function"]["name"] == (
+        "submit_preference_profile_extended"
+    )
+    assert output.match_run_id == UUID(result_set_id)
+    assert control.state["preference_profile"]["attributes"]["smoke_history"]["keywords"] == ["无"]
+
+
+def test_agent_processor_returns_structured_validation_error(monkeypatch):
+    bad_call = SimpleNamespace(
+        id="call-bad",
+        function=SimpleNamespace(
+            name="submit_preference_profile",
+            arguments=json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "attributes": {
+                        "figure": {
+                            "constraint": "must",
+                            "weight": 1,
+                            "values": ["偏瘦型"],
+                        }
+                    },
+                }
+            ),
+        ),
+    )
+    good_call = SimpleNamespace(
+        id="call-good",
+        function=SimpleNamespace(
+            name="submit_preference_profile",
+            arguments=json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "attributes": {
+                        "figure": {
+                            "constraint": "must",
+                            "weight": 1,
+                            "values": ["瘦弱"],
+                        }
+                    },
+                }
+            ),
+        ),
+    )
+    responses = [
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[bad_call]))]
+        ),
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[good_call]))]
+        ),
+    ]
+
+    async def stream():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="已修正"))])
+
+    class Completions:
+        def __init__(self):
+            self.calls = 0
+
+        async def create(self, **kwargs):
+            if kwargs.get("stream"):
+                return stream()
+            response = responses[self.calls]
+            self.calls += 1
+            return response
+
+    monkeypatch.setattr(
+        generation_processor,
+        "execute_match",
+        lambda profile, **_kwargs: {
+            "ok": True,
+            "total": 1,
+            "filtered_count": 1,
+            "match_level": "full",
+            "prefer_hits": [],
+            "bottlenecks": [],
+            "result_set_id": str(uuid4()),
+        },
+    )
+    control = _Control()
+    output = asyncio.run(
+        AgentGenerationProcessor(
+            SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+        )(_context(), control)
+    )
+    tool_msgs = [
+        payload
+        for step, payload in control.trace.steps
+        if step == "agent_message" and payload.get("phase") == "tool_result"
+    ]
+    assert len(tool_msgs) == 2
+    first = json.loads(tool_msgs[0]["text"])
+    assert first["ok"] is False
+    assert first["field"] == "figure"
+    assert first["allowed_values"] == ["一般", "瘦弱", "强壮", "肥胖"]
+    assert json.loads(tool_msgs[1]["text"])["ok"] is True
+    assert output.content == "已修正"

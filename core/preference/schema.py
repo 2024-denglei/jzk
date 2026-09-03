@@ -71,6 +71,31 @@ FIELD_REGISTRY: dict[str, FieldSpec] = {
 for _name in KEYWORD_FIELDS:
     FIELD_REGISTRY[_name] = FieldSpec("keyword", _name)
 
+# 默认暴露给顾问工具的常用字段；其余走 extended 工具，降低固定 tools token。
+CORE_FIELDS: tuple[str, ...] = (
+    "height_cm",
+    "weight_kg",
+    "bmi",
+    "age",
+    "specimen_count",
+    "education",
+    "abo_blood",
+    "rh_blood",
+    "figure",
+    "skin_color",
+    "face_shape",
+    "eyelid",
+    "lip_shape",
+    "constellation",
+    "ethnicity",
+    "hometown",
+    "occupation",
+    "personality",
+)
+EXTENDED_FIELDS: tuple[str, ...] = tuple(
+    name for name in FIELD_REGISTRY if name not in CORE_FIELDS
+)
+
 BLOCKED_FIELDS = frozenset({
     "code", "serial_no", "status",
 })
@@ -134,7 +159,7 @@ def field_short_label(name: str) -> str:
 
 
 def field_catalog_text() -> str:
-    """从注册表生成字段说明书，供系统提示使用。"""
+    """从注册表生成字段说明书，供调试/文档；默认不再嵌入 system 或 tool description。"""
     lines = ["【可填字段 catalog】未提到的字段不要写进 attributes。"]
     for name, spec in FIELD_REGISTRY.items():
         guide = FIELD_GUIDE.get(name, name)
@@ -205,8 +230,14 @@ class PreferenceProfile(BaseModel):
     attributes: dict[str, Attr]
 
 
-def openai_tool_schema() -> dict[str, Any]:
+def openai_tool_schema(
+    field_names: tuple[str, ...] | list[str] | None = None,
+) -> dict[str, Any]:
     """submit_preference_profile 的 parameters：每字段带说明和可选值。"""
+    selected = tuple(field_names) if field_names is not None else tuple(FIELD_REGISTRY)
+    unknown = [name for name in selected if name not in FIELD_REGISTRY]
+    if unknown:
+        raise ValueError(f"unknown preference fields: {unknown}")
 
     def _base_props() -> dict[str, Any]:
         return {
@@ -224,7 +255,8 @@ def openai_tool_schema() -> dict[str, Any]:
         }
 
     attr_props: dict[str, Any] = {}
-    for name, spec in FIELD_REGISTRY.items():
+    for name in selected:
+        spec = FIELD_REGISTRY[name]
         guide = FIELD_GUIDE.get(name, name)
         if spec.kind == "range":
             attr_props[name] = {
@@ -247,14 +279,13 @@ def openai_tool_schema() -> dict[str, Any]:
             allowed = list(spec.enums)
             attr_props[name] = {
                 "type": "object",
-                "description": f"{guide}。values 只能从可选值中选：{allowed}",
+                "description": guide,
                 "properties": {
                     **_base_props(),
                     "values": {
                         "type": "array",
                         "minItems": 1,
                         "items": {"type": "string", "enum": allowed},
-                        "description": f"可选值：{allowed}",
                     },
                 },
                 "required": ["constraint", "weight", "values"],
@@ -287,7 +318,10 @@ def openai_tool_schema() -> dict[str, Any]:
             "schema_version": {"type": "string", "enum": ["1.0"]},
             "attributes": {
                 "type": "object",
-                "description": "完整偏好画像快照。取消的字段不要出现。未提及不要编造。" + field_catalog_text(),
+                "description": (
+                    "完整偏好画像快照。取消的字段不要出现；未提及不要编造。"
+                    "除 specimen_count 外最多 11 个属性。"
+                ),
                 "properties": attr_props,
                 "additionalProperties": False,
             },

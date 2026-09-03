@@ -52,6 +52,7 @@ export type AgentTranscriptEvent = {
   count: number | null
   attemptCount: number | null
   createdAt: string
+  kind: string | null
 }
 
 type TraceStepLike = {
@@ -64,6 +65,12 @@ type TraceStepLike = {
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : ''
+}
+
+export const PREFERENCE_SNAPSHOT_PREFIX = '【当前完整偏好画像】'
+
+export function isPreferenceSnapshotText(text: string | null | undefined): boolean {
+  return String(text || '').startsWith(PREFERENCE_SNAPSHOT_PREFIX)
 }
 
 export function agentTranscriptEvents(steps: TraceStepLike[]): AgentTranscriptEvent[] {
@@ -98,6 +105,7 @@ export function agentTranscriptEvents(steps: TraceStepLike[]): AgentTranscriptEv
       count: typeof payload.count === 'number' ? payload.count : null,
       attemptCount: typeof payload.attempt_count === 'number' ? payload.attempt_count : null,
       createdAt: step.created_at,
+      kind: stringValue(payload.kind) || null,
     }]
   })
 }
@@ -108,17 +116,27 @@ export function finalAgentContextEvents(steps: TraceStepLike[]): AgentTranscript
   const finalAttemptEvents = attempts.length
     ? events.filter((event) => event.attemptCount === null || event.attemptCount === Math.max(...attempts))
     : events
-  const lastSystemIndex = finalAttemptEvents.findLastIndex((event) => event.role === 'system')
-  return lastSystemIndex < 0 ? finalAttemptEvents : finalAttemptEvents.slice(lastSystemIndex)
+  const lastRulesSystemIndex = finalAttemptEvents.findLastIndex(
+    (event) => event.role === 'system' && !isPreferenceSnapshotText(event.text) && event.kind !== 'preference_snapshot',
+  )
+  return lastRulesSystemIndex < 0 ? finalAttemptEvents : finalAttemptEvents.slice(lastRulesSystemIndex)
 }
 
 export function turnExecutionEvents(steps: TraceStepLike[]): AgentTranscriptEvent[] {
-  return finalAgentContextEvents(steps).filter((event) => event.phase !== 'input_context')
+  return finalAgentContextEvents(steps).filter((event) => (
+    event.phase !== 'input_context'
+    || isPreferenceSnapshotText(event.text)
+    || event.kind === 'preference_snapshot'
+  ))
 }
 
 export function latestSystemContextEvent(stepGroups: TraceStepLike[][]): AgentTranscriptEvent | null {
   for (let index = stepGroups.length - 1; index >= 0; index -= 1) {
-    const system = finalAgentContextEvents(stepGroups[index]).find((event) => event.role === 'system')
+    const system = finalAgentContextEvents(stepGroups[index]).find((event) => (
+      event.role === 'system'
+      && !isPreferenceSnapshotText(event.text)
+      && event.kind !== 'preference_snapshot'
+    ))
     if (system) return system
   }
   return null

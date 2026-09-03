@@ -11,15 +11,46 @@ from uuid import UUID
 import config
 from api.match import execute_match
 from core.preference.scoring_contract import RankerUnavailable
+from core.preference.schema import EXTENDED_FIELDS
 from core.preference.validate import ProfileValidationError, parse_profile
 from dialogue.agent_tools import (
     AGENT_SYSTEM_PROMPT,
+    PROFILE_TOOL_NAMES,
+    SUBMIT_PROFILE_EXTENDED_TOOL,
     SUBMIT_PROFILE_TOOL,
+    build_preference_snapshot_message,
     parse_tool_arguments,
     slim_assistant_for_llm,
     tool_failure_payload,
 )
 from dialogue.generation_worker import GenerationCancelled, GenerationControl, GenerationOutput
+
+# 用户话术命中这些再挂全量 extended schema，避免每轮都带两份工具定义。
+_EXTENDED_HINTS = (
+    "吸烟", "抽烟", "喝酒", "不抽", "不喝",
+    "病史", "疾病", "手术", "遗传", "染色体", "近亲",
+    "爱好", "运动", "艺术", "旅游", "阅读", "美食",
+    "发量", "发色", "发型", "胡须", "络腮", "鼻梁",
+    "婚育", "结婚", "子女", "性伴侣", "性病",
+)
+
+
+def _select_agent_tools(
+    state: dict[str, Any],
+    history_messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    profile = state.get("preference_profile") or {}
+    attrs = profile.get("attributes") if isinstance(profile, dict) else None
+    if isinstance(attrs, dict) and any(name in EXTENDED_FIELDS for name in attrs):
+        return [SUBMIT_PROFILE_EXTENDED_TOOL]
+    latest_user = ""
+    for item in reversed(history_messages):
+        if item.get("role") == "user":
+            latest_user = str(item.get("content") or "")
+            break
+    if any(hint in latest_user for hint in _EXTENDED_HINTS):
+        return [SUBMIT_PROFILE_EXTENDED_TOOL]
+    return [SUBMIT_PROFILE_TOOL]
 
 
 def _prompt_hash(messages: list[dict[str, Any]]) -> str:
@@ -89,16 +120,32 @@ class AgentGenerationProcessor:
             )
         selected_history = history_with_ids[-40:]
         input_ids = [message_id for message_id, _message in selected_history]
+        preference_message = build_preference_snapshot_message(
+            state.get("preference_profile")
+        )
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+            preference_message,
             *(message for _message_id, message in selected_history),
         ]
+        agent_tools = _select_agent_tools(
+            state,
+            [message for _message_id, message in selected_history],
+        )
         attempt_count = int(getattr(context["generation"], "attempt_count", 1) or 1)
         control.trace.add(
             "agent_message",
             role="system",
             phase="input_context",
             text=AGENT_SYSTEM_PROMPT,
+            attempt_count=attempt_count,
+        )
+        control.trace.add(
+            "agent_message",
+            role="system",
+            phase="input_context",
+            kind="preference_snapshot",
+            text=preference_message["content"],
             attempt_count=attempt_count,
         )
         for message_id, message in selected_history:
@@ -113,7 +160,7 @@ class AgentGenerationProcessor:
         initial_prompt_hash = _prompt_hash(messages)
         await control.set_model_metadata(
             model=self.model,
-            prompt_version="agent-v3",
+            prompt_version="agent-v4",
             prompt_hash=initial_prompt_hash,
         )
         final_reply = ""
@@ -140,7 +187,7 @@ class AgentGenerationProcessor:
             response = await self.llm_client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=[SUBMIT_PROFILE_TOOL],
+                tools=agent_tools,
                 tool_choice="auto",
                 temperature=0.2,
                 max_tokens=2048,
@@ -202,7 +249,7 @@ class AgentGenerationProcessor:
                     {"stage": "tool_call", "tool_name": call.function.name},
                 )
                 tool_started = perf_counter()
-                if call.function.name != "submit_preference_profile":
+                if call.function.name not in PROFILE_TOOL_NAMES:
                     tool_payload = tool_failure_payload(f"unknown tool {call.function.name}")
                 else:
                     try:

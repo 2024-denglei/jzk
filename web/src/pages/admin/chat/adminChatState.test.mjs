@@ -52,6 +52,30 @@ test('Agent 转录只按数据库真实 agent_message 步骤组装', () => {
   assert.equal(events[2].count, 12)
 })
 
+test('管理端区分规则 System Prompt 与当前画像快照', () => {
+  const steps = [
+    { id: 1, step_order: 1, step_type: 'agent_message', created_at: 't1', payload_json: {
+      role: 'system', phase: 'input_context', text: '规则 System', attempt_count: 1,
+    } },
+    { id: 2, step_order: 2, step_type: 'agent_message', created_at: 't2', payload_json: {
+      role: 'system', phase: 'input_context', kind: 'preference_snapshot',
+      text: '【当前完整偏好画像】{"schema_version":"1.0","attributes":{}}', attempt_count: 1,
+    } },
+    { id: 3, step_order: 3, step_type: 'agent_message', created_at: 't3', payload_json: {
+      role: 'user', phase: 'input_context', text: '只要 O 型', attempt_count: 1,
+    } },
+    { id: 4, step_order: 4, step_type: 'agent_message', created_at: 't4', payload_json: {
+      role: 'assistant', phase: 'final', text: '已记录', attempt_count: 1,
+    } },
+  ]
+  assert.equal(latestSystemContextEvent([steps])?.text, '规则 System')
+  const turn = turnExecutionEvents(steps)
+  assert.equal(turn[0].kind, 'preference_snapshot')
+  assert.equal(turn[0].text.startsWith('【当前完整偏好画像】'), true)
+  assert.equal(turn.at(-1)?.phase, 'final')
+  assert.equal(turn.some((event) => event.text === '只要 O 型'), false)
+})
+
 test('完整上下文只展示最终生成尝试，避免重试导致系统提示词和历史消息重复', () => {
   const events = finalAgentContextEvents([
     { id: 1, step_order: 1, step_type: 'agent_message', created_at: 't1', payload_json: {

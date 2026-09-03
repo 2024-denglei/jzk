@@ -17,7 +17,16 @@ __all__ = ["ProfileValidationError", "parse_profile", "PreferenceProfile"]
 
 
 class ProfileValidationError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        field: str | None = None,
+        allowed_values: list[str] | None = None,
+    ):
+        super().__init__(message)
+        self.field = field
+        self.allowed_values = list(allowed_values) if allowed_values else None
 
 
 def _format_pydantic_error(exc: Exception) -> str:
@@ -44,12 +53,17 @@ def parse_profile(raw: dict[str, Any]) -> PreferenceProfile:
         parsed: dict[str, RangeAttr | EnumAttr | KeywordAttr] = {}
         for name, payload in attrs_in.items():
             if name in BLOCKED_FIELDS or name not in FIELD_REGISTRY:
-                allowed = ", ".join(sorted(FIELD_REGISTRY))
                 raise ProfileValidationError(
-                    f"未知或禁止字段: {name}。允许字段: {allowed}。禁止: {', '.join(sorted(BLOCKED_FIELDS))}"
+                    f"未知或禁止字段: {name}。"
+                    f"允许字段: {', '.join(sorted(FIELD_REGISTRY))}。"
+                    f"禁止: {', '.join(sorted(BLOCKED_FIELDS))}",
+                    field=name,
                 )
             if not isinstance(payload, dict):
-                raise ProfileValidationError(f"{name} must be an object")
+                raise ProfileValidationError(
+                    f"{name} must be an object",
+                    field=name,
+                )
             spec = FIELD_REGISTRY[name]
             if spec.kind == "range":
                 attr = RangeAttr.model_validate(payload)
@@ -60,7 +74,9 @@ def parse_profile(raw: dict[str, Any]) -> PreferenceProfile:
                 except ValueError:
                     raise ProfileValidationError(
                         f"{name}: 取值非法 {payload.get('values')}。"
-                        f"该字段是枚举，允许值：{list(spec.enums)}"
+                        f"该字段是枚举，允许值：{list(spec.enums)}",
+                        field=name,
+                        allowed_values=list(spec.enums),
                     )
             else:
                 attr = KeywordAttr.model_validate(payload)
