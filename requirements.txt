@@ -1,5 +1,8 @@
 fastapi>=0.115.0
 uvicorn>=0.30.0
+# 直接依赖：api/match.py 与 core/preference/scoring_client.py 都 import httpx。
+# 新版 openai SDK 依赖的是 httpx2，不再顺带装上 httpx，所以必须自己声明。
+httpx>=0.27,<1
 openai>=1.51.0
 openpyxl>=3.1.5
 xlrd>=2.0.1

@@ -23,10 +23,6 @@ RUN pip install --upgrade pip \
     && pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3" \
     && pip install -r requirements.txt
 
-# api/match.py directly imports the classic httpx package. New OpenAI SDKs may
-# install httpx2 instead, so keep this runtime dependency explicit in the image.
-RUN pip install "httpx>=0.27,<1"
-
 COPY . ./
 COPY --from=web-builder /build/web/dist ./web/dist
 
