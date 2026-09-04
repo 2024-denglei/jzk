@@ -4,9 +4,9 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
-from api import admin as admin_mod
-from core.matcher import hard_filter, match_with_relaxation
-from core.runtime_cache import update_donor_status_cache
+from jzk.api import admin as admin_mod
+from jzk.domain.screening import hard_filter, match_with_relaxation
+from jzk.domain.runtime_cache import update_donor_status_cache
 
 
 ADMIN = {"id": 9, "username": "admin", "display_name": "张管理员"}

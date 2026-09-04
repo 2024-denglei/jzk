@@ -1,6 +1,6 @@
 import pytest
 
-from api.refresh_sessions import (
+from jzk.api.refresh_sessions import (
     InvalidRefreshToken,
     RefreshSessionStore,
     RefreshTokenReplay,

@@ -1,6 +1,6 @@
-from api.rate_limit import rate_limiter
-from api.refresh_sessions import refresh_sessions
-from api.verification_codes import verification_codes
+from jzk.api.rate_limit import rate_limiter
+from jzk.api.refresh_sessions import refresh_sessions
+from jzk.api.verification_codes import verification_codes
 
 
 def test_security_services_share_one_redis_connection_pool():

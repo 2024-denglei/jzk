@@ -10,19 +10,19 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-import config
-from db import generation_runs_repo
-from db.chat_models import GenerationStatus, TurnCommand
-from db.pg import close_pools, ensure_schema
-from dialogue.conversation_commands import create_turn
-from dialogue.generation_events import (
+from jzk import config
+from jzk.db import generation_runs_repo
+from jzk.db.chat_contracts import GenerationStatus, TurnCommand
+from jzk.db.pg import close_pools, ensure_schema
+from jzk.chat.conversation_commands import create_turn
+from jzk.advisor.generation_events import (
     delete_generation_events,
     publish_generation_event,
     read_generation_events,
 )
-from dialogue.generation_processor import FallbackGenerationProcessor
-from dialogue.generation_worker import GenerationWorker
-from dialogue.state_schema import empty_state
+from jzk.advisor.generation_processor import FallbackGenerationProcessor
+from jzk.advisor.generation_worker import GenerationWorker
+from jzk.chat.state_schema import empty_state
 
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")

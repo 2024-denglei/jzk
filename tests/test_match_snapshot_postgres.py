@@ -9,18 +9,18 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-import config
-from core.preference.result_types import MatchResultMeta, MatchSnapshotItem, RankedCandidateRef
-from db.match_runs_repo import (
+from jzk import config
+from jzk.domain.preference.result_types import MatchResultMeta, MatchSnapshotItem, RankedCandidateRef
+from jzk.db.match_runs_repo import (
     cleanup_expired_match_runs,
     create_match_run,
     delete_match_run,
     get_match_run_items_page,
 )
-from db.pg import close_pools, ensure_schema
-from db.chat_models import TurnCommand
-from dialogue.conversation_commands import create_turn
-from dialogue.conversation_queries import ConversationQueryService
+from jzk.db.pg import close_pools, ensure_schema
+from jzk.db.chat_contracts import TurnCommand
+from jzk.chat.conversation_commands import create_turn
+from jzk.chat.conversation_queries import ConversationQueryService
 
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")

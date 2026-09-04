@@ -1,6 +1,6 @@
-from core.preference.validate import parse_profile
+from jzk.domain.preference.validate import parse_profile
 
-from dialogue.agent_tools import describe_empty_tool_arguments_error, parse_tool_arguments
+from jzk.advisor.agent_tools import describe_empty_tool_arguments_error, parse_tool_arguments
 
 
 def test_parses_standard_json_arguments():

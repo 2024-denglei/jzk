@@ -2,12 +2,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
-from api import admin_auth
+from jzk.api import admin_auth
 
 
 def test_admin_token_version_mismatch_is_rejected(monkeypatch):
     monkeypatch.setattr(
-        "db.admin_admins_repo.get_active_admin",
+        "jzk.db.admin_admins_repo.get_active_admin",
         lambda _admin_id: {
             "id": 8,
             "is_active": True,
@@ -27,7 +27,7 @@ def test_admin_token_version_mismatch_is_rejected(monkeypatch):
 def test_current_admin_token_version_is_accepted(monkeypatch):
     row = {"id": 8, "is_active": True, "token_version": 2, "role": "super_admin"}
     monkeypatch.setattr(
-        "db.admin_admins_repo.get_active_admin",
+        "jzk.db.admin_admins_repo.get_active_admin",
         lambda _admin_id: row,
     )
     token = admin_auth.create_admin_token(8, "super_admin", token_version=2)

@@ -4,8 +4,8 @@ import pytest
 from fastapi import HTTPException, Response
 from redis.exceptions import RedisError
 
-from api import admin as admin_api
-from api.rate_limit import RateLimitError, RateLimitUnavailable, RateLimiter
+from jzk.api import admin as admin_api
+from jzk.api.rate_limit import RateLimitError, RateLimitUnavailable, RateLimiter
 
 
 class _FakeRedis:

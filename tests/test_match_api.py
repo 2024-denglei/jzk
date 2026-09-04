@@ -3,8 +3,8 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from api.match import MatchRequest, match_donors
-from core.preference.pipeline import MatchResult
+from jzk.api.match import MatchRequest, match_donors
+from jzk.domain.preference.pipeline import MatchResult
 
 
 def _match(payload: dict):
@@ -42,13 +42,13 @@ def test_illegal_enum_is_400():
 
 
 def test_match_returns_503_when_ranker_unavailable(monkeypatch):
-    from api import match as match_mod
-    from core.preference.scoring_contract import RankerUnavailable
+    from jzk.api import match as match_mod
+    from jzk.domain.preference.scoring_contract import RankerUnavailable
 
     def boom(*args, **kwargs):
         raise RankerUnavailable("找不到评分服务")
 
-    monkeypatch.setattr("matching.execute.match_profile", boom)
+    monkeypatch.setattr("jzk.matching.execute.match_profile", boom)
     with pytest.raises(HTTPException) as exc_info:
         _match({"profile": VALID_PROFILE})
     assert exc_info.value.status_code == 503
@@ -56,9 +56,9 @@ def test_match_returns_503_when_ranker_unavailable(monkeypatch):
 
 
 def test_match_scoring_readiness_maps_dependency_failure(monkeypatch):
-    from api import match as match_mod
-    from core.preference import ranker_factory
-    from core.preference.scoring_contract import RankerUnavailable
+    from jzk.api import match as match_mod
+    from jzk.domain.preference import ranker_factory
+    from jzk.domain.preference.scoring_contract import RankerUnavailable
 
     monkeypatch.setattr(
         ranker_factory,
@@ -72,7 +72,7 @@ def test_match_scoring_readiness_maps_dependency_failure(monkeypatch):
 
 
 def test_match_ranks_and_returns_field_scores(monkeypatch):
-    from api import match as match_mod
+    from jzk.api import match as match_mod
 
     def fake_match(profile, **kwargs):
         return MatchResult(
@@ -104,7 +104,7 @@ def test_match_ranks_and_returns_field_scores(monkeypatch):
             filtered_count=2,
         )
 
-    monkeypatch.setattr("matching.execute.match_profile", fake_match)
+    monkeypatch.setattr("jzk.matching.execute.match_profile", fake_match)
     data = _match({"profile": VALID_PROFILE})
     assert data["ok"] is True
     assert data["filtered_count"] == 2
@@ -114,10 +114,10 @@ def test_match_ranks_and_returns_field_scores(monkeypatch):
 
 
 def test_zero_hits_returns_bottlenecks(monkeypatch):
-    from api import match as match_mod
+    from jzk.api import match as match_mod
 
     monkeypatch.setattr(
-        "matching.execute.match_profile",
+        "jzk.matching.execute.match_profile",
         lambda profile, **kwargs: MatchResult(
             candidates=[],
             match_level="none",
@@ -133,10 +133,10 @@ def test_zero_hits_returns_bottlenecks(monkeypatch):
 
 
 def test_top_k_truncates(monkeypatch):
-    from api import match as match_mod
+    from jzk.api import match as match_mod
 
     monkeypatch.setattr(
-        "matching.execute.match_profile",
+        "jzk.matching.execute.match_profile",
         lambda profile, **kwargs: MatchResult(
             candidates=[
                 {"rank": 1, "score": 0.9, "donor_info": {"code": "A"}, "field_scores": []},
@@ -154,11 +154,11 @@ def test_top_k_truncates(monkeypatch):
 
 
 def test_execute_match_returns_prefer_hits_before_top_k(monkeypatch):
-    from api import match as match_mod
+    from jzk.api import match as match_mod
 
     hits = [{"field": "hometown", "label": "籍贯", "hits": 2, "of": 3}]
     monkeypatch.setattr(
-        "matching.execute.match_profile",
+        "jzk.matching.execute.match_profile",
         lambda profile, **kwargs: MatchResult(
             candidates=[
                 {"rank": 1, "score": 0.9, "donor_info": {"code": "A"}, "field_scores": []},
@@ -187,7 +187,7 @@ def test_invoke_match_endpoint_hits_route():
 def test_delete_referenced_match_snapshot_returns_conflict(monkeypatch):
     import asyncio
 
-    from api import match as match_mod
+    from jzk.api import match as match_mod
 
     monkeypatch.setattr(match_mod, "get_match_run", lambda *_args: object())
     monkeypatch.setattr(match_mod, "delete_match_run", lambda *_args: False)
@@ -199,8 +199,8 @@ def test_delete_referenced_match_snapshot_returns_conflict(monkeypatch):
 
 
 def test_apply_match_api_response_400_keeps_session():
-    from dialogue.agent_tools import apply_match_api_response
-    from dialogue.session import SessionContext
+    from jzk.advisor.agent_tools import apply_match_api_response
+    from jzk.advisor.session import SessionContext
 
     session = SessionContext(owner_user_id=1)
     good = {
@@ -220,8 +220,8 @@ def test_apply_match_api_response_400_keeps_session():
 
 
 def test_apply_match_api_response_200_updates_session():
-    from dialogue.agent_tools import apply_match_api_response
-    from dialogue.session import SessionContext
+    from jzk.advisor.agent_tools import apply_match_api_response
+    from jzk.advisor.session import SessionContext
 
     session = SessionContext(owner_user_id=1)
     raw = {
@@ -256,8 +256,8 @@ def test_apply_match_api_response_200_updates_session():
 
 
 def test_apply_match_api_response_stores_result_reference():
-    from dialogue.agent_tools import apply_match_api_response
-    from dialogue.session import SessionContext
+    from jzk.advisor.agent_tools import apply_match_api_response
+    from jzk.advisor.session import SessionContext
 
     session = SessionContext(owner_user_id=1)
     raw = {

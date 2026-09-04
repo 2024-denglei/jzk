@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from api import admin_chat_feedback
+from jzk.api import admin_chat_feedback
 
 
 ADMIN = {"id": 9, "role": "super_admin"}

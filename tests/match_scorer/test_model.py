@@ -1,6 +1,6 @@
 import torch
 
-from services.match_scorer.model import ModelConfig, TenderAlignedV32
+from jzk.scorer.model import ModelConfig, TenderAlignedV32
 
 
 def test_forward_shapes():

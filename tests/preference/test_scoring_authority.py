@@ -1,4 +1,4 @@
-"""守住 docs/adr/0001：打分权威只有 services/match_scorer 一处。
+"""守住 docs/adr/0001：打分权威只有 jzk.scorer 一处。
 
 同一个神经网络曾有两份实现——HTTP 服务和 core/preference/v2/ 的进程内副本，各自
 维护一份网络定义、权重文件与配置。这种重复的失效方式最难查：两份实现给出不同的
@@ -8,7 +8,8 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SCORER = ROOT / "services" / "match_scorer"
+SCORER = ROOT / "backend" / "jzk" / "scorer"
+CHECKPOINTS = ROOT / "backend" / "checkpoints"
 
 
 def _production_sources() -> list[Path]:
@@ -43,6 +44,9 @@ def test_the_in_process_model_copy_is_gone() -> None:
     assert not (ROOT / "core" / "preference" / "v2").exists()
     assert not (ROOT / "core" / "preference" / "v2_ranker.py").exists()
     assert not (ROOT / "core" / "preference" / "v2_adapter.py").exists()
+    assert not (SCORER.parent / "domain" / "preference" / "v2").exists()
+    assert not (SCORER.parent / "domain" / "preference" / "v2_ranker.py").exists()
+    assert not (SCORER.parent / "domain" / "preference" / "v2_adapter.py").exists()
 
 
 def test_the_repository_keeps_only_the_checkpoint_the_service_declares() -> None:
@@ -54,5 +58,8 @@ def test_the_repository_keeps_only_the_checkpoint_the_service_declares() -> None
     declared = SCORER / "settings.py"
     assert "best_mae_model_v4.pt" in declared.read_text(encoding="utf-8")
 
-    checkpoints = sorted(p.name for p in (ROOT / "models").glob("*.pt"))
-    assert checkpoints == ["best_mae_model_v4.pt"], f"models/ 下有多余权重：{checkpoints}"
+    assert not (ROOT / "models").exists()
+    checkpoints = sorted(p.name for p in CHECKPOINTS.glob("*.pt"))
+    assert checkpoints == ["best_mae_model_v4.pt"], (
+        f"checkpoints/ 下有多余权重：{checkpoints}"
+    )

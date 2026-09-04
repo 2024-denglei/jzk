@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from api import admin_requests as requests_mod
+from jzk.api import admin_requests as requests_mod
 
 REGULAR = {"id": 7, "username": "viewer", "role": "donor_admin"}
 SUPER = {"id": 1, "username": "root", "role": "super_admin"}

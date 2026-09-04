@@ -1,9 +1,9 @@
 import json
 from decimal import Decimal
 
-from core.preference.pipeline import match_profile
-from core.preference.scorer import FieldScore, HeuristicRanker
-from core.preference.validate import parse_profile
+from jzk.domain.preference.pipeline import match_profile
+from jzk.domain.preference.scorer import FieldScore, HeuristicRanker
+from jzk.domain.preference.validate import parse_profile
 
 
 def test_match_profile_requires_injected_fetch():

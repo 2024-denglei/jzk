@@ -4,9 +4,9 @@ from contextlib import contextmanager
 import pytest
 from fastapi import HTTPException, Request, Response
 
-from api import admin as admin_api
-from api import auth as auth_api
-from api.refresh_sessions import RefreshSession
+from jzk.api import admin as admin_api
+from jzk.api import auth as auth_api
+from jzk.api.refresh_sessions import RefreshSession
 
 
 USER = {

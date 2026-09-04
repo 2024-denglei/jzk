@@ -11,11 +11,11 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-import config
-from api.auth_utils import get_current_user_id
-from api.chats import message_router, router as chats_router
-from api.generation_events import router as generations_router
-from db.pg import close_pools, ensure_schema
+from jzk import config
+from jzk.api.auth_utils import get_current_user_id
+from jzk.api.chats import message_router, router as chats_router
+from jzk.api.generation_events import router as generations_router
+from jzk.db.pg import close_pools, ensure_schema
 
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")

@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException, Request
 
-from api.security import validate_cookie_origin
+from jzk.api.security import validate_cookie_origin
 
 
 def _request(origin: str | None, host: str = "api.example.com") -> Request:

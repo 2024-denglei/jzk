@@ -1,5 +1,5 @@
-from core.preference.validate import parse_profile
-from db.hard_filter import build_hard_filter_sql, escape_like
+from jzk.domain.preference.validate import parse_profile
+from jzk.db.hard_filter import build_hard_filter_sql, escape_like
 
 
 def test_prefer_height_not_in_where():
@@ -59,7 +59,7 @@ def test_no_must_only_active():
 
 
 def test_bottleneck_orders_by_recovered_count():
-    from core.preference.pipeline import diagnose_bottlenecks
+    from jzk.domain.preference.pipeline import diagnose_bottlenecks
 
     profile = parse_profile({
         "schema_version": "1.0",

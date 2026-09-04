@@ -1,4 +1,19 @@
-from scripts import manage_match_snapshots
+import importlib.util
+from pathlib import Path
+
+_SCRIPTS = Path(__file__).resolve().parents[1] / "backend" / "scripts"
+
+
+def _load_script(name: str):
+    path = _SCRIPTS / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+manage_match_snapshots = _load_script("manage_match_snapshots")
 
 
 def test_snapshot_stats_normalizes_database_values(monkeypatch):
@@ -21,4 +36,3 @@ def test_snapshot_stats_normalizes_database_values(monkeypatch):
     assert manage_match_snapshots.snapshot_stats(180) == {
         "total": 12, "expired": 3, "table_bytes": 4096, "index_bytes": 1024,
     }
-

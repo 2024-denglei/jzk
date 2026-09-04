@@ -9,15 +9,15 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-import config
-from db import outbox_repo
-from db.pg import close_pools, ensure_schema
-from dialogue.generation_events import (
+from jzk import config
+from jzk.db import outbox_repo
+from jzk.db.pg import close_pools, ensure_schema
+from jzk.advisor.generation_events import (
     delete_generation_events,
     publish_generation_event,
     read_generation_events,
 )
-from dialogue.outbox_worker import OutboxWorker
+from jzk.advisor.outbox_worker import OutboxWorker
 
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")

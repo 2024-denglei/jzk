@@ -1,6 +1,6 @@
 import pytest
 
-import config
+from jzk import config
 
 
 @pytest.fixture

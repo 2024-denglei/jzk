@@ -7,6 +7,7 @@ venv/
 .mypy_cache/
 *.xlsx
 data/
-web/node_modules/
-web/dist/
+frontend/node_modules/
+frontend/dist/
+backend/.venv/
 .superpowers/

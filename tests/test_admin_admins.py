@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from api import admin_admins as admin_admins_mod
-from db import admin_admins_repo
+from jzk.api import admin_admins as admin_admins_mod
+from jzk.db import admin_admins_repo
 
 
 ADMIN = {"id": 9, "username": "admin", "display_name": "张管理员"}

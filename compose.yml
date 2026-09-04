@@ -13,6 +13,7 @@ x-app-environment: &app-environment
 x-app-common: &app-common
   build:
     context: .
+    dockerfile: backend/Dockerfile
   image: jzk-app:local
   env_file:
     - path: .env
@@ -47,8 +48,8 @@ services:
       - path: .env
         required: false
     environment:
-      SCORER_MODEL_PATH: /app/models/best_mae_model_v4.pt
-    command: ["python", "-m", "uvicorn", "services.match_scorer.app:app", "--host", "0.0.0.0", "--port", "8020"]
+      SCORER_MODEL_PATH: /app/checkpoints/best_mae_model_v4.pt
+    command: ["python", "-m", "uvicorn", "jzk.scorer.app:app", "--host", "0.0.0.0", "--port", "8020"]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8020/readyz"]
@@ -72,7 +73,7 @@ services:
       - "${POSTGRES_BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - jzk_pg_data:/var/lib/postgresql/data
-      - ./db/postgres:/docker-entrypoint-initdb.d:ro
+      - ./backend/jzk/db/postgres:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d jzk"]

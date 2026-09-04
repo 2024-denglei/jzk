@@ -1,21 +1,22 @@
 from contextlib import contextmanager
 from pathlib import Path
 
-from db import pg
-from db import sql_runner
+from jzk.db import pg
+from jzk.db import sql_runner
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION_11 = ROOT / "db" / "postgres" / "11_add_branching_chat_storage.sql"
-MIGRATION_12 = ROOT / "db" / "postgres" / "12_add_match_run_items.sql"
-MIGRATION_13 = ROOT / "db" / "postgres" / "13_harden_branching_chat_storage.sql"
-MIGRATION_14 = ROOT / "db" / "postgres" / "14_enforce_chat_match_snapshot.sql"
-MIGRATION_15 = ROOT / "db" / "postgres" / "15_harden_generation_runs.sql"
-MIGRATION_16 = ROOT / "db" / "postgres" / "16_drop_legacy_chat_storage.sql"
-MIGRATION_17 = ROOT / "db" / "postgres" / "17_allow_current_line_message_edits.sql"
-MIGRATION_18 = ROOT / "db" / "postgres" / "18_normalize_branch_names.sql"
-MIGRATION_19 = ROOT / "db" / "postgres" / "19_add_chat_message_feedback.sql"
-MIGRATION_20 = ROOT / "db" / "postgres" / "20_add_match_model_identity.sql"
+PG = ROOT / "backend" / "jzk" / "db" / "postgres"
+MIGRATION_11 = PG / "11_add_branching_chat_storage.sql"
+MIGRATION_12 = PG / "12_add_match_run_items.sql"
+MIGRATION_13 = PG / "13_harden_branching_chat_storage.sql"
+MIGRATION_14 = PG / "14_enforce_chat_match_snapshot.sql"
+MIGRATION_15 = PG / "15_harden_generation_runs.sql"
+MIGRATION_16 = PG / "16_drop_legacy_chat_storage.sql"
+MIGRATION_17 = PG / "17_allow_current_line_message_edits.sql"
+MIGRATION_18 = PG / "18_normalize_branch_names.sql"
+MIGRATION_19 = PG / "19_add_chat_message_feedback.sql"
+MIGRATION_20 = PG / "20_add_match_model_identity.sql"
 
 
 def test_branching_chat_migration_declares_core_tables_and_constraints():

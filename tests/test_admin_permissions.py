@@ -3,8 +3,8 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
-from api import admin as admin_mod
-from api.admin_permissions import (
+from jzk.api import admin as admin_mod
+from jzk.api.admin_permissions import (
     ADMINS_VIEW,
     ADMINS_MANAGE,
     DONORS_VIEW,

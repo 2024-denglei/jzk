@@ -6,20 +6,26 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+BACKEND = ROOT / "backend"
+
+
 @pytest.fixture(scope="module")
 def dockerfile() -> str:
-    return (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    return (BACKEND / "Dockerfile").read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
 def pyproject() -> str:
-    return (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    return (BACKEND / "pyproject.toml").read_text(encoding="utf-8")
 
 
 def test_dockerfile_builds_frontend_and_runs_backend(dockerfile: str) -> None:
     assert "npm run build" in dockerfile
-    assert "COPY --from=web-builder /build/web/dist ./web/dist" in dockerfile
-    assert '"main:app"' in dockerfile
+    assert (
+        "COPY --from=web-builder /build/frontend/dist ./frontend/dist"
+        in dockerfile
+    )
+    assert '"jzk.main:app"' in dockerfile
 
 
 def test_image_installs_from_the_lock_file_without_dev_dependencies(dockerfile: str) -> None:
@@ -29,13 +35,21 @@ def test_image_installs_from_the_lock_file_without_dev_dependencies(dockerfile: 
     少了 --no-dev，pytest 之类只在 CI 用的东西会一路带进运行镜像。
     """
     assert "uv sync --locked --no-dev" in dockerfile
-    assert (ROOT / "uv.lock").exists()
+    assert (BACKEND / "uv.lock").exists()
+
+
+def test_the_backend_is_an_installable_package(pyproject: str) -> None:
+    """pytest 必须通过安装 `jzk` 包来导入，不能再靠把仓库根塞进 pythonpath。"""
+    assert "package = true" in pyproject
+    assert "pythonpath =" not in pyproject
+    assert 'testpaths = ["../tests"]' in pyproject
+    assert 'packages = ["jzk"]' in pyproject
 
 
 def test_httpx_is_declared_as_a_direct_dependency(pyproject: str) -> None:
     """httpx 必须写在依赖声明里，不能靠镜像里补一条 pip install。
 
-    api/match.py 与 core/preference/scoring_client.py 直接 import httpx，而新版
+    jzk.api.match 与 jzk.domain.preference.scoring_client 直接 import httpx，而新版
     openai SDK 依赖的是 httpx2，不会顺带装上它。少了这行声明，一次干净的安装会
     装出一个导入即失败的环境。
     """
@@ -66,7 +80,7 @@ def test_python_version_matches_the_runtime_base_image(
     major_minor = base.group(1)
 
     assert f'requires-python = ">={major_minor},<' in pyproject
-    assert (ROOT / ".python-version").read_text(encoding="utf-8").strip() == major_minor
+    assert (BACKEND / ".python-version").read_text(encoding="utf-8").strip() == major_minor
 
 
 def test_compose_contains_complete_runtime_stack() -> None:
@@ -78,6 +92,8 @@ def test_compose_contains_complete_runtime_stack() -> None:
     assert "redis://redis:6379/0" in compose
     assert "http://scorer:8020" in compose
     assert "condition: service_healthy" in compose
+    assert "dockerfile: backend/Dockerfile" in compose
+    assert "jzk.scorer.app:app" in compose
     assert "name: postgres_jzk_pg_data" in compose
     assert "name: postgres_jzk_redis_data" in compose
 
@@ -88,4 +104,4 @@ def test_secrets_and_local_artifacts_are_excluded_from_image() -> None:
     assert ".env" in ignored
     assert ".git" in ignored
     assert ".venv" in ignored
-    assert "web/node_modules" in ignored
+    assert "frontend/node_modules" in ignored

@@ -1,8 +1,8 @@
 from uuid import uuid4
 
-from dialogue import outbox_worker
-from dialogue.generation_events import GenerationEventStreamUnavailable
-from dialogue.outbox_worker import OutboxWorker
+from jzk.advisor import outbox_worker
+from jzk.advisor.generation_events import GenerationEventStreamUnavailable
+from jzk.advisor.outbox_worker import OutboxWorker
 
 
 def test_outbox_worker_cleans_generation_streams_and_completes(monkeypatch):

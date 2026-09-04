@@ -4,13 +4,13 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from core.preference.scoring_client import HttpScoringRanker, normalize_donor_row
-from core.preference.scoring_contract import (
+from jzk.domain.preference.scoring_client import HttpScoringRanker, normalize_donor_row
+from jzk.domain.preference.scoring_contract import (
     RankerContractError,
     RankerInputError,
     RankerUnavailable,
 )
-from core.preference.validate import parse_profile
+from jzk.domain.preference.validate import parse_profile
 
 
 PROFILE = parse_profile({

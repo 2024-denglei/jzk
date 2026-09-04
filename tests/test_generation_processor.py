@@ -3,9 +3,9 @@ import json
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
-from dialogue import generation_processor
-from dialogue.agent_tools import AGENT_SYSTEM_PROMPT, PREFERENCE_SNAPSHOT_PREFIX
-from dialogue.generation_processor import AgentGenerationProcessor, FallbackGenerationProcessor
+from jzk.advisor import generation_processor
+from jzk.advisor.agent_tools import AGENT_SYSTEM_PROMPT, PREFERENCE_SNAPSHOT_PREFIX
+from jzk.advisor.generation_processor import AgentGenerationProcessor, FallbackGenerationProcessor
 
 
 class _Trace:

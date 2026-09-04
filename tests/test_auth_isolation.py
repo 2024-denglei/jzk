@@ -4,17 +4,17 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
-from api.auth_utils import create_access_token, get_current_user_id
-from api.donors import get_donor
+from jzk.api.auth_utils import create_access_token, get_current_user_id
+from jzk.api.donors import get_donor
 
 
 @pytest.fixture(autouse=True)
 def active_user(monkeypatch):
     monkeypatch.setattr(
-        "api.auth_utils.get_auth_state",
+        "jzk.api.auth_utils.get_auth_state",
         lambda _user_id: {"status": "active", "token_version": 0},
     )
-    monkeypatch.setattr("core.preference.match_log.append_feedback_event", lambda _event: None)
+    monkeypatch.setattr("jzk.domain.preference.match_log.append_feedback_event", lambda _event: None)
 
 
 def test_user_token_returns_user_id():
@@ -34,7 +34,7 @@ def test_missing_token_is_401():
 
 def test_user_token_version_mismatch_is_rejected(monkeypatch):
     monkeypatch.setattr(
-        "api.auth_utils.get_auth_state",
+        "jzk.api.auth_utils.get_auth_state",
         lambda _user_id: {"status": "active", "token_version": 2},
     )
     token = create_access_token({"sub": "42", "ver": 1})
@@ -47,7 +47,7 @@ def test_user_token_version_mismatch_is_rejected(monkeypatch):
 
 def test_disabled_user_token_is_rejected(monkeypatch):
     monkeypatch.setattr(
-        "api.auth_utils.get_auth_state",
+        "jzk.api.auth_utils.get_auth_state",
         lambda _user_id: {"status": "disabled", "token_version": 0},
     )
     token = create_access_token({"sub": "42", "ver": 0})

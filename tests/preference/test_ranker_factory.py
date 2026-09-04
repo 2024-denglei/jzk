@@ -1,7 +1,7 @@
-import config
+from jzk import config
 
-from core.preference import ranker_factory
-from core.preference.scoring_client import HttpScoringRanker
+from jzk.domain.preference import ranker_factory
+from jzk.domain.preference.scoring_client import HttpScoringRanker
 
 
 def test_the_only_ranker_is_the_scoring_service_client(monkeypatch):

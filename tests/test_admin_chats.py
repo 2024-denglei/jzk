@@ -5,8 +5,8 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from api import admin_chats
-from db import admin_chats_repo
+from jzk.api import admin_chats
+from jzk.db import admin_chats_repo
 
 
 ADMIN = {"id": 9, "role": "super_admin"}

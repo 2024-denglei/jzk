@@ -1,15 +1,15 @@
 import pytest
 
-import config
-from core.preference.schema import (
+from jzk import config
+from jzk.domain.preference.schema import (
     CORE_FIELDS,
     EXTENDED_FIELDS,
     FIELD_REGISTRY,
     field_catalog_text,
     openai_tool_schema,
 )
-from core.preference.validate import ProfileValidationError, parse_profile
-from dialogue.agent_tools import (
+from jzk.domain.preference.validate import ProfileValidationError, parse_profile
+from jzk.advisor.agent_tools import (
     AGENT_SYSTEM_PROMPT,
     AGENT_TOOLS,
     SUBMIT_PROFILE_EXTENDED_TOOL,
@@ -21,7 +21,7 @@ from dialogue.agent_tools import (
     slim_assistant_for_llm,
     tool_failure_payload,
 )
-from dialogue.session import SessionContext
+from jzk.advisor.session import SessionContext
 
 
 def test_tool_name_and_schema():
@@ -59,7 +59,7 @@ def test_field_catalog_is_generated_from_registry():
 
 def test_enum_catalog_matches_donor_db_values():
     """枚举 catalog / 工具 schema 只能暴露库内实际取值，避免硬过滤被幽灵枚举打成 0。"""
-    from core.preference.schema import (
+    from jzk.domain.preference.schema import (
         EYELID_ENUM,
         FACE_ENUM,
         FIGURE_ENUM,
@@ -115,7 +115,7 @@ def test_invalid_profile_keeps_previous():
 
 
 def test_valid_profile_replaces_and_matches():
-    from core.preference.scorer import HeuristicRanker
+    from jzk.domain.preference.scorer import HeuristicRanker
 
     session = SessionContext(owner_user_id=1)
     rows = [{"code": "T", "abo_blood": "O", "height_cm": 180, "specimen_count": 2}]

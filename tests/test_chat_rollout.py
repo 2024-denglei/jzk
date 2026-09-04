@@ -1,6 +1,18 @@
 from argparse import Namespace
+import importlib.util
+from pathlib import Path
 
-from scripts.check_chat_v2_rollout import evaluate
+_SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / "backend"
+    / "scripts"
+    / "check_chat_v2_rollout.py"
+)
+_spec = importlib.util.spec_from_file_location("check_chat_v2_rollout", _SCRIPT)
+assert _spec is not None and _spec.loader is not None
+_check_chat_v2_rollout = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_check_chat_v2_rollout)
+evaluate = _check_chat_v2_rollout.evaluate
 
 
 def test_rollout_gate_reports_threshold_failures():

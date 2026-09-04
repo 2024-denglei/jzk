@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from api import admin_users as admin_users_mod
-from db import admin_users_repo
+from jzk.api import admin_users as admin_users_mod
+from jzk.db import admin_users_repo
 
 
 ADMIN = {"id": 9, "username": "admin", "display_name": "管理员"}

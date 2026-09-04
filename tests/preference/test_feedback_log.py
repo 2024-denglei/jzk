@@ -1,6 +1,6 @@
 import json
 
-from core.preference.match_log import append_feedback_event
+from jzk.domain.preference.match_log import append_feedback_event
 
 
 def test_record_feedback_writes_event(tmp_path, monkeypatch):

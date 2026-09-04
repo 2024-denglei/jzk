@@ -1,7 +1,7 @@
 import json
 from decimal import Decimal
 
-from core.preference.match_log import append_feedback_event, append_match_turn
+from jzk.domain.preference.match_log import append_feedback_event, append_match_turn
 
 
 def test_write_turn_and_feedback(tmp_path, monkeypatch):

@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-from db import pg
+from jzk.db import pg
 
 
 class _Connection:

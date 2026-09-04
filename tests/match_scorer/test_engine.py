@@ -1,4 +1,4 @@
-from services.match_scorer.api_models import RankRequest
+from jzk.scorer.api_models import RankRequest
 
 
 def _request(candidates, *, request_id="rank-test") -> RankRequest:

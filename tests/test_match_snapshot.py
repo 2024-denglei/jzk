@@ -2,13 +2,13 @@ from dataclasses import replace
 
 import pytest
 
-from core.preference.match_snapshot import (
+from jzk.domain.preference.match_snapshot import (
     MatchSnapshotValidationError,
     SNAPSHOT_DONOR_KEYS,
     build_match_snapshot_item,
     validate_match_snapshot_item,
 )
-from core.preference.scorer import FieldScore
+from jzk.domain.preference.scorer import FieldScore
 
 
 def test_snapshot_freezes_only_public_card_fields_and_explanation():

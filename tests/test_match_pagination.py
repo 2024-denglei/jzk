@@ -3,11 +3,11 @@ from uuid import uuid4
 
 import pytest
 
-from api import match
-from matching.cursor import InvalidMatchCursor, decode_match_cursor, encode_match_cursor
-from matching.execute import execute_match
-from core.preference.result_types import MatchResultMeta, MatchSnapshotItem, RankedCandidateRef
-from core.preference.pipeline import MatchResult
+from jzk.api import match
+from jzk.matching.cursor import InvalidMatchCursor, decode_match_cursor, encode_match_cursor
+from jzk.matching.execute import execute_match
+from jzk.domain.preference.result_types import MatchResultMeta, MatchSnapshotItem, RankedCandidateRef
+from jzk.domain.preference.pipeline import MatchResult
 
 
 def _meta(result_set_id, total=3):
@@ -34,7 +34,7 @@ def _snap(ref: RankedCandidateRef) -> MatchSnapshotItem:
 
 
 def test_cursor_rejects_tampering_cross_result_and_expiry(monkeypatch):
-    monkeypatch.setattr("config.MATCH_CURSOR_TTL_SECONDS", 10)
+    monkeypatch.setattr("jzk.config.MATCH_CURSOR_TTL_SECONDS", 10)
     token = encode_match_cursor("result-a", 20, now=100)
     assert decode_match_cursor(token, "result-a", now=105).offset == 20
     with pytest.raises(InvalidMatchCursor):
@@ -147,20 +147,20 @@ def test_create_match_writes_complete_postgres_snapshot_and_returns_first_page(m
         for ref in refs
     ]
     monkeypatch.setattr(
-        "matching.execute.match_profile",
+        "jzk.matching.execute.match_profile",
         lambda _profile, **_kwargs: MatchResult(
             candidates=candidates, match_level="full", bottlenecks=[], skipped=False,
             filtered_count=2, ranked_refs=refs, snapshot_items=snapshot_items,
         ),
     )
-    monkeypatch.setattr("matching.execute.get_donor_dataset_version", lambda: "d1")
+    monkeypatch.setattr("jzk.matching.execute.get_donor_dataset_version", lambda: "d1")
 
     def save_snapshot(meta, saved_refs, saved_items):
         assert list(saved_items) == snapshot_items
         events.append(("postgres", meta.result_set_id, list(saved_refs)))
         return meta
 
-    monkeypatch.setattr("matching.execute.create_match_run", save_snapshot)
+    monkeypatch.setattr("jzk.matching.execute.create_match_run", save_snapshot)
     data = execute_match(
         {"schema_version": "1.0", "attributes": {
             "height_cm": {"constraint": "prefer", "weight": 1, "range": {"min": 175}},
@@ -179,7 +179,7 @@ def test_create_match_distinguishes_must_hits_from_model_ranked_pool(monkeypatch
     refs = [RankedCandidateRef(i, i, 1 - i / 1000) for i in range(1, 301)]
     snapshot_items = [_snap(ref) for ref in refs]
     monkeypatch.setattr(
-        "matching.execute.match_profile",
+        "jzk.matching.execute.match_profile",
         lambda _profile, **_kwargs: MatchResult(
             candidates=[
                 {
@@ -200,7 +200,7 @@ def test_create_match_distinguishes_must_hits_from_model_ranked_pool(monkeypatch
             snapshot_items=snapshot_items,
         ),
     )
-    monkeypatch.setattr("matching.execute.get_donor_dataset_version", lambda: "d2")
+    monkeypatch.setattr("jzk.matching.execute.get_donor_dataset_version", lambda: "d2")
 
     saved = {}
 
@@ -209,7 +209,7 @@ def test_create_match_distinguishes_must_hits_from_model_ranked_pool(monkeypatch
         assert len(saved_refs) == len(saved_items) == 300
         return meta
 
-    monkeypatch.setattr("matching.execute.create_match_run", save_snapshot)
+    monkeypatch.setattr("jzk.matching.execute.create_match_run", save_snapshot)
     data = execute_match(
         {
             "schema_version": "1.0",

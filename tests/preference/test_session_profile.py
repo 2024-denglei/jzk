@@ -1,4 +1,4 @@
-from dialogue.session import SessionContext
+from jzk.advisor.session import SessionContext
 
 
 def test_replace_profile_is_snapshot_not_merge():

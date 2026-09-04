@@ -4,9 +4,9 @@ from uuid import uuid4
 
 import pytest
 
-from db.chat_models import ChatErrorCode
-from dialogue import conversation_queries
-from dialogue.conversation_cursors import (
+from jzk.db.chat_contracts import ChatErrorCode
+from jzk.chat import conversation_queries
+from jzk.chat.conversation_cursors import (
     InvalidConversationCursor,
     decode_chat_list_cursor,
     decode_admin_feedback_cursor,
@@ -15,7 +15,7 @@ from dialogue.conversation_cursors import (
     encode_admin_feedback_cursor,
     encode_message_cursor,
 )
-from dialogue.conversation_queries import ConversationQueryError, ConversationQueryService
+from jzk.chat.conversation_queries import ConversationQueryError, ConversationQueryService
 
 
 def _chat_row(chat_id: int, updated_at: datetime, branch_id):

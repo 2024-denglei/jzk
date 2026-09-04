@@ -1,4 +1,4 @@
-from services.match_scorer.encoding import (
+from jzk.scorer.encoding import (
     CONSTRAINT_TO_ID_DEFAULT,
     TYPE_TO_ID_DEFAULT,
     CandidateEncoder,

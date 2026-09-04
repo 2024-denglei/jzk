@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from services.match_scorer.settings import ScorerSettings
+from jzk.scorer.settings import ScorerSettings
 
 
 def _settings(**overrides) -> ScorerSettings:

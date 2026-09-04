@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from db import chat_queries_repo
+from jzk.db import chat_queries_repo
 
 
 class _Result:

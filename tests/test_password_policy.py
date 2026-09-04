@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from api.admin import AdminPasswordBody
-from api.admin_admins import AdminCreateBody
-from api.auth import RegisterRequest, ResetPasswordRequest
+from jzk.api.admin import AdminPasswordBody
+from jzk.api.admin_admins import AdminCreateBody
+from jzk.api.auth import RegisterRequest, ResetPasswordRequest
 
 
 def test_user_password_rejects_common_password():

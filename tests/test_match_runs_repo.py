@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from core.preference.result_types import MatchResultMeta, MatchSnapshotItem, RankedCandidateRef
-from db import match_runs_repo
+from jzk.domain.preference.result_types import MatchResultMeta, MatchSnapshotItem, RankedCandidateRef
+from jzk.db import match_runs_repo
 
 
 def _meta(total=2):

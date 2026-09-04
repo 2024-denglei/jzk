@@ -2,9 +2,9 @@ import asyncio
 
 import httpx
 
-from services.match_scorer.api_models import RankResponse
-from services.match_scorer.app import create_app
-from services.match_scorer.model_manifest import ModelManifest
+from jzk.scorer.api_models import RankResponse
+from jzk.scorer.app import create_app
+from jzk.scorer.model_manifest import ModelManifest
 
 
 class _FakeEngine:

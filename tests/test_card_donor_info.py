@@ -1,4 +1,4 @@
-from core.data_loader import to_card_donor_info
+from jzk.domain.data_loader import to_card_donor_info
 
 CARD_KEYS = {
     "id",

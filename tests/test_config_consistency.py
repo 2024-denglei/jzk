@@ -37,7 +37,7 @@ def compose() -> str:
 
 @pytest.fixture(scope="module")
 def config_source() -> str:
-    return (ROOT / "config.py").read_text(encoding="utf-8")
+    return (ROOT / "backend" / "jzk" / "config.py").read_text(encoding="utf-8")
 
 
 def test_app_port_is_the_same_number_everywhere(
@@ -47,8 +47,8 @@ def test_app_port_is_the_same_number_everywhere(
 
     读 config.py 源码而不是 import config，否则测的就是本机 .env 而非默认值。
     """
-    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    vite = (ROOT / "web" / "vite.config.ts").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
+    vite = (ROOT / "frontend" / "vite.config.ts").read_text(encoding="utf-8")
 
     assert re.search(r'PORT = int\(os\.getenv\("PORT", "8010"\)\)', config_source)
     assert re.search(r"^PORT=8010$", env_example, re.MULTILINE)
@@ -102,12 +102,12 @@ def test_scorer_token_has_exactly_one_environment_variable_name() -> None:
     assert not offenders, f"这些文件仍在用第二个 token 名：{offenders}"
 
     scorer_settings = (
-        ROOT / "services" / "match_scorer" / "settings.py"
+        ROOT / "backend" / "jzk" / "scorer" / "settings.py"
     ).read_text(encoding="utf-8")
     assert 'os.getenv("SCORER_TOKEN"' in scorer_settings
-    assert 'os.getenv("SCORER_TOKEN"' in (ROOT / "config.py").read_text(
-        encoding="utf-8"
-    )
+    assert 'os.getenv("SCORER_TOKEN"' in (
+        ROOT / "backend" / "jzk" / "config.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_the_runtime_stack_is_defined_by_a_single_compose_file() -> None:
@@ -135,7 +135,7 @@ def test_database_url_has_no_built_in_default(config_source: str) -> None:
 
 
 def test_missing_database_url_fails_validation(monkeypatch) -> None:
-    import config
+    from jzk import config
 
     monkeypatch.setattr(config, "DATABASE_URL", "")
     with pytest.raises(config.SecurityConfigError, match="DATABASE_URL"):
@@ -154,7 +154,7 @@ def test_excel_import_path_has_no_default(config_source: str) -> None:
     """
     assert "DATA_FILE_PATH" not in _code_only(config_source)
 
-    seed_script = (ROOT / "scripts" / "seed_donors_from_excel.py").read_text(
-        encoding="utf-8"
-    )
+    seed_script = (
+        ROOT / "backend" / "scripts" / "seed_donors_from_excel.py"
+    ).read_text(encoding="utf-8")
     assert 'add_argument("--file", required=True)' in seed_script

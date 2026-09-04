@@ -4,10 +4,10 @@ from uuid import uuid4
 
 import pytest
 
-from db.chat_models import GenerationRunView, GenerationStatus
-from db.generation_runs_repo import GenerationTraceValidationError, sanitize_trace_payload
-from dialogue import generation_trace, generation_worker
-from dialogue.generation_worker import GenerationOutput, GenerationWorker
+from jzk.db.chat_contracts import GenerationRunView, GenerationStatus
+from jzk.db.generation_runs_repo import GenerationTraceValidationError, sanitize_trace_payload
+from jzk.advisor import generation_trace, generation_worker
+from jzk.advisor.generation_worker import GenerationOutput, GenerationWorker
 
 
 def _run_view():

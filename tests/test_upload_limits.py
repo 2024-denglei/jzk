@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
-from api.uploads import read_upload_limited
+from jzk.api.uploads import read_upload_limited
 
 
 class _Upload:

@@ -1,6 +1,6 @@
-from core.preference import pipeline
-from core.preference.scorer import HeuristicRanker
-from core.preference.validate import parse_profile
+from jzk.domain.preference import pipeline
+from jzk.domain.preference.scorer import HeuristicRanker
+from jzk.domain.preference.validate import parse_profile
 
 
 def test_only_current_page_is_hydrated_while_all_refs_are_ranked(monkeypatch):

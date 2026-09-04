@@ -10,11 +10,11 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-import config
-from db.chat_models import ChatErrorCode, TurnAction, TurnCommand
-from db.pg import close_pools, ensure_schema
-from dialogue.conversation_commands import ConversationCommandError, create_turn
-from dialogue.conversation_queries import ConversationQueryService
+from jzk import config
+from jzk.db.chat_contracts import ChatErrorCode, TurnAction, TurnCommand
+from jzk.db.pg import close_pools, ensure_schema
+from jzk.chat.conversation_commands import ConversationCommandError, create_turn
+from jzk.chat.conversation_queries import ConversationQueryService
 
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")

@@ -56,7 +56,7 @@ def test_uv_version_is_pinned_consistently(workflow: dict) -> None:
     两边用不同的 uv 解析同一份 uv.lock 通常没问题，但 lock 格式会随 uv 演进，
     版本分叉时报错会指向 lock 文件而不是真正的原因。
     """
-    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     pinned_in_image = re.search(r"uv==(\d+\.\d+\.\d+)", dockerfile)
     assert pinned_in_image, "Dockerfile 未钉住 uv 版本"
 

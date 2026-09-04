@@ -2,7 +2,7 @@ from uuid import uuid4
 
 import pytest
 
-from dialogue.state_schema import (
+from jzk.chat.state_schema import (
     StateNotRecoverable,
     StateSchemaError,
     dump_state,

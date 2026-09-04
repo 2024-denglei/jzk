@@ -8,10 +8,10 @@ import pytest
 from fastapi import HTTPException, Response
 from pydantic import ValidationError
 
-import config
-from api import auth as auth_mod
-from api.auth import LoginRequest, PhoneCodeRequest, RegisterRequest, ResetPasswordRequest, SendCodeRequest
-from api.verification_codes import (
+from jzk import config
+from jzk.api import auth as auth_mod
+from jzk.api.auth import LoginRequest, PhoneCodeRequest, RegisterRequest, ResetPasswordRequest, SendCodeRequest
+from jzk.api.verification_codes import (
     VerificationCodeError,
     VerificationCodeRateLimitError,
     VerificationCodeStore,
@@ -208,7 +208,7 @@ class _FakeCodes:
 def test_register_password_and_code_login_and_password_reset(monkeypatch):
     database = _FakeDatabase()
     codes = _FakeCodes()
-    monkeypatch.setattr("db.users_repo.db_session", database.session)
+    monkeypatch.setattr("jzk.db.users_repo.db_session", database.session)
     monkeypatch.setattr(auth_mod, "verification_codes", codes)
     monkeypatch.setattr(auth_mod.config, "EXPOSE_TEST_VERIFICATION_CODE", True)
     monkeypatch.setattr(auth_mod, "rate_limiter", _NoopRateLimiter())

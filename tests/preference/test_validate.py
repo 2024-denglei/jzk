@@ -1,6 +1,6 @@
 import pytest
 
-from core.preference.validate import ProfileValidationError, parse_profile
+from jzk.domain.preference.validate import ProfileValidationError, parse_profile
 
 
 def test_valid_example_profile_parses():

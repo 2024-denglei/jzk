@@ -1,5 +1,5 @@
-from db.donor_fields import DONOR_DB_COLUMNS, map_excel_columns
-from db.donor_import import dataframe_to_donor_payloads
+from jzk.db.donor_fields import DONOR_DB_COLUMNS, map_excel_columns
+from jzk.db.donor_import import dataframe_to_donor_payloads
 import pandas as pd
 
 

@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
-from core.preference.scorer import score_field
-from core.preference.validate import parse_profile
+from jzk.domain.preference.scorer import score_field
+from jzk.domain.preference.validate import parse_profile
 
 
 def _attr(field, payload):
@@ -64,7 +64,7 @@ def test_null_prefer_is_zero():
 
 
 def test_weighted_average_and_tie_break_specimen():
-    from core.preference.scorer import HeuristicRanker
+    from jzk.domain.preference.scorer import HeuristicRanker
 
     profile = parse_profile({
         "schema_version": "1.0",
@@ -84,7 +84,7 @@ def test_weighted_average_and_tie_break_specimen():
 
 
 def test_same_score_higher_specimen_first():
-    from core.preference.scorer import HeuristicRanker
+    from jzk.domain.preference.scorer import HeuristicRanker
 
     profile = parse_profile({
         "schema_version": "1.0",
