@@ -14,23 +14,25 @@
 
 ## 2. 本地/演示（Docker）
 
+本目录下的 `.sql` 由仓库根目录的 `compose.yml` 挂载进 `docker-entrypoint-initdb.d` 执行，
+因此不需要单独的数据库 Compose 文件，在仓库根目录起整套即可：
+
 ```bash
-cd agent/db/postgres
-docker compose up -d
+docker compose up -d postgres redis
 ```
 
-默认连接（开发）：
+默认连接（开发）。5433 是容器对宿主机发布的端口，容器内部仍是 5432：
 
 ```
-DATABASE_URL=postgresql://postgres:jzk_dev_change_me@127.0.0.1:5432/jzk
+DATABASE_URL=postgresql://postgres:jzk_dev_change_me@127.0.0.1:5433/jzk
 REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
 应用角色（可选拆分）：
 
 ```
-DATABASE_URL=postgresql://jzk_app:jzk_app_dev@127.0.0.1:5432/jzk
-DATABASE_ADMIN_URL=postgresql://jzk_admin_api:jzk_admin_dev@127.0.0.1:5432/jzk
+DATABASE_URL=postgresql://jzk_app:jzk_app_dev@127.0.0.1:5433/jzk
+DATABASE_ADMIN_URL=postgresql://jzk_admin_api:jzk_admin_dev@127.0.0.1:5433/jzk
 ```
 
 首次启动应用会自动确保 schema 和已有数据库的手机号迁移可用，并在无管理员时创建默认 `super_admin`（用户名/密码见环境变量 `ADMIN_BOOTSTRAP_*`）。测试阶段设置 `EXPOSE_TEST_VERIFICATION_CODE=1`，验证码会直接返回客户端；接入真实短信后应关闭。

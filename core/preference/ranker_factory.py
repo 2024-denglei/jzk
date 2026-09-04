@@ -19,7 +19,7 @@ def _settings_key(config) -> tuple:
     return (
         backend,
         getattr(config, "MATCH_SCORER_URL", ""),
-        getattr(config, "MATCH_SCORER_TOKEN", ""),
+        getattr(config, "SCORER_TOKEN", ""),
         getattr(config, "MATCH_SCORER_CONTRACT_VERSION", "1"),
         getattr(config, "MATCH_SCORER_TIMEOUT_SECONDS", 15.0),
         getattr(config, "MATCH_SCORER_MAX_CANDIDATES", 20000),
@@ -50,7 +50,7 @@ def get_default_ranker() -> Ranker:
         elif backend == "http":
             ranker = HttpScoringRanker(
                 base_url=config.MATCH_SCORER_URL,
-                token=config.MATCH_SCORER_TOKEN,
+                token=config.SCORER_TOKEN,
                 contract_version=config.MATCH_SCORER_CONTRACT_VERSION,
                 timeout_seconds=config.MATCH_SCORER_TIMEOUT_SECONDS,
                 max_candidates=config.MATCH_SCORER_MAX_CANDIDATES,

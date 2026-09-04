@@ -78,11 +78,10 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
-# PostgreSQL（官方库；运行时权威数据源）
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:jzk_dev_change_me@127.0.0.1:5432/jzk",
-)
+# PostgreSQL（官方库；运行时权威数据源）。不给默认值：这里曾内置一串开发凭证，
+# 指向 127.0.0.1:5432——而 compose 对宿主机发布的是 5433，于是忘配 DATABASE_URL
+# 的后果不是启动失败，而是连接被拒或（更糟）连上本机另一个库。
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 # 管理端可选用独立角色；未设置时回退 DATABASE_URL
 DATABASE_ADMIN_URL = os.getenv("DATABASE_ADMIN_URL", "") or DATABASE_URL
 # 仅供离线 schema/数据迁移脚本使用；生产应配置无常驻 LOGIN 的迁移角色。
@@ -116,14 +115,9 @@ CODE_VERIFY_IP_HOURLY_LIMIT = int(os.getenv("CODE_VERIFY_IP_HOURLY_LIMIT", "30")
 ADMIN_BOOTSTRAP_USERNAME = os.getenv("ADMIN_BOOTSTRAP_USERNAME", "admin")
 ADMIN_BOOTSTRAP_PASSWORD = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "Admin@ChangeMe1")
 
-# 历史 Excel 仅用于一次性导入/联调，不再作为运行时数据源
-DATA_FILE_PATH = os.getenv(
-    "DATA_FILE_PATH",
-    os.path.join(
-        os.path.dirname(os.path.dirname(__file__)),
-        "新生成的模拟捐精人信息数据3000条(1).xlsx",
-    ),
-)
+# 历史 Excel 仅用于一次性导入/联调，不再作为运行时数据源。这里不再提供
+# DATA_FILE_PATH 默认值：它曾指向一个仓库里并不存在的文件名，把「忘了传参」
+# 推迟到脚本读文件时才炸。灌库脚本改为强制显式传 --file。
 DATA_SHEET_NAME = "人造数据"
 
 # 匹配配置
@@ -154,9 +148,10 @@ MATCH_SCORER_MAX_CANDIDATES = int(
 MATCH_SCORER_CANDIDATE_POOL = int(
     os.getenv("SCORER_CANDIDATE_POOL", "5000")
 )
-MATCH_SCORER_TOKEN = os.getenv(
-    "MATCH_SCORER_TOKEN", "dev-match-scorer-token-change-me"
-)
+# 与打分服务共享的同一个密钥。它必须两端一致，所以只能有一个环境变量名——曾经
+# 主应用读 MATCH_SCORER_TOKEN、服务端读 SCORER_TOKEN，只改一处就会在运行时鉴权
+# 失败。服务端的 SCORER_* 是一整族变量，故统一到它的命名。
+SCORER_TOKEN = os.getenv("SCORER_TOKEN", "dev-match-scorer-token-change-me")
 COSINE_WEIGHT = 0.6
 EUCLIDEAN_WEIGHT = 0.4
 
@@ -165,7 +160,8 @@ MAX_JSON_BODY_BYTES = int(os.getenv("MAX_JSON_BODY_BYTES", "1000000"))
 MAX_AUDIO_UPLOAD_BYTES = int(os.getenv("MAX_AUDIO_UPLOAD_BYTES", "20000000"))
 MAX_EXCEL_UPLOAD_BYTES = int(os.getenv("MAX_EXCEL_UPLOAD_BYTES", "10000000"))
 
-# 服务配置（若本机 8000 被占用，可设 PORT=8010）
+# 服务配置。8010 是唯一的应用端口，compose、Dockerfile 的 EXPOSE 和前端 dev
+# 代理三处都指向它，改这里必须同时改那三处。
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8010"))
 # 热重载：默认开启，生产可设 RELOAD=0
@@ -200,6 +196,7 @@ _INSECURE_JWT_SECRETS = {
 
 def validate_security_config() -> None:
     """在生产启动前拒绝已知不安全的开发配置。"""
+    validate_database_config()
     validate_chat_v2_config()
     validate_match_scoring_config()
     if ENVIRONMENT not in {"development", "test", "production"}:
@@ -233,14 +230,27 @@ def validate_security_config() -> None:
     if (
         MATCH_SCORING_BACKEND == "http"
         and (
-            MATCH_SCORER_TOKEN == "dev-match-scorer-token-change-me"
-            or len(MATCH_SCORER_TOKEN.encode("utf-8")) < 32
+            SCORER_TOKEN == "dev-match-scorer-token-change-me"
+            or len(SCORER_TOKEN.encode("utf-8")) < 32
         )
     ):
-        errors.append("生产环境必须设置至少32字节的 MATCH_SCORER_TOKEN")
+        errors.append("生产环境必须设置至少32字节的 SCORER_TOKEN")
 
     if errors:
         raise SecurityConfigError("生产安全配置校验失败：" + "；".join(errors))
+
+
+def validate_database_config() -> None:
+    """数据库连接串必须显式配置，任何环境都不例外。"""
+    errors: list[str] = []
+    if not DATABASE_URL:
+        errors.append("必须设置 DATABASE_URL（参考 .env.example）")
+    else:
+        scheme = urlparse(DATABASE_URL).scheme
+        if scheme not in {"postgresql", "postgres"}:
+            errors.append("DATABASE_URL 必须是 postgresql:// 连接串")
+    if errors:
+        raise SecurityConfigError("数据库配置校验失败：" + "；".join(errors))
 
 
 def validate_match_scoring_config() -> None:
@@ -252,8 +262,8 @@ def validate_match_scoring_config() -> None:
         parsed = urlparse(MATCH_SCORER_URL)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             errors.append("MATCH_SCORER_URL 必须是有效的 http/https URL")
-        if not MATCH_SCORER_TOKEN:
-            errors.append("MATCH_SCORER_TOKEN 不能为空")
+        if not SCORER_TOKEN:
+            errors.append("SCORER_TOKEN 不能为空")
     if MATCH_SCORER_CONTRACT_VERSION != "1":
         errors.append("MATCH_SCORER_CONTRACT_VERSION 当前仅支持 1")
     if MATCH_SCORER_TIMEOUT_SECONDS <= 0:

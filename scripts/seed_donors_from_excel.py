@@ -11,14 +11,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import config
 from db.database import init_db
 from db.donor_import import import_excel_bytes
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", default=config.DATA_FILE_PATH)
+    # 强制显式传入：这里曾默认取 config.DATA_FILE_PATH，而那个默认值指向一个
+    # 仓库里并不存在的文件，于是「忘了指定数据源」被推迟到读文件时才报错。
+    parser.add_argument("--file", required=True)
     parser.add_argument(
         "--replace",
         action="store_true",

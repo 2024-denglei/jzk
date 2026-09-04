@@ -290,7 +290,7 @@ def main() -> None:
         "match_layers": bench_match_layers(user_id),
         "scorer_http": bench_scorer_http(
             config.MATCH_SCORER_URL,
-            config.MATCH_SCORER_TOKEN,
+            config.SCORER_TOKEN,
         ),
     }
     if not args.skip_e2e:

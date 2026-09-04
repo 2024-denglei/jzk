@@ -12,7 +12,7 @@ def production(monkeypatch):
     monkeypatch.setattr(config, "ADMIN_BOOTSTRAP_USERNAME", "bootstrap-owner")
     monkeypatch.setattr(config, "ADMIN_BOOTSTRAP_PASSWORD", "a-secure-bootstrap-password")
     monkeypatch.setattr(config, "REDIS_URL", "rediss://jzk:secret@redis.internal:6379/0")
-    monkeypatch.setattr(config, "MATCH_SCORER_TOKEN", "c" * 64)
+    monkeypatch.setattr(config, "SCORER_TOKEN", "c" * 64)
 
 
 def test_development_allows_local_defaults(monkeypatch):
@@ -83,9 +83,7 @@ def test_match_scoring_config_rejects_invalid_backend(monkeypatch):
         config.validate_match_scoring_config()
 
 
-def test_production_rejects_default_match_scorer_token(production, monkeypatch):
-    monkeypatch.setattr(
-        config, "MATCH_SCORER_TOKEN", "dev-match-scorer-token-change-me"
-    )
-    with pytest.raises(config.SecurityConfigError, match="MATCH_SCORER_TOKEN"):
+def test_production_rejects_default_scorer_token(production, monkeypatch):
+    monkeypatch.setattr(config, "SCORER_TOKEN", "dev-match-scorer-token-change-me")
+    with pytest.raises(config.SecurityConfigError, match="SCORER_TOKEN"):
         config.validate_security_config()

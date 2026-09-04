@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // 若本机 8000 已被占用，可设环境变量 PORT=8010 启动后端
+      // 后端固定跑在 8010，与 config.PORT、compose 和 Dockerfile 一致
       '/api': process.env.VITE_API_PROXY || 'http://127.0.0.1:8010',
       '/health': process.env.VITE_API_PROXY || 'http://127.0.0.1:8010',
     },

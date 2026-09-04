@@ -10,12 +10,12 @@ SCORER_TOKEN=dev-match-scorer-token-change-me \
   --host 127.0.0.1 --port 8020
 ```
 
-主应用使用同一个 token：
+主应用与本服务共用同一个 `SCORER_TOKEN`，两端必须一致，因此只有这一个变量名：
 
 ```bash
 MATCH_SCORING_BACKEND=http
 MATCH_SCORER_URL=http://127.0.0.1:8020
-MATCH_SCORER_TOKEN=dev-match-scorer-token-change-me
+SCORER_TOKEN=dev-match-scorer-token-change-me
 ```
 
 检查服务：
