@@ -9,13 +9,11 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
-import config
 from api.auth_utils import get_current_user_id
 from db import chat_feedback_repo, chats_repo
 from db.chat_models import ChatErrorCode, MessageFeedbackRating, MessageFeedbackView, TurnCommand
 from dialogue.conversation_commands import ConversationCommandError, create_turn
 from dialogue.conversation_queries import ConversationQueryError, ConversationQueryService
-from dialogue.chat_rollout import user_can_write_v2
 
 
 router = APIRouter(prefix="/api/chats", tags=["chats-v2"])
@@ -24,18 +22,6 @@ message_router = APIRouter(prefix="/api/messages", tags=["chats-v2"])
 
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
-
-
-def _require_read() -> None:
-    if not config.CHAT_STORAGE_V2_READ_ENABLED:
-        raise _error(503, "CHAT_STORAGE_V2_READ_DISABLED", "新版对话读取尚未启用")
-
-
-def _require_write(user_id: int) -> None:
-    if not config.CHAT_STORAGE_V2_WRITE_ENABLED:
-        raise _error(503, "CHAT_STORAGE_V2_WRITE_DISABLED", "新版对话写入尚未启用")
-    if not user_can_write_v2(user_id):
-        raise _error(503, "CHAT_STORAGE_V2_WRITE_NOT_IN_ROLLOUT", "当前用户尚未进入新版对话灰度")
 
 
 def _raise_query_error(exc: ConversationQueryError) -> None:
@@ -95,7 +81,6 @@ async def list_chats_v2(
     limit: int | None = Query(default=None, ge=1),
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     try:
         return await ConversationQueryService().alist_chats(user_id, cursor=cursor, limit=limit)
     except ConversationQueryError as exc:
@@ -107,7 +92,6 @@ async def create_new_chat_turn(
     body: TurnCommand,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_write(user_id)
     try:
         return await run_in_threadpool(create_turn, user_id, body)
     except ConversationCommandError as exc:
@@ -119,7 +103,6 @@ async def get_chat_tree(
     chat_id: int,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     try:
         return await ConversationQueryService().aget_conversation(user_id, chat_id)
     except ConversationQueryError as exc:
@@ -132,7 +115,6 @@ async def create_chat_turn(
     body: TurnCommand,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_write(user_id)
     try:
         return await run_in_threadpool(partial(create_turn, user_id, body, chat_id=chat_id))
     except ConversationCommandError as exc:
@@ -147,7 +129,6 @@ async def get_branch_messages(
     limit: int | None = Query(default=None, ge=1),
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     try:
         return await ConversationQueryService().aget_message_path(
             user_id,
@@ -167,7 +148,6 @@ async def get_message_match_results(
     limit: int | None = Query(default=None, ge=1),
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     try:
         return await ConversationQueryService().aget_message_match_results(
             user_id,
@@ -185,7 +165,6 @@ async def set_message_feedback(
     body: MessageFeedbackBody,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     try:
         row = await run_in_threadpool(
             chat_feedback_repo.set_message_feedback,
@@ -204,7 +183,6 @@ async def delete_message_feedback(
     message_id: UUID,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     await run_in_threadpool(chat_feedback_repo.delete_message_feedback, user_id, message_id)
     return {"ok": True}
 
@@ -215,7 +193,6 @@ async def patch_chat(
     body: ChatPatch,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     changed = await run_in_threadpool(chats_repo.rename_chat, user_id, chat_id, body.title)
     if not changed:
         raise _error(404, ChatErrorCode.CHAT_NOT_FOUND.value, "会话不存在")
@@ -229,7 +206,6 @@ async def patch_branch(
     body: BranchPatch,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     try:
         changed = await run_in_threadpool(
             partial(
@@ -253,7 +229,6 @@ async def delete_chat_v2(
     body: ChatDeleteBody = Body(...),
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     if not body.confirm_irreversible:
         raise _error(
             400,

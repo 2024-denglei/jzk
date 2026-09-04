@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-import config
 from api.auth_utils import get_current_user_id
 from db import generation_runs_repo
 from db.chat_models import GenerationStatus
@@ -31,11 +30,6 @@ _TERMINAL = {
 
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
-
-
-def _require_read() -> None:
-    if not config.CHAT_STORAGE_V2_READ_ENABLED:
-        raise _error(503, "CHAT_STORAGE_V2_READ_DISABLED", "新版对话读取尚未启用")
 
 
 def _sse(event: str, payload: dict, event_id: str | None = None) -> str:
@@ -59,7 +53,6 @@ async def get_generation_status(
     generation_id: UUID,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     return await _owned_generation(user_id, generation_id)
 
 
@@ -68,7 +61,6 @@ async def stop_generation(
     generation_id: UUID,
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     run = await run_in_threadpool(
         generation_runs_repo.request_generation_stop,
         user_id,
@@ -95,7 +87,6 @@ async def stream_generation_events(
     after: str | None = Query(default=None, max_length=64),
     user_id: int = Depends(get_current_user_id),
 ):
-    _require_read()
     initial = await _owned_generation(user_id, generation_id)
     last_id = after or request.headers.get("last-event-id") or "0-0"
 

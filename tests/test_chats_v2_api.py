@@ -28,8 +28,6 @@ def v2_client(monkeypatch):
     close_pools()
     monkeypatch.setattr(config, "DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setattr(config, "DATABASE_ADMIN_URL", TEST_DATABASE_URL)
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_READ_ENABLED", True)
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_ENABLED", True)
     ensure_schema()
     emails = [f"v2-api-{uuid4()}@example.test" for _ in range(2)]
     with psycopg.connect(TEST_DATABASE_URL, row_factory=dict_row) as conn:
@@ -270,15 +268,18 @@ def test_v2_api_branch_lifecycle_ownership_and_irreversible_delete(v2_client):
         assert outbox and set(outbox["payload_json"]) == {"generation_ids"}
 
 
-def test_v2_flags_fail_closed(v2_client, monkeypatch):
+def test_chat_reads_and_writes_need_no_rollout_configuration(v2_client):
+    """不设任何灰度环境变量也能读写对话。
+
+    对应曾经的缺陷：灰度开关默认关闭，而 v1 存储已被删除，于是不带完整 .env 的
+    部署一上线对话就 503，且没有旧版可退。
+    """
     client, _current, _users = v2_client
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_READ_ENABLED", False)
-    assert client.get("/api/chats").status_code == 503
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_ENABLED", False)
+    assert client.get("/api/chats").status_code == 200
     assert client.post(
         "/api/chats/turns",
-        json={"content": "关闭", "client_request_id": str(uuid4())},
-    ).status_code == 503
+        json={"content": "无需灰度配置", "client_request_id": str(uuid4())},
+    ).status_code == 202
 
 
 def test_regenerate_action_is_no_longer_part_of_public_api(v2_client):
@@ -294,18 +295,12 @@ def test_regenerate_action_is_no_longer_part_of_public_api(v2_client):
     assert response.status_code == 422
 
 
-def test_rollback_blocks_new_turns_but_keeps_stop_and_delete_available(v2_client, monkeypatch):
+def test_generation_can_be_stopped_and_chat_deleted(v2_client):
     client, _current, _users = v2_client
     created = client.post(
         "/api/chats/turns",
-        json={"content": "灰度回滚", "client_request_id": str(uuid4())},
+        json={"content": "起一轮再收掉", "client_request_id": str(uuid4())},
     ).json()
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_ENABLED", False)
-    blocked = client.post(
-        "/api/chats/turns",
-        json={"content": "不得新建", "client_request_id": str(uuid4())},
-    )
-    assert blocked.status_code == 503
     assert client.post(f"/api/generations/{created['generation_id']}/stop").status_code == 200
     deleted = client.request(
         "DELETE",
@@ -313,15 +308,3 @@ def test_rollback_blocks_new_turns_but_keeps_stop_and_delete_available(v2_client
         json={"confirm_irreversible": True, "request_id": str(uuid4())},
     )
     assert deleted.status_code == 200
-
-
-def test_write_rollout_rejects_user_outside_cohort(v2_client, monkeypatch):
-    client, _current, _users = v2_client
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_PERCENT", 0)
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_USER_IDS", frozenset())
-    response = client.post(
-        "/api/chats/turns",
-        json={"content": "尚未灰度", "client_request_id": str(uuid4())},
-    )
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "CHAT_STORAGE_V2_WRITE_NOT_IN_ROLLOUT"

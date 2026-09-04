@@ -1,23 +1,6 @@
 from argparse import Namespace
 
-import config
-from dialogue.chat_rollout import rollout_bucket, user_can_write_v2
 from scripts.check_chat_v2_rollout import evaluate
-
-
-def test_write_rollout_is_stable_and_allowlist_bypasses_percentage(monkeypatch):
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_ENABLED", True)
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_ROLLOUT_SALT", "stable-test")
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_PERCENT", 0)
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_USER_IDS", frozenset({7}))
-    assert user_can_write_v2(7) is True
-    assert user_can_write_v2(8) is False
-    assert rollout_bucket(8) == rollout_bucket(8)
-
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_PERCENT", 25)
-    assert user_can_write_v2(8) is (rollout_bucket(8) < 2500)
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_ENABLED", False)
-    assert user_can_write_v2(7) is False
 
 
 def test_rollout_gate_reports_threshold_failures():

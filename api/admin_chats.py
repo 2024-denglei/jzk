@@ -6,7 +6,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-import config
 from api.admin_permissions import USERS_VIEW, require_permission
 from db import admin_chats_repo
 from db.chat_models import ChatErrorCode
@@ -21,11 +20,6 @@ router = APIRouter(
 
 def _error(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
-
-
-def _require_read() -> None:
-    if not config.CHAT_STORAGE_V2_READ_ENABLED:
-        raise _error(503, "CHAT_STORAGE_V2_READ_DISABLED", "新版对话读取尚未启用")
 
 
 def _raise_query_error(exc: ConversationQueryError) -> None:
@@ -64,7 +58,6 @@ def list_admin_conversations(
     limit: int | None = Query(default=None, ge=1),
     admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
-    _require_read()
     if not admin_chats_repo.user_exists(user_id):
         raise _error(404, "USER_NOT_FOUND", "用户不存在")
     try:
@@ -88,7 +81,6 @@ def get_admin_conversation(
     chat_id: int,
     admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
-    _require_read()
     try:
         tree = ConversationQueryService(admin=True).get_conversation(user_id, chat_id)
     except ConversationQueryError as exc:
@@ -106,7 +98,6 @@ def get_admin_message_path(
     limit: int | None = Query(default=None, ge=1),
     admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
-    _require_read()
     try:
         page = ConversationQueryService(admin=True).get_message_path(
             user_id, chat_id, branch_id, before=before, limit=limit
@@ -134,7 +125,6 @@ def get_admin_message_match(
     limit: int | None = Query(default=None, ge=1),
     admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
-    _require_read()
     if not admin_chats_repo.message_belongs_to_chat(user_id, chat_id, message_id):
         raise _error(404, ChatErrorCode.MESSAGE_NOT_FOUND.value, "消息不存在")
     try:
@@ -163,7 +153,6 @@ def get_admin_message_context(
     message_id: UUID,
     admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
-    _require_read()
     try:
         page = ConversationQueryService(admin=True).get_message_context(
             user_id, chat_id, branch_id, message_id
@@ -191,7 +180,6 @@ def get_admin_generation_trace(
     limit: int = Query(default=100, ge=1, le=500),
     admin: dict = Depends(require_permission(USERS_VIEW)),
 ):
-    _require_read()
     service = ConversationQueryService(admin=True)
     try:
         generation = service.get_generation(user_id, generation_id)

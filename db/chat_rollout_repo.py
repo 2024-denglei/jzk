@@ -58,12 +58,8 @@ def get_chat_v2_rollout_metrics() -> dict[str, int]:
 
 
 def rollout_config_view() -> dict[str, Any]:
-    """不暴露 rollout salt，只输出可用于发布核对的非敏感配置。"""
+    """输出可用于发布核对的非敏感配置。"""
     return {
-        "read_enabled": config.CHAT_STORAGE_V2_READ_ENABLED,
-        "write_enabled": config.CHAT_STORAGE_V2_WRITE_ENABLED,
-        "write_percent": config.CHAT_STORAGE_V2_WRITE_PERCENT,
-        "write_allowlist_size": len(config.CHAT_STORAGE_V2_WRITE_USER_IDS),
         "worker_enabled": config.CHAT_GENERATION_WORKER_ENABLED,
         "worker_user_scope_size": len(config.CHAT_GENERATION_WORKER_USER_IDS),
         "outbox_worker_enabled": config.CHAT_OUTBOX_WORKER_ENABLED,

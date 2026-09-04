@@ -68,10 +68,13 @@ def test_chat_v2_config_rejects_default_page_above_max(monkeypatch):
         config.validate_chat_v2_config()
 
 
-def test_chat_v2_config_rejects_invalid_rollout(monkeypatch):
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_WRITE_PERCENT", 101)
-    with pytest.raises(config.SecurityConfigError, match="WRITE_PERCENT"):
-        config.validate_chat_v2_config()
+def test_chat_storage_rollout_flags_are_gone():
+    """对话存储只剩一个版本，灰度开关必须不存在。
+
+    它曾经默认关闭，而 v1 表已被迁移脚本删除，导致任何不带完整 .env 的部署一启动
+    就写入失败且无处回退。任何重新引入 CHAT_STORAGE_V2_* 的改动都应在此处红掉。
+    """
+    assert [name for name in dir(config) if name.startswith("CHAT_STORAGE_V2")] == []
 
 
 def test_match_scoring_config_rejects_invalid_backend(monkeypatch):

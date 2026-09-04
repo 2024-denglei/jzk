@@ -5,7 +5,6 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-import config
 from api import admin_chats
 from db import admin_chats_repo
 
@@ -41,7 +40,6 @@ class FakeService:
 
 @pytest.fixture
 def admin_v2(monkeypatch):
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_READ_ENABLED", True)
     monkeypatch.setattr(admin_chats, "ConversationQueryService", FakeService)
     monkeypatch.setattr(admin_chats.admin_chats_repo, "user_exists", lambda _user_id: True)
     monkeypatch.setattr(
@@ -133,10 +131,3 @@ def test_sensitive_read_audit_contains_only_resource_metadata(monkeypatch):
     assert params[:3] == (7, "view_chat_path", 9)
     assert "message content" not in str(params)
     assert "branch-1" in str(params)
-
-
-def test_admin_v2_read_flag_fails_closed(monkeypatch):
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_READ_ENABLED", False)
-    with pytest.raises(HTTPException) as exc:
-        admin_chats.list_admin_conversations(7, cursor=None, limit=20, admin=ADMIN)
-    assert exc.value.status_code == 503

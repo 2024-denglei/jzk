@@ -27,7 +27,6 @@ def admin_conversation(monkeypatch):
     close_pools()
     monkeypatch.setattr(config, "DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setattr(config, "DATABASE_ADMIN_URL", TEST_DATABASE_URL)
-    monkeypatch.setattr(config, "CHAT_STORAGE_V2_READ_ENABLED", True)
     ensure_schema()
     suffix = uuid4().hex
     with psycopg.connect(TEST_DATABASE_URL, row_factory=dict_row) as conn:
