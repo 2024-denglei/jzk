@@ -4,7 +4,7 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from core.preference.scoring_client import HttpScoringRanker
+from core.preference.scoring_client import HttpScoringRanker, normalize_donor_row
 from core.preference.scoring_contract import (
     RankerContractError,
     RankerInputError,
@@ -192,3 +192,26 @@ def test_model_info_readiness_sends_no_candidate_payload():
     model = _ranker(handler).model_info()
     assert model.version == "v32-v4-best-mae"
     assert model.candidate_pool == 300
+
+
+def test_donor_row_is_normalized_to_what_the_contract_expects():
+    """库里的形态与契约要求的形态不同，转换发生在发请求之前。
+
+    这个转换过去住在 core/preference/v2_adapter.py，与进程内模型副本同源；副本
+    删除后它是打分客户端唯一的职责，因此并入此处。
+    """
+    row = {
+        "code": "A1",
+        "abo_blood": "O",
+        "rh_blood": "+",
+        "height_cm": 180,
+        "birth_date": date(2000, 1, 1),
+        "sideburns": "无",
+    }
+
+    out = normalize_donor_row(row)
+
+    assert out["age"] >= 25
+    assert out["rh_blood"] == "阳性"
+    assert out["height_cm"] == 180
+    assert out["code"] == "A1"

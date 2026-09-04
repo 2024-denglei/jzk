@@ -77,9 +77,9 @@ def test_chat_storage_rollout_flags_are_gone():
     assert [name for name in dir(config) if name.startswith("CHAT_STORAGE_V2")] == []
 
 
-def test_match_scoring_config_rejects_invalid_backend(monkeypatch):
-    monkeypatch.setattr(config, "MATCH_SCORING_BACKEND", "magic")
-    with pytest.raises(config.SecurityConfigError, match="MATCH_SCORING_BACKEND"):
+def test_match_scoring_config_rejects_unusable_scorer_url(monkeypatch):
+    monkeypatch.setattr(config, "MATCH_SCORER_URL", "ftp://scorer")
+    with pytest.raises(config.SecurityConfigError, match="MATCH_SCORER_URL"):
         config.validate_match_scoring_config()
 
 

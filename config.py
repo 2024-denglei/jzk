@@ -132,7 +132,6 @@ MATCH_RESULT_PAGE_SIZE_MAX = int(os.getenv("MATCH_RESULT_PAGE_SIZE_MAX", "50"))
 MATCH_SNAPSHOT_RETENTION_DAYS = int(os.getenv("MATCH_SNAPSHOT_RETENTION_DAYS", "180"))
 MATCH_CURSOR_TTL_SECONDS = int(os.getenv("MATCH_CURSOR_TTL_SECONDS", "86400"))
 MATCH_MODEL_VERSION = os.getenv("MATCH_MODEL_VERSION", "v32-v4-best-mae")
-MATCH_SCORING_BACKEND = os.getenv("MATCH_SCORING_BACKEND", "http").strip().lower()
 MATCH_SCORER_URL = os.getenv(
     "MATCH_SCORER_URL", "http://127.0.0.1:8020"
 ).strip().rstrip("/")
@@ -174,17 +173,6 @@ MATCH_LOG_DIR = os.getenv(
 
 # 对话匹配：空则本进程调用 POST /api/match；设为完整 URL 则打外部匹配服务
 MATCH_API_URL = os.getenv("MATCH_API_URL", "").strip()
-
-_AGENT_ROOT = os.path.dirname(__file__)
-V2_CHECKPOINT_PATH = os.getenv(
-    "V2_CHECKPOINT_PATH",
-    os.path.join(_AGENT_ROOT, "models", "best_model_v2.pt"),
-)
-V2_CONFIG_PATH = os.getenv(
-    "V2_CONFIG_PATH",
-    os.path.join(_AGENT_ROOT, "core", "preference", "v2", "config_v2.json"),
-)
-V2_FORCE_CPU = os.getenv("V2_FORCE_CPU", "1").strip().lower() in {"1", "true", "yes"}
 
 
 _INSECURE_JWT_SECRETS = {
@@ -228,11 +216,8 @@ def validate_security_config() -> None:
     elif not redis_url.password:
         errors.append("生产 Redis 必须配置认证凭证")
     if (
-        MATCH_SCORING_BACKEND == "http"
-        and (
-            SCORER_TOKEN == "dev-match-scorer-token-change-me"
-            or len(SCORER_TOKEN.encode("utf-8")) < 32
-        )
+        SCORER_TOKEN == "dev-match-scorer-token-change-me"
+        or len(SCORER_TOKEN.encode("utf-8")) < 32
     ):
         errors.append("生产环境必须设置至少32字节的 SCORER_TOKEN")
 
@@ -254,16 +239,17 @@ def validate_database_config() -> None:
 
 
 def validate_match_scoring_config() -> None:
-    """Validate the selected model-scoring transport before serving traffic."""
+    """校验通往打分服务的传输配置。
+
+    按 docs/adr/0001，打分只有 HTTP 这一条通路，因此不再有后端选择开关：进程内
+    推理的副本已删除，配置里留一个只有单一取值的开关只会让人以为还能切回去。
+    """
     errors: list[str] = []
-    if MATCH_SCORING_BACKEND not in {"http", "local_v2"}:
-        errors.append("MATCH_SCORING_BACKEND 仅支持 http 或 local_v2")
-    if MATCH_SCORING_BACKEND == "http":
-        parsed = urlparse(MATCH_SCORER_URL)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            errors.append("MATCH_SCORER_URL 必须是有效的 http/https URL")
-        if not SCORER_TOKEN:
-            errors.append("SCORER_TOKEN 不能为空")
+    parsed = urlparse(MATCH_SCORER_URL)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        errors.append("MATCH_SCORER_URL 必须是有效的 http/https URL")
+    if not SCORER_TOKEN:
+        errors.append("SCORER_TOKEN 不能为空")
     if MATCH_SCORER_CONTRACT_VERSION != "1":
         errors.append("MATCH_SCORER_CONTRACT_VERSION 当前仅支持 1")
     if MATCH_SCORER_TIMEOUT_SECONDS <= 0:

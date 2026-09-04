@@ -10,16 +10,30 @@ from uuid import uuid4
 import httpx
 from pydantic import ValidationError
 
+from core.data_loader import _calc_age
 from core.preference.schema import EnumAttr, KeywordAttr, PreferenceProfile, RangeAttr
-from core.preference.scorer import FieldScore, Ranker
+from core.preference.scorer import FieldScore, Ranker, normalize_rh
 from core.preference.scoring_contract import (
     RankerContractError,
     RankerInputError,
     RankerUnavailable,
     ScoringMetadata,
 )
-from core.preference.v2_adapter import donor_row_to_v2
 from services.match_scorer.api_models import ModelIdentity, RankRequest, RankResponse
+
+
+def normalize_donor_row(row: dict[str, Any]) -> dict[str, Any]:
+    """把库里的捐精人行整理成打分服务期望的字段形态。
+
+    年龄在库里是出生日期，Rh 血型在库里可能是 + / -，而打分服务的契约要的是
+    数值年龄和「阳性 / 阴性」。
+    """
+    out = dict(row)
+    age = _calc_age(row.get("birth_date") or row.get("age"))
+    out["age"] = age if age else row.get("age")
+    if "rh_blood" in out:
+        out["rh_blood"] = normalize_rh(out.get("rh_blood"))
+    return out
 
 
 def profile_to_scoring_spec(profile: PreferenceProfile) -> dict[str, Any]:
@@ -78,7 +92,7 @@ def _candidate_payload(
     profile: PreferenceProfile,
     row: dict[str, Any],
 ) -> dict[str, Any]:
-    normalized = donor_row_to_v2(row)
+    normalized = normalize_donor_row(row)
     attributes: dict[str, Any] = {}
     business: dict[str, Any] = {}
     for field in profile.attributes:
