@@ -52,7 +52,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # setup-uv 的浮动大版本标签只发到 v7，之后只有具体版本，所以这里钉精确 tag。
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           version: '0.11.28'
           enable-cache: true

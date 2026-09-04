@@ -5,6 +5,7 @@
 的类型检查，后端契约改名不会被任何东西挡住。
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,44 @@ def test_backend_job_runs_the_whole_suite(workflow: dict) -> None:
     assert "pytest" in commands
     assert "-k " not in commands
     assert "--ignore" not in commands
+
+
+def test_uv_version_is_pinned_consistently(workflow: dict) -> None:
+    """CI 装的 uv 版本必须与 Dockerfile 里的一致。
+
+    两边用不同的 uv 解析同一份 uv.lock 通常没问题，但 lock 格式会随 uv 演进，
+    版本分叉时报错会指向 lock 文件而不是真正的原因。
+    """
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    pinned_in_image = re.search(r"uv==(\d+\.\d+\.\d+)", dockerfile)
+    assert pinned_in_image, "Dockerfile 未钉住 uv 版本"
+
+    setup_uv = next(
+        step for step in workflow["jobs"]["backend"]["steps"]
+        if "setup-uv" in step.get("uses", "")
+    )
+    assert setup_uv["with"]["version"] == pinned_in_image.group(1)
+
+
+def test_action_references_are_resolvable_tags(workflow: dict) -> None:
+    """action 引用要么是仓库真的发布过的浮动大版本，要么是精确 tag。
+
+    对应踩过的坑：astral-sh/setup-uv 的浮动大版本标签只发到 v7，写 @v10 会让
+    整个 job 在 Set up job 阶段就失败，而本地没有任何东西能发现它。
+    """
+    floating_major_only_to_v7 = {"astral-sh/setup-uv"}
+
+    for job in workflow["jobs"].values():
+        for step in job["steps"]:
+            uses = step.get("uses")
+            if not uses:
+                continue
+            repo, _, ref = uses.partition("@")
+            assert ref, f"{uses} 未指定版本"
+            if repo in floating_major_only_to_v7:
+                assert re.fullmatch(r"v\d+\.\d+\.\d+", ref), (
+                    f"{repo} 没有 {ref} 这个浮动标签，必须写精确版本"
+                )
 
 
 def test_backend_job_installs_from_the_lock_file(workflow: dict) -> None:
