@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from jzk.api.auth_utils import get_current_user_id
 from jzk.db import generation_runs_repo
-from jzk.db.chat_contracts import GenerationStatus
+from jzk.db.chat_contracts import GenerationRunView, GenerationStatus
 from jzk.advisor.generation_events import (
     GenerationEventStreamUnavailable,
     publish_generation_event,
@@ -48,7 +48,7 @@ async def _owned_generation(user_id: int, generation_id: UUID):
     return run
 
 
-@router.get("/{generation_id}")
+@router.get("/{generation_id}", response_model=GenerationRunView)
 async def get_generation_status(
     generation_id: UUID,
     user_id: int = Depends(get_current_user_id),
@@ -56,7 +56,7 @@ async def get_generation_status(
     return await _owned_generation(user_id, generation_id)
 
 
-@router.post("/{generation_id}/stop")
+@router.post("/{generation_id}/stop", response_model=GenerationRunView)
 async def stop_generation(
     generation_id: UUID,
     user_id: int = Depends(get_current_user_id),

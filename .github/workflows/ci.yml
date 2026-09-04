@@ -87,7 +87,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: 安装依赖
-        run: npm ci
+        # 与 Dockerfile 相同：openapi-typescript 的 peer 是 TS 5，仓库是 TS 6。
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
 
       - name: 类型检查
         run: npx tsc -b
@@ -96,4 +97,9 @@ jobs:
         run: npm test
 
       - name: Lint
-        run: npx oxlint
+        run: npx oxlint client/src admin/src
+
+      - name: 校验 OpenAPI 生成物与提交一致
+        # 后端 job 已经核对 openapi.json 等于 live schema；这里核对 TS 生成物
+        # 没有手改、也没有漏跑 generate:api。
+        run: npm run generate:api && git diff --exit-code -- shared/openapi.d.ts

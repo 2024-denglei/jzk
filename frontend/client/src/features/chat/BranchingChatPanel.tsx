@@ -332,7 +332,7 @@ export function BranchingChatPanel({
     try {
       const page = await chatApi.list(reset ? null : historyCursor)
       setHistoryItems((current) => reset ? page.items : [...current, ...page.items])
-      setHistoryCursor(page.next_cursor)
+      setHistoryCursor(page.next_cursor ?? null)
       setHistoryHasMore(page.has_more)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '无法加载会话列表')

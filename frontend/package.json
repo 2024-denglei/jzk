@@ -1,29 +1,20 @@
 {
-  "name": "web",
+  "name": "jzk-frontend",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "workspaces": ["shared", "client", "admin"],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "test": "node --test src/lib/api.test.mjs src/lib/pagination.test.mjs src/lib/matchPagination.test.mjs src/lib/uuid.test.mjs src/lib/donorsWorkbench.test.mjs src/lib/workbenchLayout.test.mjs src/features/chat/chatActions.test.mjs src/features/chat/chatState.test.mjs src/features/chat/chatTabs.test.mjs src/features/chat/generationStream.test.mjs src/pages/admin/adminAccountForm.test.mjs src/pages/admin/adminFormat.test.mjs src/pages/admin/adminLayout.test.mjs src/pages/admin/adminPermissions.test.mjs src/pages/admin/donorForm.test.mjs src/pages/admin/chat/adminChatState.test.mjs",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.2"
+    "dev:client": "npm run dev -w @jzk/client",
+    "dev:admin": "npm run dev -w @jzk/admin",
+    "build": "npm run build -w @jzk/client && npm run build -w @jzk/admin",
+    "test": "npm run test -w @jzk/client && npm run test -w @jzk/admin",
+    "lint": "npx oxlint client/src admin/src",
+    "typecheck": "tsc -b",
+    "generate:api": "openapi-typescript shared/openapi.json -o shared/openapi.d.ts"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^24.13.2",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.3",
+    "openapi-typescript": "^7.13.0",
     "oxlint": "^1.71.0",
-    "tailwindcss": "^4.3.3",
-    "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "typescript": "~6.0.2"
   }
 }

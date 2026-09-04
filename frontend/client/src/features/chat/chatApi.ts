@@ -2,10 +2,10 @@ import { api } from '../../lib/api.ts'
 import type {
   Candidate,
   ChatConversationTree,
+  ChatListPage,
   ChatMessagePathPage,
   ChatTurnCommand,
   ChatTurnCreationResult,
-  ChatV2Summary,
   FrozenMatchPage,
   GenerationRun,
   MatchResultDescriptor,
@@ -13,11 +13,7 @@ import type {
   MessageFeedbackRating,
 } from '../../types'
 
-export interface ChatListPage {
-  items: ChatV2Summary[]
-  next_cursor: string | null
-  has_more: boolean
-}
+export type { ChatListPage }
 
 export const chatApi = {
   list(cursor?: string | null, limit = 20) {

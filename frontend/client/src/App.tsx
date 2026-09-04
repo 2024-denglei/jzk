@@ -8,14 +8,12 @@ import { LoginPage } from './pages/LoginPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { UserPage } from './pages/UserPage'
-import { AdminPage } from './pages/AdminPage'
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="admin/*" element={<AdminPage />} />
           <Route element={<AppLayout />}>
             <Route index element={<HomePage />} />
             {/* 父子路由保证 /donors ↔ /donors/:code 切换时工作台不卸载 */}

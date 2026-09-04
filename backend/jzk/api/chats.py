@@ -11,7 +11,16 @@ from starlette.concurrency import run_in_threadpool
 
 from jzk.api.auth_utils import get_current_user_id
 from jzk.db import chat_feedback_repo, chats_repo
-from jzk.db.chat_contracts import ChatErrorCode, MessageFeedbackRating, MessageFeedbackView, TurnCommand
+from jzk.db.chat_contracts import (
+    ChatErrorCode,
+    ChatListPage,
+    ConversationTreeView,
+    MessageFeedbackRating,
+    MessageFeedbackView,
+    MessagePathPage,
+    TurnCommand,
+    TurnCreationResult,
+)
 from jzk.chat.conversation_commands import ConversationCommandError, create_turn
 from jzk.chat.conversation_queries import ConversationQueryError, ConversationQueryService
 
@@ -75,7 +84,7 @@ class MessageFeedbackBody(BaseModel):
     rating: MessageFeedbackRating
 
 
-@router.get("")
+@router.get("", response_model=ChatListPage)
 async def list_chats_v2(
     cursor: str | None = None,
     limit: int | None = Query(default=None, ge=1),
@@ -87,7 +96,7 @@ async def list_chats_v2(
         _raise_query_error(exc)
 
 
-@router.post("/turns", status_code=202)
+@router.post("/turns", status_code=202, response_model=TurnCreationResult)
 async def create_new_chat_turn(
     body: TurnCommand,
     user_id: int = Depends(get_current_user_id),
@@ -98,7 +107,7 @@ async def create_new_chat_turn(
         _raise_command_error(exc)
 
 
-@router.get("/{chat_id}")
+@router.get("/{chat_id}", response_model=ConversationTreeView)
 async def get_chat_tree(
     chat_id: int,
     user_id: int = Depends(get_current_user_id),
@@ -109,7 +118,7 @@ async def get_chat_tree(
         _raise_query_error(exc)
 
 
-@router.post("/{chat_id}/turns", status_code=202)
+@router.post("/{chat_id}/turns", status_code=202, response_model=TurnCreationResult)
 async def create_chat_turn(
     chat_id: int,
     body: TurnCommand,
@@ -121,7 +130,7 @@ async def create_chat_turn(
         _raise_command_error(exc)
 
 
-@router.get("/{chat_id}/branches/{branch_id}/messages")
+@router.get("/{chat_id}/branches/{branch_id}/messages", response_model=MessagePathPage)
 async def get_branch_messages(
     chat_id: int,
     branch_id: UUID,

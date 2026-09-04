@@ -48,13 +48,19 @@ def test_app_port_is_the_same_number_everywhere(
     读 config.py 源码而不是 import config，否则测的就是本机 .env 而非默认值。
     """
     dockerfile = (ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
-    vite = (ROOT / "frontend" / "vite.config.ts").read_text(encoding="utf-8")
+    client_vite = (ROOT / "frontend" / "client" / "vite.config.ts").read_text(
+        encoding="utf-8"
+    )
+    admin_vite = (ROOT / "frontend" / "admin" / "vite.config.ts").read_text(
+        encoding="utf-8"
+    )
 
     assert re.search(r'PORT = int\(os\.getenv\("PORT", "8010"\)\)', config_source)
     assert re.search(r"^PORT=8010$", env_example, re.MULTILINE)
     assert '"${APP_PORT:-8010}:8010"' in compose
     assert "--port" in dockerfile and '"8010"' in dockerfile
-    assert "http://127.0.0.1:8010" in vite
+    assert "http://127.0.0.1:8010" in client_vite
+    assert "http://127.0.0.1:8010" in admin_vite
 
 
 def test_env_example_connects_to_the_port_compose_publishes(

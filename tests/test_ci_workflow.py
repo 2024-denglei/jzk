@@ -99,7 +99,8 @@ def test_backend_job_installs_from_the_lock_file(workflow: dict) -> None:
 def test_frontend_job_covers_types_tests_and_lint(workflow: dict) -> None:
     commands = _run_commands(workflow, "frontend")
 
-    assert "npm ci" in commands
+    assert "npm ci --legacy-peer-deps" in commands
     assert "tsc -b" in commands
     assert "npm test" in commands
+    assert "generate:api" in commands
     assert "oxlint" in commands

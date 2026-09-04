@@ -44,7 +44,7 @@ export function UserPage() {
       } else if (tab === 'chats') {
         const data = await chatApi.list()
         setChats(data.items)
-        setChatCursor(data.next_cursor)
+        setChatCursor(data.next_cursor ?? null)
         setChatHasMore(data.has_more)
       } else if (tab === 'prefs') {
         const data = await api.get<typeof prefs>('/api/user/preferences')
@@ -75,7 +75,7 @@ export function UserPage() {
     if (!chatCursor) return
     const data = await chatApi.list(chatCursor)
     setChats((current) => [...current, ...data.items])
-    setChatCursor(data.next_cursor)
+    setChatCursor(data.next_cursor ?? null)
     setChatHasMore(data.has_more)
   }
 

@@ -159,13 +159,21 @@ docs_dir = str(
     )
     or (Path.cwd() / "docs")
 )
-web_dist = str(
+client_dist = str(
     _existing_dir(
-        Path.cwd() / "frontend" / "dist",
-        _BACKEND_ROOT / "frontend" / "dist",
-        _REPO_ROOT / "frontend" / "dist",
+        Path.cwd() / "frontend" / "client" / "dist",
+        _BACKEND_ROOT / "frontend" / "client" / "dist",
+        _REPO_ROOT / "frontend" / "client" / "dist",
     )
-    or (Path.cwd() / "frontend" / "dist")
+    or (Path.cwd() / "frontend" / "client" / "dist")
+)
+admin_dist = str(
+    _existing_dir(
+        Path.cwd() / "frontend" / "admin" / "dist",
+        _BACKEND_ROOT / "frontend" / "admin" / "dist",
+        _REPO_ROOT / "frontend" / "admin" / "dist",
+    )
+    or (Path.cwd() / "frontend" / "admin" / "dist")
 )
 if os.path.isdir(docs_dir):
     app.mount("/docs-static", StaticFiles(directory=docs_dir), name="docs-static")
@@ -227,38 +235,72 @@ async def health():
 # ============ React SPA（生产构建） ============
 
 _SPA_NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+_SPA_BUILD_HINT = "请先构建前端：cd frontend && npm run build"
 
 
-def _spa_index_response():
-    return FileResponse(os.path.join(web_dist, "index.html"), headers=_SPA_NO_CACHE)
+def _spa_index(dist: str):
+    return FileResponse(os.path.join(dist, "index.html"), headers=_SPA_NO_CACHE)
 
 
-if os.path.isdir(web_dist):
-    assets_dir = os.path.join(web_dist, "assets")
-    if os.path.isdir(assets_dir):
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="web-assets")
+def _spa_fallback(dist: str, full_path: str, *, reserved: tuple[str, ...]):
+    if full_path.startswith(reserved):
+        raise HTTPException(status_code=404, detail="Not Found")
+    candidate = os.path.join(dist, full_path)
+    if full_path and os.path.isfile(candidate):
+        return FileResponse(candidate)
+    return _spa_index(dist)
 
-    @app.get("/")
+
+if os.path.isdir(admin_dist):
+    admin_assets = os.path.join(admin_dist, "assets")
+    if os.path.isdir(admin_assets):
+        app.mount("/admin/assets", StaticFiles(directory=admin_assets), name="admin-assets")
+
+    @app.get("/admin", include_in_schema=False)
+    @app.get("/admin/{full_path:path}", include_in_schema=False)
+    async def admin_spa(full_path: str = ""):
+        return _spa_fallback(
+            admin_dist,
+            full_path,
+            reserved=("assets/",),
+        )
+
+
+if os.path.isdir(client_dist):
+    client_assets = os.path.join(client_dist, "assets")
+    if os.path.isdir(client_assets):
+        app.mount("/assets", StaticFiles(directory=client_assets), name="client-assets")
+
+    @app.get("/", include_in_schema=False)
     async def spa_index():
-        return _spa_index_response()
+        return _spa_index(client_dist)
 
-    @app.get("/{full_path:path}")
+    @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str):
-        """SPA 前端路由回退；跳过已有 API/静态前缀。"""
-        if full_path.startswith(("api/", "docs-static/", "docs", "openapi", "redoc", "health", "architecture", "assets/")):
-            raise HTTPException(status_code=404, detail="Not Found")
-        candidate = os.path.join(web_dist, full_path)
-        if os.path.isfile(candidate):
-            return FileResponse(candidate)
-        return _spa_index_response()
-else:
-    @app.get("/")
+        """客户端路由回退；管理端与 API 前缀不走这里。"""
+        return _spa_fallback(
+            client_dist,
+            full_path,
+            reserved=(
+                "api/",
+                "docs-static/",
+                "docs",
+                "openapi",
+                "redoc",
+                "health",
+                "architecture",
+                "assets/",
+                "admin",
+            ),
+        )
+elif not os.path.isdir(admin_dist):
+    @app.get("/", include_in_schema=False)
     async def index_fallback():
         """未构建 React 前端时返回提示。"""
         return {
             "message": "智能生育匹配系统 API",
             "docs": "/docs",
-            "hint": "请先构建前端：cd frontend && npm run build",
+            "hint": _SPA_BUILD_HINT,
         }
 
 

@@ -8,6 +8,8 @@ venv/
 *.xlsx
 data/
 frontend/node_modules/
-frontend/dist/
+frontend/*/node_modules/
+frontend/client/dist/
+frontend/admin/dist/
 backend/.venv/
 .superpowers/

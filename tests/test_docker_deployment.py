@@ -22,9 +22,15 @@ def pyproject() -> str:
 def test_dockerfile_builds_frontend_and_runs_backend(dockerfile: str) -> None:
     assert "npm run build" in dockerfile
     assert (
-        "COPY --from=web-builder /build/frontend/dist ./frontend/dist"
+        "COPY --from=web-builder /build/frontend/client/dist ./frontend/client/dist"
         in dockerfile
     )
+    assert (
+        "COPY --from=web-builder /build/frontend/admin/dist ./frontend/admin/dist"
+        in dockerfile
+    )
+    assert "COPY frontend/.npmrc" in dockerfile
+    assert "npm ci --legacy-peer-deps" in dockerfile
     assert '"jzk.main:app"' in dockerfile
 
 

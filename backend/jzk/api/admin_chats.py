@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from jzk.api.admin_permissions import USERS_VIEW, require_permission
 from jzk.db import admin_chats_repo
-from jzk.db.chat_contracts import ChatErrorCode
+from jzk.db.chat_contracts import (
+    ChatErrorCode,
+    ChatListPage,
+    ConversationTreeView,
+    MessagePathPage,
+)
 from jzk.chat.conversation_queries import ConversationQueryError, ConversationQueryService
 
 
@@ -51,7 +56,7 @@ def _audit(
     )
 
 
-@router.get("")
+@router.get("", response_model=ChatListPage)
 def list_admin_conversations(
     user_id: int,
     cursor: str | None = None,
@@ -75,7 +80,7 @@ def list_admin_conversations(
     return page
 
 
-@router.get("/{chat_id}")
+@router.get("/{chat_id}", response_model=ConversationTreeView)
 def get_admin_conversation(
     user_id: int,
     chat_id: int,
@@ -89,7 +94,7 @@ def get_admin_conversation(
     return tree
 
 
-@router.get("/{chat_id}/branches/{branch_id}/messages")
+@router.get("/{chat_id}/branches/{branch_id}/messages", response_model=MessagePathPage)
 def get_admin_message_path(
     user_id: int,
     chat_id: int,
@@ -145,7 +150,7 @@ def get_admin_message_match(
     return result
 
 
-@router.get("/{chat_id}/branches/{branch_id}/messages/{message_id}/context")
+@router.get("/{chat_id}/branches/{branch_id}/messages/{message_id}/context", response_model=MessagePathPage)
 def get_admin_message_context(
     user_id: int,
     chat_id: int,

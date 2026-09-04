@@ -6,7 +6,6 @@ import type {
   ChatV2Summary,
   FrozenMatchPage,
 } from '../../../types'
-import { CHAT_WELCOME_MESSAGE, CHAT_WELCOME_TITLE } from '../../../features/chat/chatState'
 import { formatTime } from '../adminFormat'
 import { adminChatApi, type AdminGenerationTrace } from './adminChatApi'
 import {
@@ -17,6 +16,9 @@ import {
   type AgentToolCall,
   type AgentTranscriptEvent,
 } from './adminChatState'
+
+const CHAT_WELCOME_TITLE = '您好'
+const CHAT_WELCOME_MESSAGE = '描述您的期望，我会帮您筛选合适的候选人。'
 
 type LoadState = { loading: boolean; error: string }
 type AssistantArtifacts = {
@@ -80,7 +82,7 @@ export function AdminConversationWorkspace({
     try {
       const page = await adminChatApi.list(userId, reset ? null : chatCursor)
       setChats((current) => reset ? page.items : [...current, ...page.items])
-      setChatCursor(page.next_cursor)
+      setChatCursor(page.next_cursor ?? null)
       setChatHasMore(page.has_more)
       setListState(IDLE)
       if (reset && initialChatId) await openChat(initialChatId, initialBranchId, initialMessageId)

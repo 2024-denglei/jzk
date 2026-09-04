@@ -1,0 +1,27 @@
+{
+  "name": "@jzk/admin",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "node --test src/pages/admin/adminAccountForm.test.mjs src/pages/admin/adminFormat.test.mjs src/pages/admin/adminLayout.test.mjs src/pages/admin/adminPermissions.test.mjs src/pages/admin/donorForm.test.mjs src/pages/admin/chat/adminChatState.test.mjs"
+  },
+  "dependencies": {
+    "@jzk/shared": "*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
+  }
+}

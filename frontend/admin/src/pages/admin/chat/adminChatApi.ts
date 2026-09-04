@@ -1,17 +1,13 @@
 import type {
   ChatConversationTree,
+  ChatListPage,
   ChatMessagePathPage,
-  ChatV2Summary,
   FrozenMatchPage,
   GenerationRun,
 } from '../../../types'
 import { adminFetch } from '../adminApi'
 
-export type AdminChatListPage = {
-  items: ChatV2Summary[]
-  next_cursor: string | null
-  has_more: boolean
-}
+export type AdminChatListPage = ChatListPage
 
 export type GenerationStep = {
   id: number

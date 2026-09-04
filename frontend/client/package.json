@@ -1,0 +1,27 @@
+{
+  "name": "@jzk/client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "node --test src/lib/api.test.mjs src/lib/pagination.test.mjs src/lib/matchPagination.test.mjs src/lib/uuid.test.mjs src/lib/donorsWorkbench.test.mjs src/lib/workbenchLayout.test.mjs src/features/chat/chatActions.test.mjs src/features/chat/chatState.test.mjs src/features/chat/chatTabs.test.mjs src/features/chat/generationStream.test.mjs"
+  },
+  "dependencies": {
+    "@jzk/shared": "*",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
+  }
+}

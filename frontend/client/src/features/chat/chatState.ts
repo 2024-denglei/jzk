@@ -65,7 +65,7 @@ export function mergeMessagePage(
       ...state.pathsByBranch,
       [page.branch_id]: {
         ids,
-        nextBefore: page.next_before,
+        nextBefore: page.next_before ?? null,
         hasMore: page.has_more,
       },
     },
