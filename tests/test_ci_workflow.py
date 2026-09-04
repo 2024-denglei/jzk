@@ -49,9 +49,12 @@ def test_backend_job_runs_the_whole_suite(workflow: dict) -> None:
     assert "--ignore" not in commands
 
 
-def test_backend_job_takes_torch_from_the_cpu_index(workflow: dict) -> None:
-    """与 Dockerfile 取同一个 torch 构建，避免线上线下推理结果漂移。"""
-    assert "https://download.pytorch.org/whl/cpu" in _run_commands(workflow, "backend")
+def test_backend_job_installs_from_the_lock_file(workflow: dict) -> None:
+    """必须带 --locked：否则改了 pyproject 忘记重新锁定时 CI 会装出另一套依赖，
+
+    而它验证的就不再是即将发布的那套环境了。
+    """
+    assert "uv sync --locked" in _run_commands(workflow, "backend")
 
 
 def test_frontend_job_covers_types_tests_and_lint(workflow: dict) -> None:

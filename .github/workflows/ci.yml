@@ -52,21 +52,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: requirements.txt
+          version: '0.11.28'
+          enable-cache: true
 
       - name: 安装依赖
-        # 与 Dockerfile 一致，从 CPU 专用源取 torch，避免拉进 CUDA 运行时。
-        run: |
-          python -m pip install --upgrade pip
-          pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.2,<3"
-          pip install -r requirements.txt
+        # --locked 会在 pyproject.toml 改了却忘记重新锁定时直接失败，因此 CI 装的
+        # 依赖不可能与 uv.lock 不一致。Python 版本与 torch 的 CPU 源都由 pyproject
+        # 决定，这里不再重复声明。
+        run: uv sync --locked
 
       - name: 跑全量测试
-        run: python -m pytest -q
+        run: uv run --locked pytest -q
 
   frontend:
     name: 前端检查
