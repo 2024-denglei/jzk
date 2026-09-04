@@ -2,6 +2,8 @@
 
 面向本仓库协作的 AI / Agent，必须遵守以下交付纪律。
 
+改分层、目录或 HTTP 契约时读 `docs/architecture.md`。用词以 `CONTEXT.md` 为准。已接受的取舍在 `docs/adr/`。
+
 ## 1. 每次改动完成后必须创建 Git Commit
 
 - 完成一轮可交付的代码改动后，**必须**创建 git commit，便于后续追踪与回滚。

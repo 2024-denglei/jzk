@@ -148,17 +148,8 @@ def _existing_dir(*candidates: Path) -> Path | None:
     return None
 
 
-_PACKAGE_DIR = Path(__file__).resolve().parent
-_BACKEND_ROOT = _PACKAGE_DIR.parent
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _BACKEND_ROOT.parent
-docs_dir = str(
-    _existing_dir(
-        Path.cwd() / "docs",
-        _BACKEND_ROOT / "docs",
-        _REPO_ROOT / "docs",
-    )
-    or (Path.cwd() / "docs")
-)
 client_dist = str(
     _existing_dir(
         Path.cwd() / "frontend" / "client" / "dist",
@@ -175,17 +166,6 @@ admin_dist = str(
     )
     or (Path.cwd() / "frontend" / "admin" / "dist")
 )
-if os.path.isdir(docs_dir):
-    app.mount("/docs-static", StaticFiles(directory=docs_dir), name="docs-static")
-
-
-@app.get("/architecture")
-async def architecture():
-    """架构图页面。"""
-    arch_path = os.path.join(docs_dir, "chat-v2-architecture.html")
-    if os.path.exists(arch_path):
-        return FileResponse(arch_path)
-    return {"message": "架构图未找到"}
 
 
 @app.get("/api/featured")
@@ -283,12 +263,10 @@ if os.path.isdir(client_dist):
             full_path,
             reserved=(
                 "api/",
-                "docs-static/",
                 "docs",
                 "openapi",
                 "redoc",
                 "health",
-                "architecture",
                 "assets/",
                 "admin",
             ),

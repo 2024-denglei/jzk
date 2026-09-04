@@ -32,6 +32,7 @@ def test_dockerfile_builds_frontend_and_runs_backend(dockerfile: str) -> None:
     assert "COPY frontend/.npmrc" in dockerfile
     assert "npm ci --legacy-peer-deps" in dockerfile
     assert '"jzk.main:app"' in dockerfile
+    assert "COPY docs" not in dockerfile
 
 
 def test_image_installs_from_the_lock_file_without_dev_dependencies(dockerfile: str) -> None:
@@ -111,3 +112,4 @@ def test_secrets_and_local_artifacts_are_excluded_from_image() -> None:
     assert ".git" in ignored
     assert ".venv" in ignored
     assert "frontend/node_modules" in ignored
+    assert "docs/archive" in ignored

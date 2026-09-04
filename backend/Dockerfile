@@ -41,7 +41,6 @@ RUN pip install --upgrade pip \
 
 COPY backend/scripts ./scripts
 COPY backend/checkpoints ./checkpoints
-COPY docs ./docs
 COPY --from=web-builder /build/frontend/client/dist ./frontend/client/dist
 COPY --from=web-builder /build/frontend/admin/dist ./frontend/admin/dist
 

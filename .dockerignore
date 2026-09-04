@@ -12,4 +12,4 @@ frontend/admin/dist
 backend/.venv
 data
 *.xlsx
-docs/superpowers
+docs/archive

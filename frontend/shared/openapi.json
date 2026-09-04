@@ -6744,23 +6744,6 @@
         ]
       }
     },
-    "/architecture": {
-      "get": {
-        "description": "架构图页面。",
-        "operationId": "architecture_architecture_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Architecture"
-      }
-    },
     "/health": {
       "get": {
         "description": "健康检查。",

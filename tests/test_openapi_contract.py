@@ -49,3 +49,7 @@ def test_spa_shell_is_not_part_of_the_http_contract() -> None:
     paths = app.openapi()["paths"]
     for path in ("/", "/{full_path}", "/admin", "/admin/{full_path}"):
         assert path not in paths, f"SPA 入口 {path} 不应出现在 OpenAPI 契约里"
+
+
+def test_architecture_page_is_not_part_of_the_http_contract() -> None:
+    assert "/architecture" not in app.openapi()["paths"]
