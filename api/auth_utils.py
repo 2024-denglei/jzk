@@ -7,23 +7,14 @@ import uuid
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 import config
+from db.users_repo import get_auth_state
+from passwords import hash_password, verify_password
 
 SECRET_KEY = config.JWT_SECRET
 ALGORITHM = "HS256"
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
-
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
 
 
 def create_access_token(
@@ -91,13 +82,7 @@ def get_current_user_id(
     except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效令牌")
 
-    from db.database import db_session
-
-    with db_session() as conn:
-        row = conn.execute(
-            "SELECT status, token_version FROM app.users WHERE id = %s",
-            (user_id,),
-        ).fetchone()
+    row = get_auth_state(user_id)
     if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在")
     if row["status"] != "active":

@@ -1,8 +1,6 @@
 """校验后的偏好画像匹配、严格快照与详情分页。"""
 
 from typing import Any
-import time
-from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,25 +8,19 @@ from pydantic import BaseModel, Field
 
 import config
 from api.auth_utils import get_current_user_id
-from api.match_cursor import InvalidMatchCursor, decode_match_cursor, encode_match_cursor
-from core.preference.pipeline import match_profile
+from matching.cursor import InvalidMatchCursor, decode_match_cursor, encode_match_cursor
 from core.preference.result_types import MatchResultMeta, MatchSnapshotItem
 from core.preference.scoring_contract import RankerInputError, RankerUnavailable
-from core.preference.validate import ProfileValidationError, parse_profile
-from db.donors_repo import (
-    get_donor_dataset_version,
-    get_donor_statuses_by_ids,
-)
+from core.preference.validate import ProfileValidationError
+from db.donors_repo import get_donor_statuses_by_ids
 from db.match_runs_repo import (
-    MatchRunValidationError,
-    create_match_run,
     delete_match_run,
     get_match_run,
     get_match_run_items_page,
     match_run_is_expired,
-    profile_digest,
 )
 from dialogue.match_snapshot_queries import MatchSnapshotNotFound, get_frozen_match_page
+from matching.execute import execute_match
 
 router = APIRouter(tags=["match"])
 
@@ -51,108 +43,6 @@ def match_scoring_readiness():
             status_code=503,
             detail={"code": "MATCH_SCORER_NOT_READY", "message": str(exc)},
         ) from exc
-
-
-def _initial_page_size(top_k: int, page_size: int | None) -> int:
-    if top_k > 0:  # 兼容迁移期旧调用方
-        return min(top_k, 100)
-    requested = page_size or config.MATCH_RESULT_PAGE_SIZE_DEFAULT
-    return max(1, min(requested, config.MATCH_RESULT_PAGE_SIZE_MAX))
-
-
-def execute_match(
-    raw_profile: dict[str, Any],
-    top_k: int = 0,
-    *,
-    page_size: int | None = None,
-    owner_user_id: int | None = None,
-    **match_kwargs,
-) -> dict[str, Any]:
-    """匹配层实现：校验画像后过滤+排序。HTTP 与对话共用。"""
-    t0 = time.perf_counter()
-    profile = parse_profile(raw_profile)
-    parse_ms = (time.perf_counter() - t0) * 1000
-    detail_limit = _initial_page_size(top_k, page_size)
-    match_kwargs.setdefault("detail_limit", detail_limit)
-    match_kwargs.setdefault(
-        "build_snapshot",
-        bool(
-            owner_user_id is not None
-            and (config.MATCH_SNAPSHOT_ENABLED or config.MATCH_RESULT_PAGING_ENABLED)
-        ),
-    )
-    result = match_profile(profile, **match_kwargs)
-    candidates = result.candidates[:detail_limit]
-    slice_ms = 0.0
-    # 兼容 mock/旧自定义 matcher 未识别 detail_limit 的情况。
-    if top_k > 0:
-        t1 = time.perf_counter()
-        candidates = candidates[:top_k]
-        slice_ms = (time.perf_counter() - t1) * 1000
-
-    result_set_id: str | None = None
-    refs = list(result.ranked_refs or [])
-    total = (
-        len(refs)
-        if refs
-        else int(
-            result.ranked_count
-            if result.ranked_count is not None
-            else result.filtered_count
-        )
-    )
-    model_version = result.model_version or config.MATCH_MODEL_VERSION
-    if (
-        owner_user_id is not None
-        and total > 0
-        and not result.skipped
-        and len(refs) == total
-        and (config.MATCH_SNAPSHOT_ENABLED or config.MATCH_RESULT_PAGING_ENABLED)
-    ):
-        result_set_id = str(uuid4())
-        meta = MatchResultMeta(
-            result_set_id=result_set_id,
-            owner_user_id=owner_user_id,
-            total=total,
-            profile=profile.model_dump(mode="json"),
-            profile_hash=profile_digest(profile.model_dump(mode="json")),
-            model_version=model_version,
-            model_checkpoint_sha256=result.checkpoint_sha256,
-            dataset_version=get_donor_dataset_version(),
-            prefer_hits=list(result.prefer_hits or []),
-        )
-        if len(result.snapshot_items) != total:
-            raise MatchRunValidationError("匹配结果缺少完整候选展示快照")
-        meta = create_match_run(meta, refs, result.snapshot_items)
-
-    timings = dict(result.timings or {})
-    timings["parse_profile_ms"] = round(parse_ms, 1)
-    if top_k > 0:
-        timings["top_k_slice_ms"] = round(slice_ms, 1)
-    next_offset = len(candidates)
-    next_cursor = (
-        encode_match_cursor(result_set_id, next_offset)
-        if result_set_id and next_offset < total
-        else None
-    )
-    return {
-        "ok": True,
-        "skipped": result.skipped,
-        "match_level": result.match_level,
-        "filtered_count": result.filtered_count,
-        "ranked_count": total,
-        "total": total,
-        "returned_count": len(candidates),
-        "bottlenecks": result.bottlenecks,
-        "candidates": candidates,
-        "items": candidates,
-        "result_set_id": result_set_id,
-        "next_cursor": next_cursor,
-        "timings": timings,
-        "prefer_hits": list(result.prefer_hits or []),
-        "model_version": model_version,
-        "model_checkpoint_sha256": result.checkpoint_sha256,
-    }
 
 
 def frozen_match_page_payload(

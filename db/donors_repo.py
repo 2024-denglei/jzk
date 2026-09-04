@@ -9,7 +9,9 @@ from typing import Any
 
 import pandas as pd
 
+from core.preference.schema import PreferenceProfile
 from db.donor_fields import DB_TO_MATCH_CN, DONOR_DB_COLUMNS
+from db.hard_filter import build_hard_filter_sql
 from db.pg import db_session, fetchall, fetchone
 
 
@@ -80,6 +82,32 @@ def load_donors_dataframe(active_only: bool = False) -> pd.DataFrame:
         return pd.DataFrame(columns=list(DB_TO_MATCH_CN.values()))
     records = [row_to_match_dict(r) for r in rows]
     return pd.DataFrame(records)
+
+
+def load_donor_data(active_only: bool = False) -> pd.DataFrame:
+    """官方库捐精人（中文列）。空库允许启动，缺必要列则拒绝。"""
+    df = load_donors_dataframe(active_only=active_only)
+    required_cols = ["代号", "ABO血型", "民族", "身高", "学历", "体型", "标本数量"]
+    if df.empty:
+        return df
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"捐精人数据缺少必要列: {missing}")
+    return df
+
+
+def fetch_matching_donors(profile: PreferenceProfile) -> list[dict[str, Any]]:
+    sql, params = build_hard_filter_sql(profile)
+    with db_session() as conn:
+        return fetchall(conn, sql, params)
+
+
+def count_matching_donors(profile: PreferenceProfile) -> int:
+    sql, params = build_hard_filter_sql(profile)
+    count_sql = sql.replace("SELECT *", "SELECT COUNT(*) AS c", 1)
+    with db_session() as conn:
+        row = fetchone(conn, count_sql, params)
+        return int(row["c"]) if row else 0
 
 
 def get_donor_by_code(code: str) -> dict[str, Any] | None:

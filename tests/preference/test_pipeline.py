@@ -6,10 +6,24 @@ from core.preference.scorer import FieldScore, HeuristicRanker
 from core.preference.validate import parse_profile
 
 
+def test_match_profile_requires_injected_fetch():
+    profile = parse_profile({
+        "schema_version": "1.0",
+        "attributes": {
+            "abo_blood": {"constraint": "must", "weight": 1, "values": ["O"]},
+        },
+    })
+    try:
+        match_profile(profile)
+        assert False, "expected TypeError"
+    except TypeError as exc:
+        assert "fetch_rows" in str(exc)
+
+
 def test_empty_attributes_does_not_query():
     called = []
     profile = parse_profile({"schema_version": "1.0", "attributes": {}})
-    result = match_profile(profile, fetch_rows=lambda s, p: called.append((s, p)) or [])
+    result = match_profile(profile, fetch_rows=lambda profile: called.append(profile) or [])
     assert result.candidates == []
     assert result.skipped is True
     assert result.prefer_hits == []
@@ -25,8 +39,8 @@ def test_zero_rows_returns_bottlenecks_not_relaxed():
     })
     result = match_profile(
         profile,
-        fetch_rows=lambda s, p: [],
-        count_rows=lambda s, p: 0,
+        fetch_rows=lambda _profile: [],
+        count_rows=lambda _profile: 0,
         log=False,
     )
     assert result.candidates == []
@@ -47,7 +61,7 @@ def test_ranks_by_score():
         {"code": "T", "abo_blood": "O", "height_cm": 185, "specimen_count": 3, "status": "active"},
     ]
     result = match_profile(
-        profile, fetch_rows=lambda s, p: rows, ranker=HeuristicRanker(), log=False
+        profile, fetch_rows=lambda _profile: rows, ranker=HeuristicRanker(), log=False
     )
     assert result.candidates[0]["donor_info"]["code"] == "T"
     assert result.candidates[0]["score"] > result.candidates[1]["score"]
@@ -76,7 +90,7 @@ def test_prefer_hits_counts_without_filtering():
         {"code": "C", "abo_blood": "O", "hometown": "重庆南岸", "specimen_count": 1, "status": "active"},
     ]
     result = match_profile(
-        profile, fetch_rows=lambda s, p: rows, ranker=HeuristicRanker(), log=False
+        profile, fetch_rows=lambda _profile: rows, ranker=HeuristicRanker(), log=False
     )
     assert result.filtered_count == 3
     assert result.prefer_hits == [
@@ -116,7 +130,7 @@ def test_decimal_weight_is_json_serializable(tmp_path, monkeypatch):
     rows = [{"code": "W", "weight_kg": Decimal("68.50"), "status": "active"}]
     result = match_profile(
         profile,
-        fetch_rows=lambda s, p: rows,
+        fetch_rows=lambda _profile: rows,
         ranker=_DecimalWeightRanker(),
         log=True,
     )

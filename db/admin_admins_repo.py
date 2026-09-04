@@ -237,6 +237,47 @@ def admin_exists(admin_id: int) -> bool:
     return bool(row)
 
 
+def get_active_admin(admin_id: int) -> dict[str, Any] | None:
+    with db_session(admin=True) as conn:
+        return fetchone(
+            conn,
+            "SELECT * FROM admin.admin_users WHERE id = %s AND is_active = TRUE",
+            (admin_id,),
+        )
+
+
+def get_active_admin_by_username(username: str) -> dict[str, Any] | None:
+    with db_session(admin=True) as conn:
+        return fetchone(
+            conn,
+            "SELECT * FROM admin.admin_users WHERE username = %s AND is_active = TRUE",
+            (username.strip(),),
+        )
+
+
+def change_admin_password(admin_id: int, old_password: str, new_password: str) -> bool:
+    """在同一事务里校验原密码并轮换哈希。失败返回 False，不抛错。"""
+    from passwords import hash_password, verify_password
+
+    with db_session(admin=True) as conn:
+        row = fetchone(
+            conn,
+            "SELECT password_hash FROM admin.admin_users WHERE id = %s FOR UPDATE",
+            (admin_id,),
+        )
+        if not row or not verify_password(old_password, row["password_hash"]):
+            return False
+        conn.execute(
+            """
+            UPDATE admin.admin_users
+            SET password_hash = %s, token_version = token_version + 1, updated_at = now()
+            WHERE id = %s
+            """,
+            (hash_password(new_password), admin_id),
+        )
+    return True
+
+
 _DONOR_AUDIT_SELECT = """
     SELECT 'donor'::text AS source, l.id AS record_id, l.action,
            l.donor_code AS target_id,

@@ -48,7 +48,7 @@ def test_match_returns_503_when_ranker_unavailable(monkeypatch):
     def boom(*args, **kwargs):
         raise RankerUnavailable("找不到评分服务")
 
-    monkeypatch.setattr(match_mod, "match_profile", boom)
+    monkeypatch.setattr("matching.execute.match_profile", boom)
     with pytest.raises(HTTPException) as exc_info:
         _match({"profile": VALID_PROFILE})
     assert exc_info.value.status_code == 503
@@ -104,7 +104,7 @@ def test_match_ranks_and_returns_field_scores(monkeypatch):
             filtered_count=2,
         )
 
-    monkeypatch.setattr(match_mod, "match_profile", fake_match)
+    monkeypatch.setattr("matching.execute.match_profile", fake_match)
     data = _match({"profile": VALID_PROFILE})
     assert data["ok"] is True
     assert data["filtered_count"] == 2
@@ -117,8 +117,7 @@ def test_zero_hits_returns_bottlenecks(monkeypatch):
     from api import match as match_mod
 
     monkeypatch.setattr(
-        match_mod,
-        "match_profile",
+        "matching.execute.match_profile",
         lambda profile, **kwargs: MatchResult(
             candidates=[],
             match_level="none",
@@ -137,8 +136,7 @@ def test_top_k_truncates(monkeypatch):
     from api import match as match_mod
 
     monkeypatch.setattr(
-        match_mod,
-        "match_profile",
+        "matching.execute.match_profile",
         lambda profile, **kwargs: MatchResult(
             candidates=[
                 {"rank": 1, "score": 0.9, "donor_info": {"code": "A"}, "field_scores": []},
@@ -160,8 +158,7 @@ def test_execute_match_returns_prefer_hits_before_top_k(monkeypatch):
 
     hits = [{"field": "hometown", "label": "籍贯", "hits": 2, "of": 3}]
     monkeypatch.setattr(
-        match_mod,
-        "match_profile",
+        "matching.execute.match_profile",
         lambda profile, **kwargs: MatchResult(
             candidates=[
                 {"rank": 1, "score": 0.9, "donor_info": {"code": "A"}, "field_scores": []},

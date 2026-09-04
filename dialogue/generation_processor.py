@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import config
-from api.match import execute_match
+from matching.execute import execute_match
 from core.preference.scoring_contract import RankerUnavailable
 from core.preference.schema import EXTENDED_FIELDS
 from core.preference.validate import ProfileValidationError, parse_profile

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
 import config
-from core.data_loader import load_donor_data
+from db.donors_repo import load_donor_data
 from core.feature_engine import FeatureEncoder
 from api.search import router as search_router
 from api.auth import router as auth_router

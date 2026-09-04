@@ -16,7 +16,7 @@ from api.admin_permissions import (
     has_permission,
     require_permission,
 )
-from core.runtime_cache import refresh_donor_cache, update_donor_status_cache
+from matching.runtime_cache import refresh_donor_cache, update_donor_status_cache
 from db.admin_requests_repo import (
     cancel_operation_request,
     claim_operation_request,

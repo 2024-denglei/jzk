@@ -123,6 +123,9 @@ class _Cursor:
     def fetchone(self):
         return self.row
 
+    def fetchall(self):
+        return [] if self.row is None else [self.row]
+
 
 class _FakeDatabase:
     def __init__(self):
@@ -163,6 +166,8 @@ class _FakeConnection:
             }
             self.database.users.append(user)
             return _Cursor(user)
+        if normalized.startswith("SELECT * FROM app.users WHERE id"):
+            return _Cursor(self._find("id", params[0]))
         if normalized.startswith("SELECT * FROM app.users WHERE email"):
             return _Cursor(self._find("email", params[0]))
         if normalized.startswith("SELECT * FROM app.users WHERE phone"):
@@ -203,7 +208,7 @@ class _FakeCodes:
 def test_register_password_and_code_login_and_password_reset(monkeypatch):
     database = _FakeDatabase()
     codes = _FakeCodes()
-    monkeypatch.setattr(auth_mod, "db_session", database.session)
+    monkeypatch.setattr("db.users_repo.db_session", database.session)
     monkeypatch.setattr(auth_mod, "verification_codes", codes)
     monkeypatch.setattr(auth_mod.config, "EXPOSE_TEST_VERIFICATION_CODE", True)
     monkeypatch.setattr(auth_mod, "rate_limiter", _NoopRateLimiter())

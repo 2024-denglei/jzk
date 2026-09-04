@@ -104,7 +104,7 @@ def test_invalid_profile_keeps_previous():
     candidates, payload = run_preference_match(
         session,
         {"schema_version": "1.0", "attributes": {"code": {"constraint": "must", "weight": 1, "keywords": ["x"]}}},
-        fetch_rows=lambda s, p: [],
+        fetch_rows=lambda _profile: [],
         log=False,
     )
     assert session.preference_profile["attributes"]["abo_blood"]["values"] == ["O"]
@@ -127,7 +127,7 @@ def test_valid_profile_replaces_and_matches():
                 "abo_blood": {"constraint": "must", "weight": 1, "values": ["O"]},
             },
         },
-        fetch_rows=lambda s, p: rows,
+        fetch_rows=lambda _profile: rows,
         ranker=HeuristicRanker(),
         log=False,
     )

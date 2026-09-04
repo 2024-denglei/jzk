@@ -1,25 +1,8 @@
-"""数据加载模块：从 PostgreSQL 加载捐精人数据并预处理。"""
+"""捐精人行 → 前端展示字段。不再负责从库里取数。"""
 
 from __future__ import annotations
 
 from datetime import date
-
-import pandas as pd
-
-from db.donors_repo import load_donors_dataframe, row_to_match_dict
-
-
-def load_donor_data(active_only: bool = False) -> pd.DataFrame:
-    """从官方库加载捐精人数据（中文列 DataFrame，供匹配使用）。"""
-    df = load_donors_dataframe(active_only=active_only)
-    required_cols = ["代号", "ABO血型", "民族", "身高", "学历", "体型", "标本数量"]
-    # 空库允许启动（管理端后续导入）
-    if df.empty:
-        return df
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        raise ValueError(f"捐精人数据缺少必要列: {missing}")
-    return df
 
 
 def _calc_age(birth_val) -> int:
@@ -47,10 +30,15 @@ def _float_safe(v, default: float = 0.0) -> float:
         return default
 
 
-def _val(row, key) -> str:
-    v = row.get(key, "") if hasattr(row, "get") else (row[key] if key in row.index else "")
-    s = str(v)
-    return "" if s in ("nan", "NaT", "None", "") else s
+def _val(row, *keys, default: str = "") -> str:
+    for key in keys:
+        v = row.get(key, "") if hasattr(row, "get") else (
+            row[key] if key in getattr(row, "index", []) else ""
+        )
+        s = str(v) if v is not None else ""
+        if s not in ("nan", "NaT", "None", ""):
+            return s
+    return default
 
 
 # 未登录列表/筛选允许返回的 donor_info 字段（与 DonorCard 展示一致）
@@ -77,101 +65,88 @@ def to_card_donor_info(info: dict) -> dict:
 
 
 def get_donor_display_info(row) -> dict:
-    """提取用于前端展示的捐精人信息。"""
-    # 支持 Series 或 dict
-    if isinstance(row, dict):
-        data = row
-        # DB 行转中文列
-        if "code" in data and "代号" not in data:
-            data = row_to_match_dict(data)
-    else:
-        data = row
+    """提取用于前端展示的捐精人信息。同时认中文列名和库列名。"""
+    data = row
 
     def g(*keys, default=""):
-        for k in keys:
-            if hasattr(data, "get"):
-                v = data.get(k)
-            else:
-                v = data[k] if k in getattr(data, "index", []) else None
-            s = str(v) if v is not None else ""
-            if s not in ("nan", "NaT", "None", ""):
-                return s if default == "" or not isinstance(default, int) else v
-        return default
+        return _val(data, *keys, default=default)
 
-    # 新表六类爱好多为「有/无」：摘要只列出为「有」的类别
     hobby_pairs = [
-        ("爱好运动", "运动健身"),
-        ("爱好艺术", "文化艺术"),
-        ("爱好休闲", "休闲娱乐"),
-        ("爱好旅游", "旅游度假"),
-        ("爱好阅读", "小说书籍"),
-        ("爱好美食", "美食饮品"),
+        (("爱好运动", "hobby_sports"), "运动健身"),
+        (("爱好艺术", "hobby_arts"), "文化艺术"),
+        (("爱好休闲", "hobby_leisure"), "休闲娱乐"),
+        (("爱好旅游", "hobby_travel"), "旅游度假"),
+        (("爱好阅读", "hobby_reading"), "小说书籍"),
+        (("爱好美食", "hobby_food"), "美食饮品"),
     ]
     hobby_parts: list[str] = []
-    for key, label in hobby_pairs:
-        v = _val(data, key)
+    for keys, label in hobby_pairs:
+        v = g(*keys)
         if v == "有":
             hobby_parts.append(label)
         elif v and v not in ("无",):
             hobby_parts.append(f"{label}·{v}")
-    single_hobby = _val(data, "爱好")
+    single_hobby = g("爱好", "hobby")
     hobby = "；".join(hobby_parts) if hobby_parts else single_hobby
 
-    height = data.get("身高", 0) if hasattr(data, "get") else data.get("身高", 0)
-    weight = data.get("体重", 0) if hasattr(data, "get") else 0
-    bmi = data.get("BMI", data.get("体征指数", 0)) if hasattr(data, "get") else 0
-    specimen = data.get("标本数量", 0) if hasattr(data, "get") else 0
+    height = g("身高", "height_cm", "height") or 0
+    weight = g("体重", "weight_kg", "weight") or 0
+    bmi = g("BMI", "体征指数", "bmi") or 0
+    specimen = g("标本数量", "specimen_count") or 0
+    birth = None
+    if hasattr(data, "get"):
+        birth = data.get("出生日期") or data.get("birth_date")
 
     return {
-        "id": _val(data, "编号") or _val(data, "代号"),
-        "code": _val(data, "代号"),
-        "blood_type": _val(data, "ABO血型") or _val(data, "血型"),
-        "rh_blood": _val(data, "Rh血型") or _val(data, "RH血型"),
-        "ethnicity": _val(data, "民族"),
-        "height": int(height or 0),
-        "age": _calc_age(data.get("出生日期") if hasattr(data, "get") else None),
-        "constellation": _val(data, "星座"),
-        "hometown": _val(data, "籍贯"),
-        "occupation": _val(data, "职业"),
-        "education": _val(data, "学历"),
-        "face_shape": _val(data, "脸型"),
-        "eyelid": _val(data, "眼皮"),
-        "skin_color": _val(data, "肤色"),
-        "lip_shape": _val(data, "唇型") or _val(data, "唇形"),
-        "nose_bridge": _val(data, "鼻梁"),
-        "hair_color": _val(data, "发色") or _val(data, "头发颜色"),
-        "hair_style": _val(data, "发型"),
-        "hair_volume": _val(data, "发量"),
-        "beard": _val(data, "络腮胡") or _val(data, "络腓胡"),
-        "mustache": _val(data, "胡须"),
-        "figure": _val(data, "体型"),
+        "id": g("编号", "id") or g("代号", "code"),
+        "code": g("代号", "code"),
+        "blood_type": g("ABO血型", "血型", "abo_blood"),
+        "rh_blood": g("Rh血型", "RH血型", "rh_blood"),
+        "ethnicity": g("民族", "ethnicity"),
+        "height": int(float(height or 0)),
+        "age": _calc_age(birth),
+        "constellation": g("星座", "constellation"),
+        "hometown": g("籍贯", "hometown"),
+        "occupation": g("职业", "occupation"),
+        "education": g("学历", "education"),
+        "face_shape": g("脸型", "face_shape"),
+        "eyelid": g("眼皮", "eyelid"),
+        "skin_color": g("肤色", "skin_color"),
+        "lip_shape": g("唇型", "唇形", "lip_shape"),
+        "nose_bridge": g("鼻梁", "nose_bridge"),
+        "hair_color": g("发色", "头发颜色", "hair_color"),
+        "hair_style": g("发型", "hair_style"),
+        "hair_volume": g("发量", "hair_volume"),
+        "beard": g("络腮胡", "络腓胡", "sideburns"),
+        "mustache": g("胡须", "mustache"),
+        "figure": g("体型", "figure"),
         "weight": _float_safe(weight),
         "bmi": _float_safe(bmi),
-        "personality": _val(data, "性格"),
+        "personality": g("性格", "personality"),
         "hobby": hobby,
-        "hobby_sports": _val(data, "爱好运动"),
-        "hobby_arts": _val(data, "爱好艺术"),
-        "hobby_leisure": _val(data, "爱好休闲"),
-        "hobby_travel": _val(data, "爱好旅游"),
-        "hobby_reading": _val(data, "爱好阅读"),
-        "hobby_food": _val(data, "爱好美食"),
-        "drink_history": _val(data, "喝酒史"),
-        "smoke_history": _val(data, "吸烟史"),
-        "personal_disease": _val(data, "个人病史"),
-        "present_illness": _val(data, "现病史"),
-        "past_illness": _val(data, "既往病史"),
-        "surgery_history": _val(data, "手术史"),
-        "personal_life_hist": _val(data, "个人生活史"),
-        "partners_6m": _val(data, "性伴侣数"),
-        "std_history": _val(data, "性传播疾病史"),
-        "marital_fertility": _val(data, "婚育史"),
-        "marriage_age": _val(data, "结婚年龄"),
-        "children_info": _val(data, "生育子女"),
-        "genetic_history": _val(data, "遗传病史"),
-        "chromosome_disease": _val(data, "染色体病"),
-        "monogenic_disease": _val(data, "单基因遗传病"),
-        "polygenic_disease": _val(data, "多基因遗传病"),
-        "consanguinity": _val(data, "近亲婚配"),
-        "specimen_count": int(specimen or 0),
-        "status": _val(data, "状态") or "active",
+        "hobby_sports": g("爱好运动", "hobby_sports"),
+        "hobby_arts": g("爱好艺术", "hobby_arts"),
+        "hobby_leisure": g("爱好休闲", "hobby_leisure"),
+        "hobby_travel": g("爱好旅游", "hobby_travel"),
+        "hobby_reading": g("爱好阅读", "hobby_reading"),
+        "hobby_food": g("爱好美食", "hobby_food"),
+        "drink_history": g("喝酒史", "drink_history"),
+        "smoke_history": g("吸烟史", "smoke_history"),
+        "personal_disease": g("个人病史", "personal_disease"),
+        "present_illness": g("现病史", "present_illness"),
+        "past_illness": g("既往病史", "past_illness"),
+        "surgery_history": g("手术史", "surgery_history"),
+        "personal_life_hist": g("个人生活史", "personal_life_hist"),
+        "partners_6m": g("性伴侣数", "partners_6m"),
+        "std_history": g("性传播疾病史", "std_history"),
+        "marital_fertility": g("婚育史", "marital_fertility"),
+        "marriage_age": g("结婚年龄", "marriage_age"),
+        "children_info": g("生育子女", "children_info"),
+        "genetic_history": g("遗传病史", "genetic_history"),
+        "chromosome_disease": g("染色体病", "chromosome_disease"),
+        "monogenic_disease": g("单基因遗传病", "monogenic_disease"),
+        "polygenic_disease": g("多基因遗传病", "polygenic_disease"),
+        "consanguinity": g("近亲婚配", "consanguinity"),
+        "specimen_count": int(float(specimen or 0)),
+        "status": g("状态", "status") or "active",
     }

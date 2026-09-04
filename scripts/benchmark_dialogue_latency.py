@@ -14,9 +14,10 @@ import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.match import execute_match
 from core.preference.pipeline import match_profile
 from core.preference.validate import parse_profile
+from db.donors_repo import count_matching_donors, fetch_matching_donors
+from matching.execute import execute_match
 
 # 「研究生学历，身高175以上」对应的结构化画像（与顾问工具一致）
 TEST_PROFILE = {
@@ -41,7 +42,12 @@ def bench_match_layers(user_id: int) -> dict:
     out: dict = {}
 
     t0 = perf_counter()
-    result = match_profile(profile, build_snapshot=False)
+    result = match_profile(
+        profile,
+        fetch_rows=fetch_matching_donors,
+        count_rows=count_matching_donors,
+        build_snapshot=False,
+    )
     out["match_profile_ms"] = round((perf_counter() - t0) * 1000, 1)
     out["filtered_count"] = result.filtered_count
     out["ranked_count"] = result.ranked_count or len(result.ranked_refs or [])
@@ -72,8 +78,8 @@ def bench_scorer_http(base_url: str, token: str) -> dict:
     )
     profile = parse_profile(TEST_PROFILE)
 
+    from db.hard_filter import build_hard_filter_sql
     from db.pg import db_session, fetchall
-    from core.preference.pipeline import build_hard_filter_sql
 
     sql, params = build_hard_filter_sql(profile)
     with db_session() as conn:

@@ -25,7 +25,7 @@ def test_only_current_page_is_hydrated_while_all_refs_are_ranked(monkeypatch):
     monkeypatch.setattr(pipeline, "_candidate_dict", tracking_candidate)
     result = pipeline.match_profile(
         profile,
-        fetch_rows=lambda _sql, _params: rows,
+        fetch_rows=lambda _profile: rows,
         ranker=HeuristicRanker(),
         detail_limit=20,
     )

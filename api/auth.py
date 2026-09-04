@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from psycopg.errors import UniqueViolation
 
 import config
-from api.auth_utils import create_access_token, get_current_user_id, hash_password, verify_password
+from api.auth_utils import create_access_token, get_current_user_id
 from api.rate_limit import (
     RateLimitError,
     RateLimitUnavailable,
@@ -24,8 +24,20 @@ from api.refresh_sessions import (
 )
 from api.security import validate_cookie_origin
 from api.verification_codes import VerificationCodeError, VerificationCodeRateLimitError, verification_codes
-from db.database import db_session
+from db.users_repo import (
+    bump_token_version,
+    create_user,
+    find_email_or_phone,
+    get_by_id,
+    get_by_login_field,
+    get_by_phone,
+    get_id_by_phone,
+    record_login,
+    update_nickname,
+    update_password,
+)
 from password_policy import validate_password_strength
+from passwords import hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 CodePurpose = Literal["register", "login", "reset_password"]
@@ -202,11 +214,7 @@ def _ensure_login_allowed(row) -> None:
 
 
 def _record_login(user_id: int):
-    with db_session() as conn:
-        return conn.execute(
-            "UPDATE app.users SET last_login_at = now(), updated_at = now() WHERE id = %s RETURNING *",
-            (user_id,),
-        ).fetchone()
+    return record_login(user_id)
 
 
 def _consume_code(purpose: CodePurpose, phone: str, code: str) -> None:
@@ -255,11 +263,11 @@ async def send_code(body: SendCodeRequest, client_ip: str = Depends(get_client_i
     _check_rate("send-code:phone-day", body.phone, config.CODE_PHONE_DAILY_LIMIT, 86400)
     _check_rate("send-code:ip-hour", client_ip, config.CODE_IP_HOURLY_LIMIT, 3600)
 
-    with db_session() as conn:
-        row = conn.execute("SELECT id FROM app.users WHERE phone = %s", (body.phone,)).fetchone()
-
+    user_id = get_id_by_phone(body.phone)
     # 对已注册/未注册状态返回相同外部响应，避免通过发码接口枚举账号。
-    should_issue = (body.purpose == "register" and not row) or (body.purpose != "register" and row)
+    should_issue = (body.purpose == "register" and not user_id) or (
+        body.purpose != "register" and user_id
+    )
     code = None
     expires_in = config.VERIFICATION_CODE_TTL_SECONDS
 
@@ -290,28 +298,21 @@ async def register(
 ):
     _check_code_verification_ip(client_ip)
     nickname = (body.nickname or body.email.split("@")[0]).strip()
-    with db_session() as conn:
-        exists = conn.execute(
-            "SELECT email, phone FROM app.users WHERE email = %s OR phone = %s",
-            (body.email, body.phone),
-        ).fetchone()
-        if exists:
-            if exists["email"] == body.email:
-                raise HTTPException(status_code=400, detail="该邮箱已注册")
-            raise HTTPException(status_code=400, detail="该手机号已注册")
+    exists = find_email_or_phone(body.email, body.phone)
+    if exists:
+        if exists["email"] == body.email:
+            raise HTTPException(status_code=400, detail="该邮箱已注册")
+        raise HTTPException(status_code=400, detail="该手机号已注册")
 
     _consume_code("register", body.phone, body.code)
 
     try:
-        with db_session() as conn:
-            row = conn.execute(
-                """
-                INSERT INTO app.users (email, phone, password_hash, nickname)
-                VALUES (%s, %s, %s, %s)
-                RETURNING *
-                """,
-                (body.email, body.phone, hash_password(body.password), nickname),
-            ).fetchone()
+        row = create_user(
+            email=body.email,
+            phone=body.phone,
+            password_hash=hash_password(body.password),
+            nickname=nickname,
+        )
     except UniqueViolation as exc:
         raise HTTPException(status_code=400, detail="邮箱或手机号已注册") from exc
     return _token_response(_record_login(int(row["id"])) or row, response)
@@ -328,8 +329,7 @@ async def login(
     _check_rate("login:account", identifier, config.USER_LOGIN_LIMIT, config.USER_LOGIN_WINDOW_SECONDS)
     _check_rate("login:ip", client_ip, config.USER_LOGIN_LIMIT, config.USER_LOGIN_WINDOW_SECONDS)
     field = "email" if "@" in identifier else "phone"
-    with db_session() as conn:
-        row = conn.execute(f"SELECT * FROM app.users WHERE {field} = %s", (identifier,)).fetchone()
+    row = get_by_login_field(field, identifier)
     if not row or not verify_password(body.password, row["password_hash"]):
         raise HTTPException(status_code=400, detail="邮箱/手机号或密码错误")
     _ensure_login_allowed(row)
@@ -345,8 +345,7 @@ async def phone_login(
     _origin: None = Depends(validate_cookie_origin),
 ):
     _check_code_verification_ip(client_ip)
-    with db_session() as conn:
-        row = conn.execute("SELECT * FROM app.users WHERE phone = %s", (body.phone,)).fetchone()
+    row = get_by_phone(body.phone)
     if not row:
         raise HTTPException(status_code=400, detail="手机号或验证码错误")
     _ensure_login_allowed(row)
@@ -357,19 +356,14 @@ async def phone_login(
 @router.post("/reset-password")
 async def reset_password(body: ResetPasswordRequest, client_ip: str = Depends(get_client_ip)):
     _check_code_verification_ip(client_ip)
-    with db_session() as conn:
-        row = conn.execute("SELECT id FROM app.users WHERE phone = %s", (body.phone,)).fetchone()
-    if not row:
+    user_id = get_id_by_phone(body.phone)
+    if not user_id:
         raise HTTPException(status_code=400, detail="手机号或验证码错误")
 
     _consume_code("reset_password", body.phone, body.code)
-    with db_session() as conn:
-        conn.execute(
-            "UPDATE app.users SET password_hash = %s, token_version = token_version + 1, updated_at = now() WHERE id = %s",
-            (hash_password(body.new_password), row["id"]),
-        )
+    update_password(user_id, hash_password(body.new_password))
     try:
-        refresh_sessions.revoke_all("user", int(row["id"]))
+        refresh_sessions.revoke_all("user", int(user_id))
     except RefreshSessionUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"ok": True}
@@ -388,11 +382,7 @@ async def refresh_login(
         session = refresh_sessions.inspect(token)
         if session.kind != "user":
             raise InvalidRefreshToken("刷新凭证类型错误")
-        with db_session() as conn:
-            row = conn.execute(
-                "SELECT * FROM app.users WHERE id = %s",
-                (session.subject_id,),
-            ).fetchone()
+        row = get_by_id(session.subject_id)
         if (
             not row
             or row["status"] != "active"
@@ -433,11 +423,7 @@ async def logout_all(
     user_id: int = Depends(get_current_user_id),
     _origin: None = Depends(validate_cookie_origin),
 ):
-    with db_session() as conn:
-        conn.execute(
-            "UPDATE app.users SET token_version = token_version + 1, updated_at = now() WHERE id = %s",
-            (user_id,),
-        )
+    bump_token_version(user_id)
     try:
         refresh_sessions.revoke_all("user", user_id)
     except RefreshSessionUnavailable as exc:
@@ -448,8 +434,7 @@ async def logout_all(
 
 @router.get("/me")
 async def me(user_id: int = Depends(get_current_user_id)):
-    with db_session() as conn:
-        row = conn.execute("SELECT * FROM app.users WHERE id = %s", (user_id,)).fetchone()
+    row = get_by_id(user_id)
     if not row:
         raise HTTPException(status_code=404, detail="用户不存在")
     return _user_dict(row)
@@ -457,11 +442,7 @@ async def me(user_id: int = Depends(get_current_user_id)):
 
 @router.patch("/me")
 async def update_me(body: UpdateMeRequest, user_id: int = Depends(get_current_user_id)):
-    with db_session() as conn:
-        row = conn.execute(
-            "UPDATE app.users SET nickname = %s, updated_at = now() WHERE id = %s RETURNING *",
-            (body.nickname.strip(), user_id),
-        ).fetchone()
+    row = update_nickname(user_id, body.nickname.strip())
     return _user_dict(row)
 
 
@@ -472,14 +453,10 @@ async def change_password(
     user_id: int = Depends(get_current_user_id),
     _origin: None = Depends(validate_cookie_origin),
 ):
-    with db_session() as conn:
-        row = conn.execute("SELECT * FROM app.users WHERE id = %s", (user_id,)).fetchone()
-        if not row or not verify_password(body.old_password, row["password_hash"]):
-            raise HTTPException(status_code=400, detail="原密码错误")
-        conn.execute(
-            "UPDATE app.users SET password_hash = %s, token_version = token_version + 1, updated_at = now() WHERE id = %s",
-            (hash_password(body.new_password), user_id),
-        )
+    row = get_by_id(user_id)
+    if not row or not verify_password(body.old_password, row["password_hash"]):
+        raise HTTPException(status_code=400, detail="原密码错误")
+    update_password(user_id, hash_password(body.new_password))
     try:
         refresh_sessions.revoke_all("user", user_id)
     except RefreshSessionUnavailable as exc:

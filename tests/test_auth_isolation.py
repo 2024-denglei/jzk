@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 import asyncio
 
 import pytest
@@ -9,24 +8,12 @@ from api.auth_utils import create_access_token, get_current_user_id
 from api.donors import get_donor
 
 
-class _SessionRow:
-    def fetchone(self):
-        return {"status": "active", "token_version": 0}
-
-
-class _SessionConn:
-    def execute(self, _sql, _params=()):
-        return _SessionRow()
-
-
-@contextmanager
-def _active_user_session():
-    yield _SessionConn()
-
-
 @pytest.fixture(autouse=True)
 def active_user(monkeypatch):
-    monkeypatch.setattr("db.database.db_session", _active_user_session)
+    monkeypatch.setattr(
+        "api.auth_utils.get_auth_state",
+        lambda _user_id: {"status": "active", "token_version": 0},
+    )
     monkeypatch.setattr("core.preference.match_log.append_feedback_event", lambda _event: None)
 
 
@@ -46,17 +33,10 @@ def test_missing_token_is_401():
 
 
 def test_user_token_version_mismatch_is_rejected(monkeypatch):
-    @contextmanager
-    def changed_session():
-        class Conn:
-            def execute(self, _sql, _params=()):
-                class Row:
-                    def fetchone(self):
-                        return {"status": "active", "token_version": 2}
-                return Row()
-        yield Conn()
-
-    monkeypatch.setattr("db.database.db_session", changed_session)
+    monkeypatch.setattr(
+        "api.auth_utils.get_auth_state",
+        lambda _user_id: {"status": "active", "token_version": 2},
+    )
     token = create_access_token({"sub": "42", "ver": 1})
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
     with pytest.raises(HTTPException) as exc:
@@ -66,17 +46,10 @@ def test_user_token_version_mismatch_is_rejected(monkeypatch):
 
 
 def test_disabled_user_token_is_rejected(monkeypatch):
-    @contextmanager
-    def disabled_session():
-        class Conn:
-            def execute(self, _sql, _params=()):
-                class Row:
-                    def fetchone(self):
-                        return {"status": "disabled", "token_version": 0}
-                return Row()
-        yield Conn()
-
-    monkeypatch.setattr("db.database.db_session", disabled_session)
+    monkeypatch.setattr(
+        "api.auth_utils.get_auth_state",
+        lambda _user_id: {"status": "disabled", "token_version": 0},
+    )
     token = create_access_token({"sub": "42", "ver": 0})
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
     with pytest.raises(HTTPException) as exc:

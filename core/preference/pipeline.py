@@ -11,7 +11,6 @@ from core.preference.schema import field_short_label
 from core.preference.scorer import FieldScore, Ranker
 from core.preference.match_snapshot import build_match_snapshot_item
 from core.preference.result_types import MatchSnapshotItem, RankedCandidateRef
-from core.preference.sql_filter import build_hard_filter_sql, diagnose_bottlenecks
 from core.preference.validate import PreferenceProfile
 
 logger = logging.getLogger(__name__)
@@ -46,20 +45,17 @@ class MatchResult:
     snapshot_items: list[MatchSnapshotItem] = field(default_factory=list)
 
 
-def default_fetch(sql: str, params: tuple) -> list[dict[str, Any]]:
-    from db.pg import db_session, fetchall
-
-    with db_session() as conn:
-        return fetchall(conn, sql, params)
-
-
-def default_count(sql: str, params: tuple) -> int:
-    from db.pg import db_session, fetchone
-
-    count_sql = sql.replace("SELECT *", "SELECT COUNT(*) AS c", 1)
-    with db_session() as conn:
-        row = fetchone(conn, count_sql, params)
-        return int(row["c"]) if row else 0
+def diagnose_bottlenecks(profile: PreferenceProfile, count_fn) -> list[dict]:
+    """逐个把 must 放宽为 prefer，看能恢复多少人。count_fn 吃的是画像，不是 SQL。"""
+    must_fields = [f for f, a in profile.attributes.items() if a.constraint == "must"]
+    results = []
+    for field in must_fields:
+        clone = profile.model_copy(deep=True)
+        clone.attributes[field].constraint = "prefer"
+        recovered = int(count_fn(clone))
+        results.append({"field": field, "recovered": recovered})
+    results.sort(key=lambda x: x["recovered"], reverse=True)
+    return results
 
 
 def _reason(parts: list[FieldScore]) -> str:
@@ -219,15 +215,15 @@ def match_profile(
             filtered_count=0,
         )
 
-    fetch = fetch_rows or default_fetch
-    counter = count_rows or default_count
+    fetch = fetch_rows
+    if fetch is None:
+        raise TypeError("match_profile 需要 fetch_rows；生产路径由 matching.execute 注入")
 
-    sql, params = build_hard_filter_sql(profile)
     t0 = time.perf_counter()
-    rows = fetch(sql, params)
+    rows = fetch(profile)
     sql_ms = (time.perf_counter() - t0) * 1000
     if not rows:
-        bottlenecks = diagnose_bottlenecks(profile, counter)
+        bottlenecks = diagnose_bottlenecks(profile, count_rows) if count_rows else []
         return MatchResult(
             candidates=[],
             match_level="none",

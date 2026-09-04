@@ -146,7 +146,7 @@ def ensure_schema() -> None:
 
 def bootstrap_admin() -> None:
     """无管理员时创建引导账号。"""
-    from api.auth_utils import hash_password
+    from passwords import hash_password
 
     with db_session(admin=True) as conn:
         n = conn.execute("SELECT COUNT(*) AS c FROM admin.admin_users").fetchone()["c"]

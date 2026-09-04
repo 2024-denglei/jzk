@@ -1,18 +1,16 @@
-"""运行时捐精人匹配缓存刷新。"""
+"""运行时捐精人匹配缓存刷新。调用方负责把 DataFrame 从仓储取来。"""
 
 from __future__ import annotations
 
 import logging
 
-from core.data_loader import load_donor_data
 from core.feature_engine import FeatureEncoder
 
 logger = logging.getLogger(__name__)
 
 
-def refresh_donor_cache(app) -> dict:
-    """从官方库重载 donor_df / FeatureEncoder。"""
-    donor_df = load_donor_data()
+def refresh_donor_cache(app, donor_df) -> dict:
+    """用已加载的 donor_df 重建 FeatureEncoder。"""
     encoder = FeatureEncoder(donor_df)
     encoder.encode_all()
 

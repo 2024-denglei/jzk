@@ -16,6 +16,11 @@ def _age_sql() -> str:
 
 
 def build_hard_filter_sql(profile: PreferenceProfile) -> tuple[str, tuple]:
+    """把画像里的 must 条件编译成 donor.donors 上的 WHERE 子句。
+
+    这是筛选的数据访问形态，不是领域规则本身：规则在 PreferenceProfile 里，
+    SQL 只是 PostgreSQL 的表达。按 docs/adr/0002，生成职责属于 db。
+    """
     clauses = ["status = %s"]
     params: list = ["active"]
     for field, attr in profile.attributes.items():
@@ -50,16 +55,3 @@ def build_hard_filter_sql(profile: PreferenceProfile) -> tuple[str, tuple]:
             clauses.append("(" + joiner.join(likes) + ")")
     sql = "SELECT * FROM donor.donors WHERE " + " AND ".join(clauses)
     return sql, tuple(params)
-
-
-def diagnose_bottlenecks(profile: PreferenceProfile, count_fn) -> list[dict]:
-    must_fields = [f for f, a in profile.attributes.items() if a.constraint == "must"]
-    results = []
-    for field in must_fields:
-        clone = profile.model_copy(deep=True)
-        clone.attributes[field].constraint = "prefer"
-        sql, params = build_hard_filter_sql(clone)
-        recovered = int(count_fn(sql, params))
-        results.append({"field": field, "recovered": recovered})
-    results.sort(key=lambda x: x["recovered"], reverse=True)
-    return results

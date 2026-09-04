@@ -27,7 +27,7 @@ from api.refresh_sessions import (
 from api.security import validate_cookie_origin
 from api.uploads import read_upload_limited
 from core.data_loader import get_donor_display_info
-from core.runtime_cache import refresh_donor_cache, update_donor_status_cache
+from matching.runtime_cache import refresh_donor_cache, update_donor_status_cache
 from db.donor_import import import_excel_bytes
 from db.donors_repo import (
     get_donor_by_code,

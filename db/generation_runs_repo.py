@@ -9,9 +9,20 @@ from uuid import UUID
 from psycopg.types.json import Jsonb
 
 import config
-from db.chat_models import GenerationRunView, GenerationStatus, MessageStatus
+from db.chat_models import (
+    DialogueStateSnapshotV1,
+    GenerationRunView,
+    GenerationStatus,
+    MessageStatus,
+)
 from db.pg import db_session, fetchall, fetchone
-from dialogue.state_schema import dump_state
+
+
+def _dump_state(value: DialogueStateSnapshotV1 | dict[str, Any] | None) -> dict[str, Any]:
+    """把状态快照收成可写入 JSON 的 dict。类型已经在 db.chat_models，不必绕去 dialogue。"""
+    if isinstance(value, DialogueStateSnapshotV1):
+        return value.model_dump(mode="json")
+    return DialogueStateSnapshotV1.model_validate(dict(value or {})).model_dump(mode="json")
 
 
 _SECRET_PATTERN = re.compile(
@@ -254,7 +265,7 @@ def checkpoint_generation(
     content: str,
     state_after: dict[str, Any],
 ) -> None:
-    state = dump_state(state_after)
+    state = _dump_state(state_after)
     with db_session() as conn:
         run = fetchone(
             conn,
@@ -326,7 +337,7 @@ def complete_generation(
     match_run_id: UUID | None = None,
     timings: dict[str, Any] | None = None,
 ) -> GenerationRunView:
-    state = dump_state(state_after)
+    state = _dump_state(state_after)
     with db_session() as conn:
         run = fetchone(
             conn,

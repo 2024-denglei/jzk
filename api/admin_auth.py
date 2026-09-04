@@ -6,8 +6,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 
-from api.auth_utils import create_access_token, decode_token, hash_password, verify_password
-from db.database import db_session
+from api.auth_utils import create_access_token, decode_token
+from db import admin_admins_repo
+from passwords import verify_password
 
 security = HTTPBearer(auto_error=False)
 
@@ -39,11 +40,7 @@ def get_current_admin(
     except (JWTError, ValueError, KeyError, TypeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="无效令牌")
 
-    with db_session(admin=True) as conn:
-        row = conn.execute(
-            "SELECT * FROM admin.admin_users WHERE id = %s AND is_active = TRUE",
-            (admin_id,),
-        ).fetchone()
+    row = admin_admins_repo.get_active_admin(admin_id)
     if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="管理员不存在或已停用")
     if token_version is not None and int(row["token_version"]) != token_version:
@@ -58,30 +55,11 @@ def require_super_admin(admin: dict = Depends(get_current_admin)) -> dict:
 
 
 def authenticate_admin(username: str, password: str) -> dict | None:
-    with db_session(admin=True) as conn:
-        row = conn.execute(
-            "SELECT * FROM admin.admin_users WHERE username = %s AND is_active = TRUE",
-            (username.strip(),),
-        ).fetchone()
+    row = admin_admins_repo.get_active_admin_by_username(username)
     if not row or not verify_password(password, row["password_hash"]):
         return None
     return dict(row)
 
 
 def set_admin_password(admin_id: int, old_password: str, new_password: str) -> bool:
-    with db_session(admin=True) as conn:
-        row = conn.execute(
-            "SELECT password_hash FROM admin.admin_users WHERE id = %s FOR UPDATE",
-            (admin_id,),
-        ).fetchone()
-        if not row or not verify_password(old_password, row["password_hash"]):
-            return False
-        conn.execute(
-            """
-            UPDATE admin.admin_users
-            SET password_hash = %s, token_version = token_version + 1, updated_at = now()
-            WHERE id = %s
-            """,
-            (hash_password(new_password), admin_id),
-        )
-    return True
+    return admin_admins_repo.change_admin_password(admin_id, old_password, new_password)

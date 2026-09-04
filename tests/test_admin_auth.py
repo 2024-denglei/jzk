@@ -1,5 +1,3 @@
-from contextlib import contextmanager
-
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -7,35 +5,15 @@ from fastapi.security import HTTPAuthorizationCredentials
 from api import admin_auth
 
 
-class _Cursor:
-    def __init__(self, row):
-        self.row = row
-
-    def fetchone(self):
-        return self.row
-
-
-class _Connection:
-    def __init__(self, row):
-        self.row = row
-
-    def execute(self, _sql, _params=()):
-        return _Cursor(self.row)
-
-
-def _session(row):
-    @contextmanager
-    def context(*_args, **_kwargs):
-        yield _Connection(row)
-
-    return context
-
-
 def test_admin_token_version_mismatch_is_rejected(monkeypatch):
     monkeypatch.setattr(
-        admin_auth,
-        "db_session",
-        _session({"id": 8, "is_active": True, "token_version": 2, "role": "super_admin"}),
+        "db.admin_admins_repo.get_active_admin",
+        lambda _admin_id: {
+            "id": 8,
+            "is_active": True,
+            "token_version": 2,
+            "role": "super_admin",
+        },
     )
     token = admin_auth.create_admin_token(8, "super_admin", token_version=1)
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
@@ -48,7 +26,10 @@ def test_admin_token_version_mismatch_is_rejected(monkeypatch):
 
 def test_current_admin_token_version_is_accepted(monkeypatch):
     row = {"id": 8, "is_active": True, "token_version": 2, "role": "super_admin"}
-    monkeypatch.setattr(admin_auth, "db_session", _session(row))
+    monkeypatch.setattr(
+        "db.admin_admins_repo.get_active_admin",
+        lambda _admin_id: row,
+    )
     token = admin_auth.create_admin_token(8, "super_admin", token_version=2)
     credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 

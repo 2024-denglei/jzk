@@ -30,21 +30,6 @@ ADMIN = {
 }
 
 
-class _Cursor:
-    def fetchone(self):
-        return USER
-
-
-class _Connection:
-    def execute(self, _sql, _params=()):
-        return _Cursor()
-
-
-@contextmanager
-def _db_session():
-    yield _Connection()
-
-
 class _RefreshStore:
     def __init__(self):
         self.session = RefreshSession(42, "user", 3, "family")
@@ -81,7 +66,7 @@ def _request_with_cookie(name: str, value: str) -> Request:
 def test_refresh_rotates_cookie_and_returns_short_access_token(monkeypatch):
     store = _RefreshStore()
     monkeypatch.setattr(auth_api, "refresh_sessions", store)
-    monkeypatch.setattr(auth_api, "db_session", _db_session)
+    monkeypatch.setattr(auth_api, "get_by_id", lambda _user_id: USER)
     monkeypatch.setattr(auth_api.config, "ENVIRONMENT", "production")
     response = Response()
 
@@ -105,7 +90,7 @@ def test_refresh_rejects_token_version_mismatch(monkeypatch):
     store = _RefreshStore()
     store.session = RefreshSession(42, "user", 2, "family")
     monkeypatch.setattr(auth_api, "refresh_sessions", store)
-    monkeypatch.setattr(auth_api, "db_session", _db_session)
+    monkeypatch.setattr(auth_api, "get_by_id", lambda _user_id: USER)
     response = Response()
 
     with pytest.raises(HTTPException) as exc:
